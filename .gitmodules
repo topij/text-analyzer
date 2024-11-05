@@ -1,0 +1,3 @@
+[submodule "src/utils/FileUtils"]
+	path = src/utils/FileUtils
+	url = https://github.com/topij/FileUtils.git
