@@ -1,0 +1,136 @@
+# src/config/prompts/prompts.yaml
+
+version: "1.0.0"
+
+defaults:
+  temperature: 0.0
+  max_tokens: 1000
+  language: "en"
+
+templates:
+  keyword_extraction:
+    version: "1.0.0"
+    languages:
+      en:
+        system_prompt: |
+          You are a keyword extraction expert. Extract important keywords and phrases from text.
+          Consider:
+          - Technical terms and domain-specific vocabulary
+          - Important concepts and themes
+          - Named entities and proper nouns
+          - Compound terms and multi-word phrases
+          
+          Return in the specified JSON format with arrays for keywords and scores.
+        
+        main_prompt: |
+          Extract keywords from this text:
+          {text}
+          
+          Guidelines:
+          - Extract up to {max_keywords} keywords
+          - Consider these statistical keywords: {statistical_keywords}
+          - Min keyword length: {min_length} characters
+          - Focus on: {focus}
+      
+      fi:
+        system_prompt: |
+          Olet avainsanojen tunnistuksen asiantuntija. Erittele tekstistä tärkeät avainsanat ja fraasit.
+          Huomioi:
+          - Tekniset termit ja alakohtainen sanasto
+          - Tärkeät käsitteet ja teemat
+          - Erisnimet ja nimetyt kohteet
+          - Yhdyssanat ja monisanaiset ilmaisut
+        
+        main_prompt: |
+          Erittele avainsanat tästä tekstistä:
+          {text}
+          
+          Ohjeet:
+          - Erittele enintään {max_keywords} avainsanaa
+          - Huomioi nämä tilastolliset avainsanat: {statistical_keywords}
+          - Minimipituus: {min_length} merkkiä
+          - Keskity aiheeseen: {focus}
+
+  theme_analysis:
+    version: "1.0.0"
+    languages:
+      en:
+        system_prompt: |
+          You are a theme analysis expert. Identify main themes and topics from text.
+          Consider:
+          - Main topics and subjects
+          - Underlying themes and concepts
+          - Topic hierarchies and relationships
+          - Related keywords and terms
+        
+        main_prompt: |
+          Identify themes in this text:
+          {text}
+          
+          Guidelines:
+          - Identify up to {max_themes} main themes
+          - Provide brief descriptions
+          - Include topic hierarchy: {include_hierarchy}
+          - Include related keywords: {include_related_keywords}
+          - Minimum confidence: {min_confidence}
+      
+      fi:
+        system_prompt: |
+          Olet teema-analyysin asiantuntija. Tunnista tekstin pääteemat ja aiheet.
+          Huomioi:
+          - Pääteemat ja aiheet
+          - Taustalla olevat teemat ja käsitteet
+          - Teemojen hierarkiat ja suhteet
+          - Aiheeseen liittyvät avainsanat
+        
+        main_prompt: |
+          Tunnista teemat tästä tekstistä:
+          {text}
+          
+          Ohjeet:
+          - Tunnista enintään {max_themes} pääteemaa
+          - Anna lyhyt kuvaus kustakin
+          - Sisällytä teemahierarkia: {include_hierarchy}
+          - Sisällytä aiheeseen liittyvät avainsanat: {include_related_keywords}
+          - Minimivarmuus: {min_confidence}
+
+  category_classification:
+    version: "1.0.0"
+    languages:
+      en:
+        system_prompt: |
+          You are a text classification expert. Analyze text and classify it into relevant categories.
+          For each category:
+          1. Determine if the text belongs in that category
+          2. Assign a confidence score (0.0 to 1.0)
+          3. Provide explanation and supporting evidence
+        
+        main_prompt: |
+          Analyze this text and classify it into these categories:
+          {category_definitions}
+          
+          Text: {text}
+          
+          Guidelines:
+          - Minimum confidence score: {min_confidence}
+          - Maximum categories: {max_categories}
+          - Must provide evidence: {require_evidence}
+      
+      fi:
+        system_prompt: |
+          Olet tekstin luokittelun asiantuntija. Analysoi teksti ja luokittele se sopiviin kategorioihin.
+          Jokaiselle kategorialle:
+          1. Määritä kuuluuko teksti kategoriaan
+          2. Anna varmuusaste (0.0-1.0)
+          3. Anna selitys ja tukevat todisteet
+        
+        main_prompt: |
+          Analysoi tämä teksti ja luokittele se näihin kategorioihin:
+          {category_definitions}
+          
+          Teksti: {text}
+          
+          Ohjeet:
+          - Minimivarmuus: {min_confidence}
+          - Maksimimäärä kategorioita: {max_categories}
+          - Vaatii todisteita: {require_evidence}

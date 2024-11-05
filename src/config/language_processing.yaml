@@ -1,0 +1,45 @@
+# src/config/language_processing.yaml
+
+version: "1.0.0"
+default_language: "en"
+
+languages:
+  en:
+    min_word_length: 3
+    excluded_patterns:
+      - "^\\d+$"                  # Numbers only
+      - "^[^a-zA-Z0-9]+$"        # No alphanumeric characters
+    nltk_resources:
+      - "punkt"
+      - "wordnet"
+      - "averaged_perceptron_tagger"
+      - "stopwords"
+    processing_options:
+      use_pos_tagging: true
+      handle_contractions: true
+      preserve_proper_nouns: true
+
+  fi:
+    min_word_length: 3
+    excluded_patterns:
+      - "^\\d+$"                  # Numbers only
+      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"  # No alphanumeric characters (including Finnish letters)
+    voikko_path: null  # Set in environment or at runtime
+    processing_options:
+      preserve_compounds: true
+      handle_particles: true
+      use_base_forms: true
+    word_classes:
+      - "nimisana"    # Nouns
+      - "teonsana"    # Verbs
+      - "laatusana"   # Adjectives
+      - "seikkasana"  # Adverbs
+
+caching:
+  enabled: true
+  max_size: 1000
+  ttl_seconds: 3600  # 1 hour
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
