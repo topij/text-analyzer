@@ -1,0 +1,53 @@
+[tool.poetry]
+name = "semantic-text-analyzer"
+version = "1.0.0-alpha.1"
+description = "Advanced semantic text analysis toolkit with support for keywords, themes, and categories"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+langchain = "^0.3.0"
+pydantic = "^2.0"
+langchain-openai = "^0.0.1"
+langchain-anthropic = "^0.0.1"
+python-dotenv = "^1.0.0"
+scikit-learn = "^1.0"
+nltk = "^3.8"
+langdetect = "^1.0.9"
+voikko = {version = "^0.5", optional = true}  # Finnish language support
+
+[tool.poetry.extras]
+finnish = ["voikko"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0"
+black = "^23.0"
+isort = "^5.0"
+mypy = "^1.0"
+pytest-cov = "^4.0"
+pytest-asyncio = "^0.21.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = "test_*.py"
