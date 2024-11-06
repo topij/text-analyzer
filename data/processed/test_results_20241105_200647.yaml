@@ -1,0 +1,31 @@
+keywords:
+  confidence: 1.0
+  language: en
+  error: null
+  keywords:
+  - python
+  - programming
+  - language
+  keyword_scores: {}
+  statistical_keywords:
+  - programming
+  - and
+  - language
+  - python
+  - high
+  - level
+  - known
+  - for
+  - its
+  - simplicity
+  compound_words: []
+themes:
+  confidence: 1.0
+  language: en
+  error: null
+  themes:
+  - software development
+  - programming languages
+  theme_descriptions: {}
+  theme_confidence: {}
+  related_keywords: {}

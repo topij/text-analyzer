@@ -1,0 +1,143 @@
+```yaml
+# config.yaml
+
+# Project settings
+project_name: "semantic-text-analyzer"
+version: "1.0.0"
+environment: "development"  # development, test, production
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  file_path: "logs/app.log"
+  disable_existing_loggers: false
+
+# Core analyzer settings
+analyzer:
+  default_language: "en"
+  content_column: "content"
+
+  # Analysis configurations
+  analysis:
+    keywords:
+      max_keywords: 10
+      min_keyword_length: 3
+      include_compounds: true
+      min_confidence: 0.3
+      use_statistical: true
+      compound_word_bonus: 0.2
+
+    themes:
+      max_themes: 3
+      min_confidence: 0.5
+      include_hierarchy: true
+      require_evidence: true
+      min_theme_length: 10
+
+    categories:
+      max_categories: 3
+      min_confidence: 0.3
+      require_evidence: true
+      allow_overlap: true
+      hierarchical: true
+
+  # Model settings
+  models:
+    default_provider: "openai"
+    default_model: "gpt-4o-mini"
+    parameters:
+      temperature: 0.0
+      max_tokens: 1000
+      top_p: 1.0
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+
+  # Feature flags
+  features:
+    use_caching: true
+    use_async: true
+    use_batching: true
+    enable_finnish_support: true
+    enable_compound_detection: true
+    enable_spell_check: false
+
+# Data path configurations
+data_paths:
+  raw: "data/raw"
+  processed: "data/processed"
+  configurations: "data/configurations"
+  models: "models"
+  reports: "reports"
+  cache: "data/cache"
+  logs: "logs"
+
+# File handling settings
+file_handling:
+  csv_delimiter: ";"
+  encoding: "utf-8"
+  include_timestamp: true
+  output_format: "yaml"
+  quoting: 1  # csv.QUOTE_MINIMAL
+  compression: false
+  backup_files: true
+
+# Language-specific settings
+languages:
+  en:
+    min_word_length: 3
+    excluded_patterns: 
+      - "^\\d+$"
+      - "^[^a-zA-Z0-9]+$"
+    use_nltk: true
+    
+  fi:
+    min_word_length: 3
+    excluded_patterns:
+      - "^\\d+$"
+      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"
+    voikko_path: "C:/scripts/Voikko"
+    preserve_compounds: true
+
+# Processing settings
+processing:
+  batch_size: 100
+  max_retries: 3
+  retry_delay: 1.0
+  timeout: 30.0
+  max_workers: 4
+  chunk_size: 1000
+
+# Cache settings
+caching:
+  enabled: true
+  ttl: 3600  # 1 hour
+  max_size: 1000
+  backend: "memory"  # memory, redis, filesystem
+  compression: true
+
+# Validation settings
+validation:
+  require_evidence: true
+  min_confidence: 0.3
+  max_keyword_overlap: 0.8
+  verify_results: true
+  strict_mode: false
+
+# Development settings
+development:
+  debug_mode: false
+  profile_performance: false
+  log_llm_calls: true
+  mock_llm_responses: false
+  save_intermediates: false
+
+# Monitoring settings
+monitoring:
+  log_performance: true
+  track_usage: true
+  save_metrics: true
+  alert_on_errors: true
+  metrics_path: "reports/metrics"
+```

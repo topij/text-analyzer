@@ -1,0 +1,13 @@
+keywords:
+  confidence: 0.0
+  language: unknown
+  error: 'Keyword analysis failed: ''list'' object has no attribute ''split'''
+themes:
+  confidence: 0.0
+  language: unknown
+  error: '''Input to ChatPromptTemplate is missing variables {\''\\n                "themes"\''}.  Expected:
+    [\''\\n                "themes"\'', \''focus_areas\'', \''max_themes\'', \''text\'']
+    Received: [\''text\'', \''max_themes\'', \''focus_areas\'']\nNote: if you intended
+    {\n                "themes"} to be part of the string and not a variable, please
+    escape it with double curly braces like: \''{{\n                "themes"}}\''.\nFor
+    troubleshooting, visit: https://python.langchain.com/docs/troubleshooting/errors/INVALID_PROMPT_INPUT'''

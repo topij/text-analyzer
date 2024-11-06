@@ -1,0 +1,16 @@
+keywords:
+  confidence: 0.0
+  language: unknown
+  error: 'Keyword analysis failed: ''ChatMessage'' object has no attribute ''get'''
+themes:
+  confidence: 1.0
+  language: en
+  error: null
+  themes:
+  - testing
+  theme_descriptions:
+    testing: ''
+  theme_confidence:
+    testing: 0.5
+  related_keywords:
+    testing: []

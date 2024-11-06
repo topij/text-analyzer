@@ -1,0 +1,7 @@
+keywords:
+  confidence: 0.0
+  language: unknown
+  error: 'Keyword analysis failed: ''list'' object has no attribute ''split'''
+themes:
+  error: '''ThemeAnalyzer'' object has no attribute ''logger'''
+  success: false

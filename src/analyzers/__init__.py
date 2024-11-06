@@ -10,18 +10,18 @@ Provides specialized analyzers for different aspects of text analysis:
 - CategoryAnalyzer: Classify text into categories
 """
 
-from .base import TextAnalyzer, AnalyzerOutput
+from .base import AnalyzerOutput, TextAnalyzer
+from .category_analyzer import CategoryAnalyzer, CategoryOutput
 from .keyword_analyzer import KeywordAnalyzer, KeywordOutput
 from .theme_analyzer import ThemeAnalyzer, ThemeOutput
-from .category_analyzer import CategoryAnalyzer, CategoryOutput
 
 __all__ = [
-    'TextAnalyzer',
-    'AnalyzerOutput',
-    'KeywordAnalyzer',
-    'KeywordOutput',
-    'ThemeAnalyzer',
-    'ThemeOutput',
-    'CategoryAnalyzer',
-    'CategoryOutput',
+    "TextAnalyzer",
+    "AnalyzerOutput",
+    "KeywordAnalyzer",
+    "KeywordOutput",
+    "ThemeAnalyzer",
+    "ThemeOutput",
+    "CategoryAnalyzer",
+    "CategoryOutput",
 ]

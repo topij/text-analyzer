@@ -1,0 +1,37 @@
+name: semantic-analyzer
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  # Core dependencies
+  - pandas
+  - numpy
+  - pyyaml
+  - jsonschema
+  - python-dotenv
+  
+  # Text processing
+  - scikit-learn
+  - nltk
+  - langdetect
+  
+  # Development dependencies
+  - pytest
+  - pytest-asyncio
+  - pytest-cov
+  - black
+  - isort
+  - mypy
+  - flake8
+  - jupyter
+  
+  # Install pip packages
+  - pip:
+    - langchain>=0.3.0
+    - pydantic>=2.0
+    - langchain-openai>=0.0.1
+    - langchain-anthropic>=0.0.1
+    - libvoikko  # Finnish language support for Windows
+    # Add any other pip-specific packages here

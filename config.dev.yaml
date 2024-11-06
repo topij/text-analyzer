@@ -1,0 +1,43 @@
+# config.dev.yaml
+
+# Override main settings for development
+environment: "development"
+
+# Enhanced logging for development
+logging:
+  level: "DEBUG"
+  format: "%(asctime)s - %(name)s - %(levelname)s [%(filename)s:%(lineno)d] - %(message)s"
+  file_path: "logs/dev.log"
+
+# Development-specific analyzer settings
+analyzer:
+  models:
+    default_model: "gpt-4o-mini"
+    parameters:
+      temperature: 0.0
+      max_tokens: 2000  # Increased for debugging
+
+  features:
+    use_caching: false  # Disable cache for development
+    enable_spell_check: true
+
+# Development paths
+data_paths:
+  raw: "data/dev/raw"
+  processed: "data/dev/processed"
+  cache: "data/dev/cache"
+  logs: "logs/dev"
+
+# Development-specific settings
+development:
+  debug_mode: true
+  profile_performance: true
+  log_llm_calls: true
+  mock_llm_responses: false
+  save_intermediates: true
+
+# Monitoring for development
+monitoring:
+  log_performance: true
+  save_metrics: true
+  metrics_path: "reports/dev/metrics"
