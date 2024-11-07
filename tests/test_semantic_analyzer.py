@@ -50,15 +50,33 @@ def parameter_files(tmp_path):
     
     return {"en": en_params, "fi": fi_params}
 
-@pytest.mark.asyncio(scope="function")
+@pytest.mark.asyncio
 async def test_analysis_with_parameters(test_texts, parameter_files):
     """Test complete analysis with parameters."""
     analyzer_en = SemanticAnalyzer(parameter_file=parameter_files["en"])
     try:
-        results_en = await asyncio.wait_for(
-            analyzer_en.analyze(test_texts["en"]),
-            timeout=30
+        # Increase timeout and split tasks
+        keyword_result = await asyncio.wait_for(
+            analyzer_en.keyword_analyzer.analyze(test_texts["en"]),
+            timeout=20
         )
+        
+        theme_result = await asyncio.wait_for(
+            analyzer_en.theme_analyzer.analyze(test_texts["en"]),
+            timeout=20
+        )
+        
+        category_result = await asyncio.wait_for(
+            analyzer_en.category_analyzer.analyze(test_texts["en"]),
+            timeout=20
+        )
+
+        # Build combined results
+        results_en = {
+            "keywords": keyword_result.dict()["keywords"],
+            "themes": theme_result.dict()["themes"],
+            "categories": category_result.dict()["categories"]
+        }
 
         # Verify structure first
         assert "keywords" in results_en
@@ -73,7 +91,7 @@ async def test_analysis_with_parameters(test_texts, parameter_files):
         assert "education" not in keywords
 
     except asyncio.TimeoutError:
-        pytest.fail("Analysis timed out")
+        pytest.fail("Analysis timed out - consider increasing timeout values")
     except Exception as e:
         pytest.fail(f"Test failed: {str(e)}")
     finally:

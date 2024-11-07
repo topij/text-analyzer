@@ -150,8 +150,14 @@ class SemanticAnalyzer:
             "language": self.language
         }
     
-    async def analyze(self, text: str, analysis_types: Optional[List[str]] = None, **kwargs) -> Dict[str, Any]:
-        """Analyze text with proper output structure."""
+    async def analyze(
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+        timeout: float = 60.0,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Analyze text with proper timeout handling."""
         if not text:
             return self._create_error_response("Empty input text")
 
@@ -160,7 +166,6 @@ class SemanticAnalyzer:
             analysis_types = self._validate_analysis_types(analysis_types)
             combined_results = {}
 
-            # Process each analysis type
             for analysis_type in analysis_types:
                 try:
                     if analysis_type == "keywords":
@@ -178,9 +183,10 @@ class SemanticAnalyzer:
                     else:
                         continue
 
+                    # Execute with individual timeouts
                     result = await asyncio.wait_for(
                         analyzer.analyze(text),
-                        timeout=10.0
+                        timeout=timeout/len(analysis_types)  # Split timeout among tasks
                     )
                     combined_results[analysis_type] = result.dict()[analysis_type]
 
@@ -188,13 +194,21 @@ class SemanticAnalyzer:
                     combined_results[analysis_type] = {
                         "error": "Analysis timed out",
                         "success": False,
-                        "language": self.language
+                        "language": self.language,
+                        "keywords": [],  # Add default values
+                        "keyword_scores": {},
+                        "compound_words": [],
+                        "domain_keywords": {}
                     }
                 except Exception as e:
                     combined_results[analysis_type] = {
                         "error": str(e),
                         "success": False,
-                        "language": self.language
+                        "language": self.language,
+                        "keywords": [],  # Add default values
+                        "keyword_scores": {},
+                        "compound_words": [],
+                        "domain_keywords": {}
                     }
 
             return combined_results
