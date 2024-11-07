@@ -14,13 +14,17 @@ from pydantic import BaseModel, Field
 
 class AnalyzerOutput(BaseModel):
     """Base output model for all analyzers."""
-
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     language: str = Field(default="unknown")
     error: Optional[str] = None
+    success: bool = Field(default=True)
 
-    class Config:
-        extra = "allow"
+    def dict(self) -> Dict[str, Any]:
+        """Convert to dict preserving structure."""
+        base = super().model_dump()
+        # Ensure error handling is consistent
+        if not self.success:
+            return {"error": base["error"]}
+        return base
 
 
 class TextAnalyzer(ABC):
@@ -104,21 +108,26 @@ class TextAnalyzer(ABC):
         return AnalyzerOutput(confidence=0.0, language="unknown", error=str(error))
 
     def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Base method for processing LLM output."""
+        """Process and validate LLM output."""
         try:
-            if isinstance(output, (str, ChatMessage)):
-                # Parse JSON from string or message content
-                content = output.content if isinstance(output, ChatMessage) else output
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    self.logger.error(f"Failed to parse JSON from output: {content}")
-                    return {"error": "Failed to parse LLM output"}
-            elif isinstance(output, dict):
-                return output
+            # Handle AIMessage output
+            if hasattr(output, "content"):
+                content = output.content
+            elif isinstance(output, str):
+                content = output
             else:
                 self.logger.error(f"Unexpected output type: {type(output)}")
                 return {"error": f"Unexpected output type: {type(output)}"}
+
+            # Parse JSON content
+            try:
+                if isinstance(content, str):
+                    return json.loads(content)
+                return content
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse JSON: {e}")
+                return {"error": "Failed to parse LLM output"}
+                
         except Exception as e:
             self.logger.error(f"Error processing LLM output: {e}")
             return {"error": str(e)}

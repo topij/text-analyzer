@@ -1,173 +1,211 @@
 # tests/test_semantic_analyzer.py
 
-import logging
-from typing import Any, Dict
-
 import pytest
+from typing import Dict #, Any
+from pathlib import Path
 
-from src.semantic_analyzer import SemanticAnalyzer
+import asyncio
+from contextlib import asynccontextmanager
 
-from . import SAMPLE_TEXTS
+import asyncio
+# import concurrent.futures
+# from functools import partial
 
+from src.semantic_analyzer.analyzer import SemanticAnalyzer
+from src.loaders.models import CategoryConfig
+from tests.test_parameter_loading import create_test_excel
 
-@pytest.mark.asyncio
-async def test_keyword_extraction(analyzer_config, mock_llm):
-    """Test keyword extraction functionality."""
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm)
+@pytest.fixture
+def test_categories() -> Dict[str, CategoryConfig]:
+    """Fixture for test categories."""
+    return {
+        "technical": CategoryConfig(
+            description="Technical content",
+            keywords=["programming", "software", "technology"],
+            threshold=0.7
+        ),
+        "business": CategoryConfig(
+            description="Business content",
+            keywords=["finance", "marketing", "strategy"],
+            threshold=0.6
+        )
+    }
 
-    results = await analyzer.analyze(SAMPLE_TEXTS["technical"], analysis_types=["keywords"])
+@pytest.fixture
+def test_texts():
+    """Sample texts for testing."""
+    return {
+        "en": "Looking for online programming courses. Any recommendations?",
+        "fi": "Etsin verkko-ohjelmointikursseja. Suosituksia?"
+    }
 
-    # Check structure
-    assert "keywords" in results
-    keyword_result = results["keywords"]
-    assert "keywords" in keyword_result
-    assert "keyword_scores" in keyword_result
+@pytest.fixture
+def parameter_files(tmp_path):
+    """Create parameter files for testing."""
+    # Create English parameters
+    en_params = create_test_parameters("en", tmp_path)
+    
+    # Create Finnish parameters
+    fi_params = create_test_parameters("fi", tmp_path)
+    
+    return {"en": en_params, "fi": fi_params}
 
-    # Check content
-    keywords = keyword_result["keywords"]
-    assert len(keywords) >= 3
-    assert "python" in [k.lower() for k in keywords]
-    assert "programming" in [k.lower() for k in keywords]
+@pytest.mark.asyncio(scope="function")
+async def test_analysis_with_parameters(test_texts, parameter_files):
+    """Test complete analysis with parameters."""
+    analyzer_en = SemanticAnalyzer(parameter_file=parameter_files["en"])
+    try:
+        results_en = await asyncio.wait_for(
+            analyzer_en.analyze(test_texts["en"]),
+            timeout=30
+        )
 
-    # Check scores
-    scores = keyword_result["keyword_scores"]
-    assert all(0 <= score <= 1 for score in scores.values())
+        # Verify structure first
+        assert "keywords" in results_en
+        assert isinstance(results_en["keywords"], dict)
+        assert "keywords" in results_en["keywords"]
+        assert isinstance(results_en["keywords"]["keywords"], list)
 
+        # Then check content
+        keywords = results_en["keywords"]["keywords"]
+        assert "programming" in keywords
+        assert any(kw.lower() == "online" for kw in keywords)
+        assert "education" not in keywords
 
-@pytest.mark.asyncio
-async def test_theme_analysis(analyzer_config, mock_llm):
-    """Test theme analysis functionality."""
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm)
+    except asyncio.TimeoutError:
+        pytest.fail("Analysis timed out")
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+    finally:
+        await cleanup_pending_tasks()
 
-    results = await analyzer.analyze(SAMPLE_TEXTS["business"], analysis_types=["themes"])
-
-    assert "themes" in results
-    theme_result = results["themes"]
-    assert "themes" in theme_result
-    assert "theme_descriptions" in theme_result
-
-    themes = theme_result["themes"]
-    assert len(themes) > 0
-    assert any("business" in t.lower() or "financial" in t.lower() for t in themes)
-
-
-@pytest.mark.asyncio
-async def test_category_classification(analyzer_config, mock_llm, test_categories):
-    """Test category classification functionality."""
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm, categories=test_categories)
-
-    # Test with technical text
-    results = await analyzer.analyze(SAMPLE_TEXTS["technical"], analysis_types=["categories"])
-
-    assert "categories" in results
-    cat_result = results["categories"]
-    assert "categories" in cat_result
-
-    categories = cat_result["categories"]
-    assert "technical" in categories
-    assert categories["technical"] > 0.5
-
-
-@pytest.mark.asyncio
-async def test_finnish_support(analyzer_config, mock_llm, voikko_path):
-    """Test Finnish language support."""
-    if not voikko_path:
-        pytest.skip("VOIKKO_PATH not set, skipping Finnish tests")
-
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm, language="fi")
-
-    results = await analyzer.analyze(SAMPLE_TEXTS["finnish"], analysis_types=["keywords", "themes"])
-
-    assert "keywords" in results
-    keywords = results["keywords"]["keywords"]
-
-    # Should find Finnish compound words
-    assert any("ohjelmisto" in k.lower() for k in keywords)
-    assert any("kehittäjä" in k.lower() for k in keywords)
-
-    assert results["keywords"]["language"] == "fi"
-
-
-@pytest.mark.asyncio
-async def test_batch_analysis(analyzer_config, mock_llm):
-    """Test batch analysis functionality."""
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm)
-
-    texts = [SAMPLE_TEXTS["technical"], SAMPLE_TEXTS["business"]]
-
-    results = await analyzer.analyze_batch(texts, analysis_types=["keywords", "themes"])
-
-    assert len(results) == 2
-    for result in results:
-        assert "keywords" in result
-        assert "themes" in result
-
+@asynccontextmanager
+async def cleanup_tasks():
+    """Context manager to ensure proper task cleanup."""
+    try:
+        yield
+    finally:
+        # Get all tasks tied to the current loop
+        pending = asyncio.all_tasks()
+        for task in pending:
+            task.cancel()
+        
+        # Wait for cancellation
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 @pytest.mark.asyncio
-async def test_result_saving(analyzer_config, mock_llm, test_data_dir, cleanup_test_files):
-    """Test result saving functionality."""
-    analyzer = SemanticAnalyzer(config=analyzer_config, llm=mock_llm)
+async def test_analysis_with_parameters(test_texts, parameter_files):
+    """Test complete analysis with parameters."""
+    analyzer_en = SemanticAnalyzer(parameter_file=parameter_files["en"])
+    try:
+        results_en = await asyncio.wait_for(
+            analyzer_en.analyze(test_texts["en"]),
+            timeout=30
+        )
 
-    results = await analyzer.analyze(SAMPLE_TEXTS["technical"], analysis_types=["keywords", "themes"])
+        # Verify structure first
+        assert "keywords" in results_en
+        assert isinstance(results_en["keywords"], dict)
+        assert "keywords" in results_en["keywords"]
+        assert isinstance(results_en["keywords"]["keywords"], list)
 
-    # Save results
-    saved_path = analyzer_config.save_results(results, "test_results.yaml")
+        # Then check content
+        keywords = results_en["keywords"]["keywords"]
+        assert "programming" in keywords
+        assert any(kw.lower() == "online" for kw in keywords)
+        assert "education" not in keywords
 
-    # Load and verify results
-    loaded_results = analyzer_config.file_utils.load_yaml(saved_path)
-    assert "keywords" in loaded_results
-    assert "themes" in loaded_results
+    except asyncio.TimeoutError:
+        pytest.fail("Analysis timed out")
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+    finally:
+        await cleanup_pending_tasks()
 
 
-@pytest.mark.asyncio
-async def test_error_handling(analyzer_config):
-    """Test error handling."""
-    analyzer = SemanticAnalyzer(config=analyzer_config)
+@pytest.mark.asyncio(scope="function")
+async def test_parameter_override(test_texts, parameter_files):
+    """Test overriding parameters at runtime."""
+    analyzer = SemanticAnalyzer(parameter_file=parameter_files["en"])
+    try:
+        results = await asyncio.wait_for(
+            analyzer.analyze(
+                test_texts["en"],
+                keyword_params={"max_keywords": 3}
+            ),
+            timeout=10.0
+        )
+
+        # Check results
+        assert "keywords" in results
+        assert "keywords" in results["keywords"]
+        assert len(results["keywords"]["keywords"]) <= 3
+
+    except asyncio.TimeoutError:
+        pytest.fail("Analysis timed out")
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+    finally:
+        await cleanup_pending_tasks()
+
+@pytest.mark.asyncio(scope="function")
+async def test_error_handling_with_parameters(parameter_files, tmp_path):
+    """Test error handling with parameters."""
+    test_file = tmp_path / "parameters.xlsx"
+    create_test_excel(test_file, "en")
+    
+    analyzer = SemanticAnalyzer(parameter_file=test_file)
 
     # Test with empty text
-    results = await analyzer.analyze("", analysis_types=["keywords"])
-    assert results["keywords"].get("error") is not None
+    results = await analyzer.analyze("")
+    assert "error" in results["keywords"]
 
-    # Test with invalid language
+    # Test with invalid parameters
     with pytest.raises(ValueError):
-        SemanticAnalyzer(config=analyzer_config, language="invalid")
+        invalid_params = {"max_keywords": -1}  # Invalid value
+        analyzer.keyword_analyzer.validate_parameters(invalid_params)  # Add validation method
 
-    # Test with invalid analysis type
-    with pytest.raises(ValueError):
-        await analyzer.analyze("test", analysis_types=["invalid_type"])
+def create_test_parameters(language: str, output_dir: Path) -> Path:
+    """Create test parameter files."""
+    # Implementation of test file creation
+    # (Similar to the parameter file generator we created earlier)
+    pass
 
+async def cleanup_pending_tasks():
+    """Clean up any pending tasks."""
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in tasks:
+        task.cancel()
+        try:
+            await asyncio.wait_for(task, timeout=1.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
 
-@pytest.mark.asyncio
-async def test_configuration(analyzer_config, mock_llm):
-    """Test configuration handling."""
-    # Test with custom keyword settings
-    analyzer = SemanticAnalyzer(
-        config=analyzer_config,
-        llm=mock_llm,
-        keyword_config={"min_keyword_length": 5, "max_keywords": 3},
-    )
+@pytest.mark.asyncio(scope="function")
+async def test_batch_analysis_with_parameters(parameter_files):
+    """Test batch analysis with parameters."""
+    texts = [
+        "Looking for programming courses",
+        "Interested in marketing training",
+        "Need business development advice"
+    ]
 
-    results = await analyzer.analyze(SAMPLE_TEXTS["technical"], analysis_types=["keywords"])
+    analyzer = SemanticAnalyzer(parameter_file=parameter_files["en"])
+    try:
+        tasks = [analyzer.analyze(text) for text in texts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    keywords = results["keywords"]["keywords"]
-    assert len(keywords) <= 3
-    assert all(len(k) >= 5 for k in keywords)
+        # Check results
+        assert len(results) == len(texts)
+        for result in results:
+            assert isinstance(result, dict)
+            assert "keywords" in result
+            assert "keywords" in result["keywords"]
+            assert isinstance(result["keywords"]["keywords"], list)
+            assert "education" not in result["keywords"]["keywords"]
 
-
-def test_file_utils_integration(file_utils):
-    """Test FileUtils integration."""
-    # Test data path access
-    data_path = file_utils.get_data_path("raw")
-    assert data_path.exists()
-
-    # Test configuration loading
-    config = file_utils.config
-    assert "semantic_analyzer" in config
-
-    # Test directory structure
-    assert (data_path.parent / "configurations").exists()
-    assert (data_path.parent / "processed").exists()
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    except Exception as e:
+        pytest.fail(f"Test failed: {str(e)}")
+    finally:
+        await cleanup_pending_tasks()

@@ -14,12 +14,27 @@ logger = logging.getLogger(__name__)
 
 
 class ThemeOutput(AnalyzerOutput):
-    """Output model for theme analysis."""
-
-    themes: List[str] = Field(default_factory=list)
-    theme_descriptions: Dict[str, str] = Field(default_factory=dict)
-    theme_confidence: Dict[str, float] = Field(default_factory=dict)
-    related_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+    def dict(self) -> Dict[str, Any]:
+        base = super().dict()
+        if "error" in base:
+            return {
+                "themes": {
+                    "error": base["error"],
+                    "success": False,
+                    "language": self.language
+                }
+            }
+        
+        return {
+            "themes": {
+                "themes": self.themes,
+                "theme_descriptions": self.theme_descriptions,
+                "theme_confidence": self.theme_confidence,
+                "related_keywords": self.related_keywords,
+                "language": self.language,
+                "success": True
+            }
+        }
 
 
 class ThemeAnalyzer(TextAnalyzer):

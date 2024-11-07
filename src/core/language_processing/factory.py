@@ -69,56 +69,37 @@ class TextProcessorFactory:
     def create_processor(
         self,
         language: Optional[str] = None,
-        custom_stop_words: Optional[Set[str]] = None,
-        config: Optional[Dict[str, Any]] = None,
+        config: Optional[Dict[str, Any]] = None
     ) -> BaseTextProcessor:
-        """Create a text processor for the specified language."""
-        # Use default language if none specified
-        language = language or self.config.get("default_language", "en")
-        language = language.lower()
-
-        # Check if language is supported
+        """Create a text processor for the specified language.
+        
+        Args:
+            language: Language code
+            config: Configuration including stop words and other settings
+        """
+        language = language or self.config.get('default_language', 'en')
+        
         if language not in self.PROCESSORS:
-            supported = ", ".join(self.PROCESSORS.keys())
-            raise ValueError(f"Unsupported language: {language}. Supported languages: {supported}")
-
-        # Create cache key
-        cache_key = f"{language}_{hash(frozenset(custom_stop_words or set()))}"
-
-        # Check cache first
-        if cache_key in self._processor_cache:
-            logger.debug(f"Returning cached processor for {language}")
-            return self._processor_cache[cache_key]
-
+            raise ValueError(f"Unsupported language: {language}")
+            
         try:
-            # Get language-specific config
-            lang_config = self.config.get("languages", {}).get(language, {}).copy()
+            # Get base config
+            lang_config = self.config.get('languages', {}).get(language, {}).copy()
+            
+            # Add any additional config
             if config:
                 lang_config.update(config)
-
+            
             # Create processor
             processor_class = self.PROCESSORS[language]
-
-            if language == "fi":
-                processor = processor_class(
-                    language=language,
-                    custom_stop_words=custom_stop_words,
-                    voikko_path=lang_config.pop("voikko_path", None),
-                    config=lang_config,
+            if language == 'fi':
+                return processor_class(
+                    voikko_path=lang_config.pop('voikko_path', None),
+                    config=lang_config
                 )
             else:
-                processor = processor_class(
-                    language=language,
-                    custom_stop_words=custom_stop_words,
-                    config=lang_config,
-                )
-
-            # Cache the processor
-            self._processor_cache[cache_key] = processor
-            logger.info(f"Created text processor for {language}")
-
-            return processor
-
+                return processor_class(config=lang_config)
+                
         except Exception as e:
             logger.error(f"Error creating processor for {language}: {str(e)}")
             raise
@@ -185,8 +166,7 @@ class TextProcessorFactory:
 # Convenience function
 def create_text_processor(
     language: Optional[str] = None,
-    custom_stop_words: Optional[Set[str]] = None,
-    config: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None
 ) -> BaseTextProcessor:
     """Create a text processor instance.
 
@@ -198,5 +178,6 @@ def create_text_processor(
     Returns:
         BaseTextProcessor: Appropriate text processor instance
     """
+
     factory = TextProcessorFactory()
-    return factory.create_processor(language, custom_stop_words, config)
+    return factory.create_processor(language=language, config=config)

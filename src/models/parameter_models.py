@@ -1,7 +1,7 @@
 # src/models/parameter_models.py
 
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Any, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 

@@ -4,6 +4,8 @@ import logging
 from typing import Any, Dict, List, Optional, Set
 
 import nltk
+import os
+
 from nltk.corpus import stopwords as nltk_stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
@@ -13,6 +15,25 @@ from src.utils.FileUtils.file_utils import FileUtils
 from .base import BaseTextProcessor
 
 logger = logging.getLogger(__name__)
+
+# Download required NLTK resources
+def download_nltk_data():
+    """Download required NLTK data."""
+    required_packages = [
+        'punkt_tab',
+        'wordnet',
+        'averaged_perceptron_tagger',
+        'stopwords'
+    ]
+    
+    for package in required_packages:
+        try:
+            nltk.download(package, quiet=True)
+        except Exception as e:
+            logging.warning(f"Failed to download NLTK package {package}: {e}")
+
+# Download resources when module is imported
+download_nltk_data()
 
 
 class EnglishTextProcessor(BaseTextProcessor):
@@ -154,3 +175,5 @@ class EnglishTextProcessor(BaseTextProcessor):
             return False
 
         return True
+    
+

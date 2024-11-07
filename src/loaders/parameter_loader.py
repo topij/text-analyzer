@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union
 
 import pandas as pd
 
-from src.config_and_logging import file_utils, logger
+from src.core.config_and_logging import file_utils, logger
 from src.models.parameter_models import (
     CategoryEntry,
     ExtractionParameters,
