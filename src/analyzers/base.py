@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 class AnalyzerOutput(BaseModel):
     """Base output model for all analyzers."""
+
     language: str = Field(default="unknown")
     error: Optional[str] = None
     success: bool = Field(default=True)
@@ -127,7 +128,7 @@ class TextAnalyzer(ABC):
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse JSON: {e}")
                 return {"error": "Failed to parse LLM output"}
-                
+
         except Exception as e:
             self.logger.error(f"Error processing LLM output: {e}")
             return {"error": str(e)}

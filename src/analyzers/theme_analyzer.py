@@ -17,14 +17,8 @@ class ThemeOutput(AnalyzerOutput):
     def dict(self) -> Dict[str, Any]:
         base = super().dict()
         if "error" in base:
-            return {
-                "themes": {
-                    "error": base["error"],
-                    "success": False,
-                    "language": self.language
-                }
-            }
-        
+            return {"themes": {"error": base["error"], "success": False, "language": self.language}}
+
         return {
             "themes": {
                 "themes": self.themes,
@@ -32,7 +26,7 @@ class ThemeOutput(AnalyzerOutput):
                 "theme_confidence": self.theme_confidence,
                 "related_keywords": self.related_keywords,
                 "language": self.language,
-                "success": True
+                "success": True,
             }
         }
 

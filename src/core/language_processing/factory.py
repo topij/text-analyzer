@@ -67,39 +67,34 @@ class TextProcessorFactory:
         }
 
     def create_processor(
-        self,
-        language: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None
+        self, language: Optional[str] = None, config: Optional[Dict[str, Any]] = None
     ) -> BaseTextProcessor:
         """Create a text processor for the specified language.
-        
+
         Args:
             language: Language code
             config: Configuration including stop words and other settings
         """
-        language = language or self.config.get('default_language', 'en')
-        
+        language = language or self.config.get("default_language", "en")
+
         if language not in self.PROCESSORS:
             raise ValueError(f"Unsupported language: {language}")
-            
+
         try:
             # Get base config
-            lang_config = self.config.get('languages', {}).get(language, {}).copy()
-            
+            lang_config = self.config.get("languages", {}).get(language, {}).copy()
+
             # Add any additional config
             if config:
                 lang_config.update(config)
-            
+
             # Create processor
             processor_class = self.PROCESSORS[language]
-            if language == 'fi':
-                return processor_class(
-                    voikko_path=lang_config.pop('voikko_path', None),
-                    config=lang_config
-                )
+            if language == "fi":
+                return processor_class(voikko_path=lang_config.pop("voikko_path", None), config=lang_config)
             else:
                 return processor_class(config=lang_config)
-                
+
         except Exception as e:
             logger.error(f"Error creating processor for {language}: {str(e)}")
             raise
@@ -164,10 +159,7 @@ class TextProcessorFactory:
 
 
 # Convenience function
-def create_text_processor(
-    language: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None
-) -> BaseTextProcessor:
+def create_text_processor(language: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> BaseTextProcessor:
     """Create a text processor instance.
 
     Args:

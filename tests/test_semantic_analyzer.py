@@ -1,54 +1,54 @@
 # tests/test_semantic_analyzer.py
 
-import pytest
-from typing import Dict #, Any
-from pathlib import Path
-
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Dict  # , Any
 
-import asyncio
+import pytest
+
+from src.loaders.models import CategoryConfig
+from src.semantic_analyzer.analyzer import SemanticAnalyzer
+from tests.test_parameter_loading import create_test_excel
+
 # import concurrent.futures
 # from functools import partial
 
-from src.semantic_analyzer.analyzer import SemanticAnalyzer
-from src.loaders.models import CategoryConfig
-from tests.test_parameter_loading import create_test_excel
+
 
 @pytest.fixture
 def test_categories() -> Dict[str, CategoryConfig]:
     """Fixture for test categories."""
     return {
         "technical": CategoryConfig(
-            description="Technical content",
-            keywords=["programming", "software", "technology"],
-            threshold=0.7
+            description="Technical content", keywords=["programming", "software", "technology"], threshold=0.7
         ),
         "business": CategoryConfig(
-            description="Business content",
-            keywords=["finance", "marketing", "strategy"],
-            threshold=0.6
-        )
+            description="Business content", keywords=["finance", "marketing", "strategy"], threshold=0.6
+        ),
     }
+
 
 @pytest.fixture
 def test_texts():
     """Sample texts for testing."""
     return {
         "en": "Looking for online programming courses. Any recommendations?",
-        "fi": "Etsin verkko-ohjelmointikursseja. Suosituksia?"
+        "fi": "Etsin verkko-ohjelmointikursseja. Suosituksia?",
     }
+
 
 @pytest.fixture
 def parameter_files(tmp_path):
     """Create parameter files for testing."""
     # Create English parameters
     en_params = create_test_parameters("en", tmp_path)
-    
+
     # Create Finnish parameters
     fi_params = create_test_parameters("fi", tmp_path)
-    
+
     return {"en": en_params, "fi": fi_params}
+
 
 @pytest.mark.asyncio
 async def test_analysis_with_parameters(test_texts, parameter_files):
@@ -56,26 +56,17 @@ async def test_analysis_with_parameters(test_texts, parameter_files):
     analyzer_en = SemanticAnalyzer(parameter_file=parameter_files["en"])
     try:
         # Increase timeout and split tasks
-        keyword_result = await asyncio.wait_for(
-            analyzer_en.keyword_analyzer.analyze(test_texts["en"]),
-            timeout=20
-        )
-        
-        theme_result = await asyncio.wait_for(
-            analyzer_en.theme_analyzer.analyze(test_texts["en"]),
-            timeout=20
-        )
-        
-        category_result = await asyncio.wait_for(
-            analyzer_en.category_analyzer.analyze(test_texts["en"]),
-            timeout=20
-        )
+        keyword_result = await asyncio.wait_for(analyzer_en.keyword_analyzer.analyze(test_texts["en"]), timeout=20)
+
+        theme_result = await asyncio.wait_for(analyzer_en.theme_analyzer.analyze(test_texts["en"]), timeout=20)
+
+        category_result = await asyncio.wait_for(analyzer_en.category_analyzer.analyze(test_texts["en"]), timeout=20)
 
         # Build combined results
         results_en = {
             "keywords": keyword_result.dict()["keywords"],
             "themes": theme_result.dict()["themes"],
-            "categories": category_result.dict()["categories"]
+            "categories": category_result.dict()["categories"],
         }
 
         # Verify structure first
@@ -97,6 +88,7 @@ async def test_analysis_with_parameters(test_texts, parameter_files):
     finally:
         await cleanup_pending_tasks()
 
+
 @asynccontextmanager
 async def cleanup_tasks():
     """Context manager to ensure proper task cleanup."""
@@ -107,20 +99,18 @@ async def cleanup_tasks():
         pending = asyncio.all_tasks()
         for task in pending:
             task.cancel()
-        
+
         # Wait for cancellation
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
+
 
 @pytest.mark.asyncio
 async def test_analysis_with_parameters(test_texts, parameter_files):
     """Test complete analysis with parameters."""
     analyzer_en = SemanticAnalyzer(parameter_file=parameter_files["en"])
     try:
-        results_en = await asyncio.wait_for(
-            analyzer_en.analyze(test_texts["en"]),
-            timeout=30
-        )
+        results_en = await asyncio.wait_for(analyzer_en.analyze(test_texts["en"]), timeout=30)
 
         # Verify structure first
         assert "keywords" in results_en
@@ -148,11 +138,7 @@ async def test_parameter_override(test_texts, parameter_files):
     analyzer = SemanticAnalyzer(parameter_file=parameter_files["en"])
     try:
         results = await asyncio.wait_for(
-            analyzer.analyze(
-                test_texts["en"],
-                keyword_params={"max_keywords": 3}
-            ),
-            timeout=10.0
+            analyzer.analyze(test_texts["en"], keyword_params={"max_keywords": 3}), timeout=10.0
         )
 
         # Check results
@@ -167,12 +153,13 @@ async def test_parameter_override(test_texts, parameter_files):
     finally:
         await cleanup_pending_tasks()
 
+
 @pytest.mark.asyncio(scope="function")
 async def test_error_handling_with_parameters(parameter_files, tmp_path):
     """Test error handling with parameters."""
     test_file = tmp_path / "parameters.xlsx"
     create_test_excel(test_file, "en")
-    
+
     analyzer = SemanticAnalyzer(parameter_file=test_file)
 
     # Test with empty text
@@ -184,11 +171,13 @@ async def test_error_handling_with_parameters(parameter_files, tmp_path):
         invalid_params = {"max_keywords": -1}  # Invalid value
         analyzer.keyword_analyzer.validate_parameters(invalid_params)  # Add validation method
 
+
 def create_test_parameters(language: str, output_dir: Path) -> Path:
     """Create test parameter files."""
     # Implementation of test file creation
     # (Similar to the parameter file generator we created earlier)
     pass
+
 
 async def cleanup_pending_tasks():
     """Clean up any pending tasks."""
@@ -200,14 +189,11 @@ async def cleanup_pending_tasks():
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
 
+
 @pytest.mark.asyncio(scope="function")
 async def test_batch_analysis_with_parameters(parameter_files):
     """Test batch analysis with parameters."""
-    texts = [
-        "Looking for programming courses",
-        "Interested in marketing training",
-        "Need business development advice"
-    ]
+    texts = ["Looking for programming courses", "Interested in marketing training", "Need business development advice"]
 
     analyzer = SemanticAnalyzer(parameter_file=parameter_files["en"])
     try:
