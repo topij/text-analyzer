@@ -21,6 +21,7 @@ class FinnishTextProcessor(BaseTextProcessor):
     - Compound word handling
     - Finnish-specific token types
     - Special case mappings
+    - Finnish-specific stopwords
     """
 
     # Token type constants
@@ -72,29 +73,47 @@ class FinnishTextProcessor(BaseTextProcessor):
             # config: Configuration parameters
         """
         super().__init__(language, custom_stop_words, config)
+        
+        # Initialize Voikko
         self.voikko = self._initialize_voikko(voikko_path)
 
-        # Add any custom compound mappings from config
-        if config and "compound_mappings" in config:
-            self.COMPOUND_MAPPINGS.update(config["compound_mappings"])
+        try:
+            # Load Finnish stopwords from file
+            self._load_finnish_stopwords()
+            
+            # Add any custom stopwords
+            if custom_stop_words:
+                self._stop_words.update(custom_stop_words)
+            
+            logger.debug(f"Initialized Finnish processor with {len(self._stop_words)} stopwords")
 
-        # Common compound words to preserve
-        # list of Finnish compound words?
-        self.compounds = {
-            "ohjelmistokehittäjä": ["ohjelmisto", "kehittäjä"],
-            "asiakasprojekti": ["asiakas", "projekti"],
-            "verkkokauppa": ["verkko", "kauppa"],
-            "tietoturva": ["tieto", "turva"],
-        }
+        except Exception as e:
+            logger.error(f"Error initializing Finnish text processor: {e}")
+            raise
+
+    def _load_finnish_stopwords(self) -> None:
+        """Load Finnish stopwords from file."""
+        try:
+            stopwords_path = self.file_utils.get_data_path("configurations") / "stop_words" / "fi.txt"
+            
+            if not stopwords_path.exists():
+                logger.warning(f"Finnish stopwords file not found at {stopwords_path}")
+                self._stop_words = set()
+                return
+
+            with open(stopwords_path, "r", encoding="utf-8") as f:
+                self._stop_words = {line.strip().lower() for line in f if line.strip()}
+                
+            logger.info(f"Loaded {len(self._stop_words)} Finnish stopwords from {stopwords_path}")
+            
+        except Exception as e:
+            logger.error(f"Error loading Finnish stopwords: {e}")
+            self._stop_words = set()
 
     def get_base_form(self, word: str) -> str:
         """Get base form with compound word awareness."""
         try:
             word_lower = word.lower()
-
-            # First check for exact compound matches
-            if word_lower in self.COMPOUND_MAPPINGS:
-                return word_lower  # Return the compound word itself
 
             # Use Voikko if available
             if self.voikko:
@@ -107,6 +126,26 @@ class FinnishTextProcessor(BaseTextProcessor):
         except Exception as e:
             logger.error(f"Error getting base form for {word}: {e}")
             return word.lower()
+
+    def tokenize(self, text: str) -> List[str]:
+        """Tokenize Finnish text using Voikko if available."""
+        if not isinstance(text, str):
+            return []
+
+        try:
+            if self.voikko:
+                tokens = self.voikko.tokens(text)
+                words = [t.tokenText.strip() for t in tokens 
+                        if hasattr(t, "tokenType") and t.tokenType == 1]
+            else:
+                # Fallback tokenization
+                words = text.split()
+
+            return [w for w in words if w]
+
+        except Exception as e:
+            logger.error(f"Tokenization error: {e}")
+            return text.split()
 
     def _tokenize_text(self, text: str) -> List[str]:
         """Finnish-specific tokenization using Voikko if available."""
@@ -124,7 +163,7 @@ class FinnishTextProcessor(BaseTextProcessor):
     def _initialize_voikko(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
         """Initialize Voikko with better path handling."""
         try:
-            # Try default paths first
+            # Common Voikko installation paths
             default_paths = [
                 "/usr/local/lib/voikko",
                 "/usr/lib/voikko",
@@ -213,26 +252,6 @@ class FinnishTextProcessor(BaseTextProcessor):
             return [word]
 
         return [part.split("(")[0] for part in word_bases.split("+") if part and "(" in part]
-
-    def tokenize(self, text: str) -> List[str]:
-        """Tokenize Finnish text."""
-        if not isinstance(text, str):
-            return []
-
-        try:
-            if self.voikko:
-                tokens = self.voikko.tokens(text)
-                words = [t.tokenText.strip() for t in tokens if hasattr(t, "tokenType") and t.tokenType == 1]
-            else:
-                # Fallback tokenization
-                cleaned = re.sub(r"[^\w\s\-äöåÄÖÅ]", " ", text)
-                words = [w.strip() for w in cleaned.split()]
-
-            return [w for w in words if w]  # Filter empty strings
-
-        except Exception as e:
-            logger.error(f"Tokenization error: {e}")
-            return text.split()
 
     def process_text(self, text: str) -> str:
         """Process Finnish text with compound word focus."""

@@ -35,8 +35,14 @@ class BaseTextProcessor(ABC):
         self.language = language.lower()
         self.config = config or {}
         self.file_utils = file_utils or FileUtils()
-        self._stop_words = self._load_stop_words(custom_stop_words)
-        logger.debug(f"Initialized {self.language} text processor")
+        
+        # Store excluded keywords from config
+        self.excluded_keywords = set(self.config.get("excluded_keywords", []))
+        
+        # Initialize stopwords - will be populated by derived classes
+        self._stop_words = set()
+
+        logger.debug(f"Initialized base text processor for {self.language}")
 
     @abstractmethod
     def get_base_form(self, word: str) -> str:
@@ -47,6 +53,37 @@ class BaseTextProcessor(ABC):
     def tokenize(self, text: str) -> List[str]:
         """Tokenize text into words."""
         pass
+
+    def is_stop_word(self, word: str) -> bool:
+        """Check if word should be excluded.
+        
+        This checks both language-specific stopwords and configured excluded keywords.
+        """
+        word = word.lower()
+        return word in self._stop_words
+    
+    def should_exclude_word(self, word: str) -> bool:
+        """Check if word should be excluded based on all criteria."""
+        word = word.lower()
+        return (word in self._stop_words or 
+                word in self.excluded_keywords)
+    
+    def should_keep_word(self, word: str, base_form: str) -> bool:
+        """Determine if word should be kept in results."""
+        # First check all exclusion criteria
+        if self.should_exclude_word(word) or self.should_exclude_word(base_form):
+            return False
+
+        # Check minimum length
+        if len(base_form) < self.config.get("min_word_length", 3):
+            return False
+
+        # Check against excluded patterns
+        excluded_patterns = self.config.get("excluded_patterns", [])
+        if any(re.search(pattern, base_form) for pattern in excluded_patterns):
+            return False
+
+        return True
 
     def _load_stop_words(self, custom_stop_words: Optional[Set[str]] = None) -> Set[str]:
         """Load stop words for the language."""

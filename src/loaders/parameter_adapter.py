@@ -1,16 +1,20 @@
 # src/loaders/parameter_adapter.py
 
-import logging
+from typing import Optional, Union, Dict, Any, Set, List
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
-
-import pandas as pd
 from pydantic import BaseModel
-
-from .models import AnalysisSettings, CategoryConfig, GeneralParameters, ParameterSet, PredefinedKeyword
+import pandas as pd
+import logging
+from .models import (
+    GeneralParameters,
+    CategoryConfig,
+    PredefinedKeyword,
+    AnalysisSettings,
+    ParameterSet
+)
+from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
-
 
 class ParameterValidator:
     """Validator for analysis parameters."""
@@ -86,7 +90,6 @@ class ParameterEntry(BaseModel):
     importance: float = 1.0
     compound_parts: List[str] = []
 
-
 class ParameterAdapter:
     """Adapter for loading and converting analysis parameters."""
 
@@ -99,15 +102,21 @@ class ParameterAdapter:
             "include_compounds": True,
             "max_themes": 3,
             "min_confidence": 0.3,
-            "column_name_to_analyze": "text",
+            "column_name_to_analyze": "text"
         },
         "categories": {},
         "predefined_keywords": {},
         "excluded_keywords": set(),
         "analysis_settings": {
-            "theme_analysis": {"enabled": True, "min_confidence": 0.5},
-            "weights": {"statistical": 0.4, "llm": 0.6},
-        },
+            "theme_analysis": {
+                "enabled": True,
+                "min_confidence": 0.5
+            },
+            "weights": {
+                "statistical": 0.4,
+                "llm": 0.6
+            }
+        }
     }
 
     SHEET_NAMES = {
@@ -120,8 +129,10 @@ class ParameterAdapter:
 
     def __init__(self, file_path: Optional[Union[str, Path]] = None):
         """Initialize adapter with parameter file path."""
+        self.file_utils = FileUtils()
         self.file_path = Path(file_path) if file_path else None
-        self.parameters = self.load_and_convert()
+        self.parameters = None
+        self.load_and_convert()
         logger.debug(f"Initialized ParameterAdapter with file: {file_path}")
 
     def get_parameters(self) -> ParameterSet:
@@ -129,29 +140,30 @@ class ParameterAdapter:
         return self.parameters
 
     def _load_excel(self, file_path: Path) -> Dict[str, pd.DataFrame]:
-        """Load all sheets from Excel file."""
+        """Load all sheets from Excel file using FileUtils."""
         try:
-            excel_file = pd.ExcelFile(file_path)
             sheets = {}
-
-            # Load existing sheets
-            for name, sheet in self.SHEET_NAMES.items():
-                if sheet in excel_file.sheet_names:
-                    sheets[name] = pd.read_excel(excel_file, sheet_name=sheet)
-                    logger.debug(f"Loaded sheet: {sheet}")
-
-            # For backward compatibility
-            if not sheets and len(excel_file.sheet_names) > 0:
-                sheets["general"] = pd.read_excel(excel_file)
-                logger.debug("Loaded single sheet format")
-
+            excel_data = self.file_utils.load_excel_sheets(file_path)
+            
+            # Map sheet names
+            sheet_mapping = {
+                "General Parameters": "general",
+                "Categories": "categories",
+                "Predefined Keywords": "keywords",
+                "Excluded Keywords": "excluded",
+                "Analysis Settings": "settings"
+            }
+            
+            # Convert loaded sheets to expected format
+            for sheet_name, internal_name in sheet_mapping.items():
+                if sheet_name in excel_data:
+                    sheets[internal_name] = excel_data[sheet_name]
+            
             return sheets
-
+            
         except Exception as e:
             logger.error(f"Error loading Excel file: {e}")
             raise
-
-    # src/loaders/parameter_adapter.py
 
     def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Parse general parameters sheet."""
@@ -195,8 +207,6 @@ class ParameterAdapter:
                         parent=row.get("parent") if pd.notna(row.get("parent")) else None,
                     )
         return categories
-
-    # src/loaders/parameter_adapter.py
 
     def _parse_predefined_keywords(self, df: pd.DataFrame) -> Dict[str, PredefinedKeyword]:
         """Parse predefined keywords sheet."""
@@ -252,26 +262,13 @@ class ParameterAdapter:
         try:
             if not self.file_path or not self.file_path.exists():
                 logger.debug("Using default parameters")
-                return ParameterSet(**self.DEFAULT_CONFIG)
+                self.parameters = ParameterSet(**self.DEFAULT_CONFIG)
+                return self.parameters
 
-            excel_file = pd.ExcelFile(self.file_path)
-            sheets = {}
+            # Use FileUtils to load the Excel file
+            sheets = self._load_excel(self.file_path)
 
-            # Map sheet names
-            sheet_mapping = {
-                "General Parameters": "general",
-                "Categories": "categories",
-                "Predefined Keywords": "keywords",
-                "Excluded Keywords": "excluded",
-                "Analysis Settings": "settings",
-            }
-
-            # Load available sheets
-            for sheet_name, internal_name in sheet_mapping.items():
-                if sheet_name in excel_file.sheet_names:
-                    sheets[internal_name] = pd.read_excel(excel_file, sheet_name=sheet_name)
-
-            # Parse each sheet
+            # Parse sheets
             general_params = self._parse_general_parameters(sheets.get("general", pd.DataFrame()))
             categories = self._parse_categories(sheets.get("categories", pd.DataFrame()))
             predefined_keywords = self._parse_predefined_keywords(sheets.get("keywords", pd.DataFrame()))
@@ -284,14 +281,16 @@ class ParameterAdapter:
                 "categories": categories,
                 "predefined_keywords": predefined_keywords,
                 "excluded_keywords": excluded_keywords,
-                "analysis_settings": analysis_settings,
+                "analysis_settings": analysis_settings
             }
 
-            return ParameterSet(**config)
-
+            self.parameters = ParameterSet(**config)
+            return self.parameters
+            
         except Exception as e:
             logger.error(f"Error loading parameters: {e}")
-            return ParameterSet(**self.DEFAULT_CONFIG)
+            self.parameters = ParameterSet(**self.DEFAULT_CONFIG)
+            return self.parameters
 
     def _convert_general_params(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Convert old parameter format to new."""

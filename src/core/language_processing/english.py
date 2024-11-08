@@ -19,14 +19,17 @@ logger = logging.getLogger(__name__)
 # Download required NLTK resources
 def download_nltk_data():
     """Download required NLTK data."""
-    required_packages = ["punkt_tab", "wordnet", "averaged_perceptron_tagger", "stopwords"]
-
+    required_packages = [
+        'punkt_tab',
+        'wordnet',
+        'averaged_perceptron_tagger',
+        'stopwords'
+    ]
     for package in required_packages:
         try:
             nltk.download(package, quiet=True)
         except Exception as e:
             logging.warning(f"Failed to download NLTK package {package}: {e}")
-
 
 # Download resources when module is imported
 download_nltk_data()
@@ -34,11 +37,12 @@ download_nltk_data()
 
 class EnglishTextProcessor(BaseTextProcessor):
     """English text processor using NLTK.
-
+    
     Handles English-specific text processing including:
     - Word lemmatization
     - POS tagging
     - English-specific tokenization
+    - Stopwords from NLTK and custom sources
     """
 
     def __init__(
@@ -49,26 +53,40 @@ class EnglishTextProcessor(BaseTextProcessor):
         file_utils: Optional[FileUtils] = None,
     ):
         """Initialize English text processor.
-
+        
         Args:
-            custom_stop_words: Additional stop words
+            language: Language code ('en')
+            custom_stop_words: Additional stop words beyond NLTK and file-based ones
             config: Configuration parameters
             file_utils: Optional FileUtils instance
         """
         super().__init__(language, custom_stop_words, config, file_utils)
 
         try:
+            # Initialize lemmatizer
             self.lemmatizer = WordNetLemmatizer()
+            
+            # Load NLTK stopwords
+            self._load_nltk_stopwords()
+            
+            # Add any custom stopwords
+            if custom_stop_words:
+                self._stop_words.update(custom_stop_words)
+            
+            logger.debug(f"Initialized English processor with {len(self._stop_words)} stopwords")
 
-            # Load NLTK stop words if available
-            try:
-                english_stopwords = set(nltk_stopwords.words("english"))
-                self._stop_words.update(english_stopwords)
-                logger.debug("Added NLTK English stop words")
-            except Exception as e:
-                logger.warning(f"Could not load NLTK stop words: {e}")
         except Exception as e:
             logger.error(f"Error initializing English text processor: {e}")
+            raise
+    
+    def _load_nltk_stopwords(self) -> None:
+        """Load English stopwords from NLTK."""
+        try:
+            self._stop_words = set(nltk_stopwords.words("english"))
+            logger.debug(f"Loaded {len(self._stop_words)} NLTK stopwords")
+        except Exception as e:
+            logger.warning(f"Could not load NLTK stopwords: {e}")
+            self._stop_words = set()
 
     def get_base_form(self, word: str) -> str:
         """Get base form (lemma) of an English word."""
@@ -81,7 +99,8 @@ class EnglishTextProcessor(BaseTextProcessor):
                 return self.lemmatizer.lemmatize(word.lower(), pos=pos_tag)
 
             # Try different POS tags if no specific tag is found
-            lemmas = [self.lemmatizer.lemmatize(word.lower(), pos=pos) for pos in ["n", "v", "a", "r"]]
+            lemmas = [self.lemmatizer.lemmatize(word.lower(), pos=pos) 
+                     for pos in ["n", "v", "a", "r"]]
 
             # Return shortest lemma (usually most basic form)
             return min(lemmas, key=len)
@@ -95,13 +114,10 @@ class EnglishTextProcessor(BaseTextProcessor):
         try:
             # Ensure text is a string
             if not isinstance(text, str):
-                if isinstance(text, list):
-                    text = " ".join(str(x) for x in text)
-                else:
-                    text = str(text)
+                text = str(text)
 
+            # Use NLTK's word_tokenize
             try:
-                # Try NLTK's word_tokenize first
                 tokens = word_tokenize(text)
                 logger.debug(f"NLTK tokenization successful: {len(tokens)} tokens")
                 return tokens
@@ -111,9 +127,7 @@ class EnglishTextProcessor(BaseTextProcessor):
 
         except Exception as e:
             logger.error(f"Tokenization error: {str(e)}")
-            if isinstance(text, str):
-                return text.split()
-            return []
+            return text.split()
 
     def _get_wordnet_pos(self, word: str) -> Optional[str]:
         """Get WordNet POS tag for a word."""
