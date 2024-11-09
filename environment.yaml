@@ -5,33 +5,64 @@ channels:
 dependencies:
   - python=3.9
   - pip
+
   # Core dependencies
-  - pandas
-  - numpy
-  - pyyaml
-  - jsonschema
-  - python-dotenv
+  - pandas>=2.0.0
+  - numpy>=1.24.0
+  - pyyaml>=6.0
+  - jsonschema>=4.17.0
+  - python-dotenv>=1.0.0
+  - openpyxl>=3.1.0  # For Excel file handling
+  - pyarrow>=14.0.1  # For parquet file support
   
   # Text processing
-  - scikit-learn
-  - nltk
-  - langdetect
+  - scikit-learn>=1.2.0
+  - nltk>=3.8.0
+  - langdetect>=1.0.9
   
-  # Development dependencies
-  - pytest
-  - pytest-asyncio
-  - pytest-cov
-  - black
-  - isort
-  - mypy
-  - flake8
-  - jupyter
+  # Development & Testing
+  - pytest>=7.3.0
+  - pytest-asyncio>=0.21.0
+  - pytest-cov>=4.1.0
+  - black>=23.3.0
+  - isort>=5.12.0
+  - mypy>=1.3.0
+  - flake8>=6.0.0
+  - jupyter>=1.0.0
+  - pydantic>=2.0.0
+
+  # LangChain ecosystem
+  - langchain
+  - langchain-core
+  - langchain-openai
+  - langchain-anthropic
+  - langchain-community
+
+  # Documentation
+  - sphinx>=7.0.0
+  - sphinx-rtd-theme>=1.2.0
   
   # Install pip packages
   - pip:
-    - langchain>=0.3.0
-    - pydantic>=2.0
-    - langchain-openai>=0.0.1
-    - langchain-anthropic>=0.0.1
-    - libvoikko  # Finnish language support for Windows
-    # Add any other pip-specific packages here
+    
+    # Additional dependencies
+    - aiohttp>=3.9.0  # For async HTTP requests
+    - anyio>=4.0.0  # For async support
+    - libvoikko  # Finnish language support
+    #- recharts  # For visualization components
+    - types-PyYAML>=6.0.0  # Type hints for PyYAML
+    - types-requests>=2.31.0  # Type hints for requests
+    
+    # Development tools
+    - pre-commit>=3.3.0
+    - black[jupyter]>=23.3.0
+    - ruff>=0.1.0  # Fast Python linter
+    
+    # Documentation
+    - mkdocs>=1.5.0
+    - mkdocs-material>=9.4.0
+    - mkdocstrings>=0.23.0
+    - mkdocstrings-python>=1.7.0
+
+  # Platform-specific dependencies
+  #- windows-curses; platform_system == "Windows"  # For Windows compatibility
