@@ -1,0 +1,42 @@
+# data/configurations/language_processing.yaml
+
+version: "1.0.0"
+default_language: "en"
+
+languages:
+  en:
+    min_word_length: 3
+    excluded_patterns:
+      - "^\\d+$"                  # Numbers only
+      - "^[^a-zA-Z0-9]+$"        # No alphanumeric characters
+    processing_options:
+      use_pos_tagging: true
+      handle_contractions: true
+      preserve_proper_nouns: true
+
+  fi:
+    min_word_length: 3
+    excluded_patterns:
+      - "^\\d+$"                  # Numbers only
+      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"  # No alphanumeric characters (including Finnish letters)
+    voikko_paths:
+      - "/usr/lib/voikko"
+      - "/usr/local/lib/voikko"
+      - "/usr/share/voikko"
+    processing_options:
+      preserve_compounds: true
+      handle_particles: true
+      use_base_forms: true
+    compound_prefixes:
+      - "kone"
+      - "teko"
+      - "tieto"
+      - "ohjelmisto"
+      - "verkko"
+      - "järjestelmä"
+      - "käyttö"
+      - "kehitys"
+      - "palvelu"
+      - "asiakas"
+      - "laatu"
+      - "turva"

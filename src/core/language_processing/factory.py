@@ -4,9 +4,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
 
-from .base import BaseTextProcessor
-from .english import EnglishTextProcessor
-from .finnish import FinnishTextProcessor
+from src.core.language_processing.base import BaseTextProcessor
+from src.core.language_processing.english import EnglishTextProcessor
+from src.core.language_processing.finnish import FinnishTextProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,9 @@ class TextProcessorFactory:
         Args:
             config_path: Optional path to configuration directory
         """
+        """Initialize the factory."""
         self.config_path = config_path or Path("config")
         self._load_config()
-
-        # Initialize processor cache
-        self._processor_cache = {}
 
     def _load_config(self) -> None:
         """Load language processing configuration."""
@@ -38,7 +36,6 @@ class TextProcessorFactory:
             config_file = self.config_path / "language_processing.yaml"
             if config_file.exists():
                 import yaml
-
                 with open(config_file, "r", encoding="utf-8") as f:
                     self.config = yaml.safe_load(f)
                 logger.info(f"Loaded configuration from {config_file}")
@@ -67,14 +64,11 @@ class TextProcessorFactory:
         }
 
     def create_processor(
-        self, language: Optional[str] = None, config: Optional[Dict[str, Any]] = None
+        self,
+        language: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None
     ) -> BaseTextProcessor:
-        """Create a text processor for the specified language.
-
-        Args:
-            language: Language code
-            config: Configuration including stop words and other settings
-        """
+        """Create a text processor for the specified language."""
         language = language or self.config.get("default_language", "en")
 
         if language not in self.PROCESSORS:
@@ -90,18 +84,18 @@ class TextProcessorFactory:
 
             # Create processor
             processor_class = self.PROCESSORS[language]
-            if language == "fi":
-                return processor_class(voikko_path=lang_config.pop("voikko_path", None), config=lang_config)
-            else:
-                return processor_class(config=lang_config)
+            return processor_class(
+                language=language,
+                config=lang_config
+            )
 
         except Exception as e:
-            logger.error(f"Error creating processor for {language}: {str(e)}")
+            logger.error(f"Error creating processor for {language}: {e}")
             raise
 
-    def clear_cache(self):
-        """Clear the processor cache."""
-        self._processor_cache.clear()
+    # def clear_cache(self):
+    #     """Clear the processor cache."""
+    #     self._processor_cache.clear()
 
     def detect_language(self, text: str) -> str:
         """Detect the language of the text.
@@ -159,7 +153,11 @@ class TextProcessorFactory:
 
 
 # Convenience function
-def create_text_processor(language: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> BaseTextProcessor:
+
+def create_text_processor(
+    language: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None
+) -> BaseTextProcessor:
     """Create a text processor instance.
 
     Args:
@@ -170,6 +168,5 @@ def create_text_processor(language: Optional[str] = None, config: Optional[Dict[
     Returns:
         BaseTextProcessor: Appropriate text processor instance
     """
-
     factory = TextProcessorFactory()
     return factory.create_processor(language=language, config=config)

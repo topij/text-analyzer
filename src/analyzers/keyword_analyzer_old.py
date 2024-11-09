@@ -77,34 +77,30 @@ class KeywordAnalyzer(TextAnalyzer):
 
     def _create_chain(self) -> RunnableSequence:
         """Create LangChain processing chain for keyword extraction."""
-        template = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """You are a keyword extraction expert. Extract important keywords and phrases from text.
+        template = ChatPromptTemplate.from_messages([
+            ("system", """You are a keyword extraction expert. Extract important keywords and phrases from text.
+            Do NOT include common stopwords or generic terms.
+            Consider the text's context and focus on meaningful terms.
+            
             Return results in JSON format with these exact fields:
             {{
                 "keywords": ["keyword1", "keyword2", ...],
                 "keyword_scores": {{"keyword1": 0.9, "keyword2": 0.8, ...}},
-                "compound_words": ["word1", "word2"],
+                "compound_words": ["word1+word2", ...],
                 "domain_keywords": {{"domain1": ["kw1", "kw2"], ...}}
-            }}""",
-                ),
-                (
-                    "human",
-                    """Extract keywords from this text:
-            {text}
+            }}"""),  # Note the double curly braces to escape JSON template
+            
+            ("human", """Extract keywords from this text, focusing on {focus}.
+            Text: {text}
             
             Guidelines:
             - Max keywords: {max_keywords}
             - Statistical keywords to consider: {statistical_keywords}
             - Min length: {min_length} characters
-            - Focus on: {focus}""",
-                ),
-            ]
-        )
+            - Excluded words: {excluded_words}
+            - Focus on business/technical terms""")
+        ])
 
-        # Create chain with proper output handling
         chain = (
             {
                 "text": RunnablePassthrough(),
@@ -112,8 +108,13 @@ class KeywordAnalyzer(TextAnalyzer):
                 "statistical_keywords": lambda x: self._get_statistical_keywords_str(x),
                 "min_length": lambda _: self.config.get("min_keyword_length", 3),
                 "focus": lambda _: self.config.get("focus", "general"),
+                "excluded_words": lambda _: list(
+                    self.language_processor._stop_words.union(
+                        self.language_processor.excluded_keywords
+                    ) if self.language_processor else set()
+                )
             }
-            | template
+            | template 
             | self.llm
             | self._post_process_llm_output
         )
@@ -178,29 +179,43 @@ class KeywordAnalyzer(TextAnalyzer):
         """Extract keywords using statistical methods."""
         # Use language processor if available
         if self.language_processor:
+            # Tokenize
             words = self.language_processor.tokenize(text)
-            base_forms = [self.language_processor.get_base_form(word) for word in words]
+            logger.debug(f"Initial tokens: {len(words)}")
+            
+            # Filter and get base forms
+            filtered_words = []
+            for word in words:
+                # Skip if it should be excluded
+                if not self.language_processor.should_exclude_word(word):
+                    base_form = self.language_processor.get_base_form(word)
+                    if self.language_processor.should_keep_word(word, base_form):
+                        filtered_words.append(base_form)
+            
+            logger.debug(f"Words after filtering: {len(filtered_words)}")
+            
+            # Calculate frequencies
+            freq = Counter(filtered_words)
         else:
             base_forms = text.lower().split()
-
-        # Get word frequencies
-        freq = Counter(base_forms)
-
-        # Calculate TF-IDF like scores
-        total_words = len(base_forms)
+            freq = Counter(base_forms)
+        
+        # Calculate scores
+        total_words = len(filtered_words if self.language_processor else base_forms)
         scores = {}
-
+        
         for word, count in freq.items():
             if len(word) >= self.config.get("min_keyword_length", 3):
                 tf = count / total_words
                 idf = math.log(total_words / (count + 1))
                 scores[word] = tf * idf
-
+        
         # Normalize scores
         if scores:
             max_score = max(scores.values())
-            scores = {k: v / max_score for k, v in scores.items()}
-
+            scores = {k: v/max_score for k, v in scores.items()}
+            
+        logger.debug(f"Extracted statistical keywords: {list(scores.keys())}")
         return scores
 
     def _combine_keywords(
