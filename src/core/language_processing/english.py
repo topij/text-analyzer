@@ -46,15 +46,29 @@ class EnglishTextProcessor(BaseTextProcessor):
         # Call parent init which will call _load_stop_words
         super().__init__(language, custom_stop_words, config)
         
-        logger.debug(f"Initialized English processor with {len(self._stop_words)} stopwords")
+        logger.info(f"Initialized English processor with {len(self._stop_words)} stopwords")
 
     def _load_stop_words(self) -> Set[str]:
-        """Load stopwords from NLTK and configuration."""
+        """Load English stopwords from multiple sources."""
         try:
-            # Get NLTK's English stopwords
-            stop_words = set(word.lower() for word in stopwords.words('english'))
+            stop_words = set()
             
-            # Add common contractions and special cases
+            # 1. Load NLTK stopwords
+            nltk_stops = set(word.lower() for word in stopwords.words('english'))
+            logger.debug(f"Loaded {len(nltk_stops)} NLTK stopwords")
+            stop_words.update(nltk_stops)
+            
+            # 2. Load additional stopwords from file
+            config_dir = self.get_data_path("configurations")
+            stop_words_path = config_dir / "stop_words" / "en.txt"
+            
+            if stop_words_path.exists():
+                with open(stop_words_path, 'r', encoding='utf-8') as f:
+                    file_stops = {line.strip().lower() for line in f if line.strip()}
+                    logger.debug(f"Loaded {len(file_stops)} additional stopwords from file")
+                    stop_words.update(file_stops)
+            
+            # 3. Add common contractions and special cases
             contractions = {
                 "'s", "'t", "'re", "'ve", "'ll", "'d", "n't",
                 "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
@@ -63,7 +77,7 @@ class EnglishTextProcessor(BaseTextProcessor):
                 "mustn't", "shouldn't", "wouldn't"
             }
             stop_words.update(contractions)
-            
+
             # Add common English words often not in NLTK's list
             additional_words = {
                 # Modal verbs and auxiliaries
@@ -74,7 +88,7 @@ class EnglishTextProcessor(BaseTextProcessor):
                 "however", "therefore", "moreover", "furthermore", "nevertheless",
                 
                 # Business/technical common words
-                "etc", "eg", "ie", "example", "use", "using", "used",
+                "etc", "eg", "ie", "example", "use", "using", "used", "new",
                 "way", "ways", "like", "also", "though", "although",
                 
                 # Numbers and measurements
@@ -82,11 +96,12 @@ class EnglishTextProcessor(BaseTextProcessor):
                 
                 # Common adjectives
                 "good", "better", "best", "bad", "worse", "worst",
+                "big","biggest","small","smaller","smallest",
                 "high", "higher", "highest", "low", "lower", "lowest"
             }
             stop_words.update(additional_words)
             
-            logger.debug(f"Loaded {len(stop_words)} English stopwords")
+            logger.info(f"Initialized English processor with {len(stop_words)} stopwords")
             return stop_words
             
         except Exception as e:

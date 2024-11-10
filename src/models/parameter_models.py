@@ -8,13 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class ParameterSheets(str, Enum):
     """Excel sheet names for parameter loading."""
-
     GENERAL = "General Parameters"
     KEYWORDS = "Predefined Keywords"
     EXCLUDED = "Excluded Keywords"
     CATEGORIES = "Categories"
     PROMPTS = "Custom Prompts"
-
+    DOMAINS = "Domain Context"
 
 class GeneralParameters(BaseModel):
     """General extraction parameters."""
@@ -95,3 +94,29 @@ class ValidationError(Exception):
         self.message = message
         self.details = details
         super().__init__(message)
+
+class DomainContext(BaseModel):
+    """Domain-specific context for analysis."""
+    name: str
+    description: str
+    key_terms: List[str]
+    context: str
+    stopwords: Optional[List[str]] = None
+    
+    class Config:
+        frozen = True
+
+class AnalysisContext(BaseModel):
+    """Analysis context from parameters."""
+    domains: Dict[str, DomainContext] = Field(default_factory=dict)
+    enhancement_prompt: Optional[str] = None
+    
+    class Config:
+        frozen = True
+
+# Example parameter Excel sheet "Domain Context":
+"""
+name        | description                  | key_terms                      | context                            | stopwords
+business    | Business content analysis    | revenue,growth,profit,market   | Focus on business performance...   | new,current,various
+technical   | Technical content analysis   | system,software,data,api       | Focus on technical aspects...      | using,basic,simple
+"""
