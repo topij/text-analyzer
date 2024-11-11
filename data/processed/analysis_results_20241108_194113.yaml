@@ -1,0 +1,45 @@
+keywords:
+  keywords:
+  - ohjelmistokehittäjä
+  - työskennellä
+  - asiakasprojekti
+  - kehittää
+  - verkkokauppajärjestelmä
+  - tekninen
+  - toteutus
+  - vaatia
+  - erityinen
+  - huomio
+  keyword_scores:
+    ohjelmistokehittäjä: 0.9400000000000001
+    työskennellä: 0.4
+    asiakasprojekti: 0.91
+    kehittää: 0.4
+    verkkokauppajärjestelmä: 0.97
+    tekninen: 0.8200000000000001
+    toteutus: 0.79
+    vaatia: 0.4
+    erityinen: 0.4
+    huomio: 0.76
+    tietoturpa: 0.4
+    osa: 0.4
+    työskentelee: 0.48
+    kehittäen: 0.44999999999999996
+    tietoturva: 0.48
+  compound_words:
+  - verkkokauppajärjestelmä
+  - asiakasprojekti
+  domain_keywords:
+    software_development:
+    - ohjelmistokehittäjä
+    - kehittää
+    - toteutus
+    - tietoturva
+  success: true
+  language: fi
+categories:
+  categories: []
+  explanations: {}
+  evidence: {}
+  success: true
+  language: fi

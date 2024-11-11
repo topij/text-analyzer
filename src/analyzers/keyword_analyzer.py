@@ -126,39 +126,43 @@ class KeywordAnalyzer(TextAnalyzer):
             if kwargs:
                 self.config.update(kwargs)
 
+            # Dynamically set keyword limit
+            self.max_keywords = self._get_keyword_limit(text)
+
+            # Get statistical keywords
+            statistical_scores = self._extract_statistical_keywords(text)
+            
             # Get LLM keywords
             llm_results = await self.chain.ainvoke(text)
-
-            # Ensure default structure even on error
-            if "error" in llm_results:
-                return KeywordOutput(
-                    keywords=[],
-                    keyword_scores={},
-                    compound_words=[],
-                    domain_keywords={},
-                    error=llm_results["error"],
-                    success=False,
-                    language=self.language_processor.language if self.language_processor else "unknown",
-                )
-
-            # Get statistical keywords and combine results
-            statistical_keywords = self._extract_statistical_keywords(text)
-            combined_keywords = self._combine_keywords(
-                statistical_keywords, llm_results.get("keyword_scores", {}), self.weights
+            
+            # Combine results (weighted)
+            combined_scores = self._combine_keywords(
+                statistical_scores,
+                llm_results.get("keyword_scores", {}),
+                self.weights
             )
-
-            max_keywords = self.config.get("max_keywords", 8)
+            
+            # Sort by score and limit
+            sorted_keywords = sorted(
+                combined_scores.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            
+            keywords = [k for k, _ in sorted_keywords[:self.max_keywords]]
+            scores = {k: s for k, s in sorted_keywords[:self.max_keywords]}
+            
             return KeywordOutput(
-                keywords=list(combined_keywords.keys())[:max_keywords],
-                keyword_scores=combined_keywords,
+                keywords=keywords,
+                keyword_scores=scores,
                 compound_words=llm_results.get("compound_words", []),
                 domain_keywords=llm_results.get("domain_keywords", {}),
-                success=True,
-                language=self.language_processor.language if self.language_processor else "unknown",
+                language=self.language_processor.language,
+                success=True
             )
 
         except Exception as e:
-            self.logger.error(f"Keyword analysis failed: {e}", exc_info=True)
+            logger.error(f"Keyword analysis failed: {e}", exc_info=True)
             return KeywordOutput(
                 keywords=[],
                 keyword_scores={},
@@ -166,7 +170,7 @@ class KeywordAnalyzer(TextAnalyzer):
                 domain_keywords={},
                 error=str(e),
                 success=False,
-                language=self.language_processor.language if self.language_processor else "unknown",
+                language=self.language_processor.language
             )
 
     def _get_statistical_keywords_str(self, text: str) -> str:
@@ -175,33 +179,70 @@ class KeywordAnalyzer(TextAnalyzer):
         return ", ".join(f"'{k}'" for k in sorted(keywords.keys(), key=keywords.get, reverse=True)[:5])
 
     def _extract_statistical_keywords(self, text: str) -> Dict[str, float]:
-        """Extract keywords using statistical methods."""
-        # Use language processor if available
-        if self.language_processor:
-            words = self.language_processor.tokenize(text)
-            base_forms = [self.language_processor.get_base_form(word) for word in words]
+        """Extract keywords using enhanced statistical methods."""
+        if not text:
+            return {}
+
+        # Split into sentences for position weighting
+        sentences = text.split('.')
+        sentence_tokens = [
+            self.language_processor.tokenize(sent.strip())
+            for sent in sentences if sent.strip()
+        ]
+
+        # Calculate position weights (earlier sentences get higher weight)
+        sent_weights = [1.0 - (i * 0.1) for i in range(len(sentences))]
+        sent_weights = [max(0.5, w) for w in sent_weights]  # Minimum weight 0.5
+
+        # Get word frequencies with position weighting
+        word_scores = {}
+        total_words = 0
+        
+        for sent_tokens, weight in zip(sentence_tokens, sent_weights):
+            # Get base forms
+            base_forms = [
+                self.language_processor.get_base_form(token)
+                for token in sent_tokens
+                if self.language_processor.should_keep_word(token)
+            ]
+            
+            # Count with position weight
+            for word in base_forms:
+                if len(word) >= self.min_keyword_length:
+                    word_scores[word] = word_scores.get(word, 0) + weight
+                    total_words += 1
+
+        # Calculate TF-IDF-like scores
+        if total_words > 0:
+            for word in word_scores:
+                tf = word_scores[word] / total_words
+                # Simple IDF approximation based on word length and uniqueness
+                idf = math.log(1 + len(word)) * (1 + int(word_scores[word] == 1))
+                word_scores[word] = tf * idf
+
+            # Normalize scores
+            max_score = max(word_scores.values()) if word_scores else 1.0
+            word_scores = {
+                word: score / max_score 
+                for word, score in word_scores.items()
+            }
+
+        return word_scores
+    
+    def _get_keyword_limit(self, text: str) -> int:
+        """Dynamically determine number of keywords based on text length."""
+        # Count sentences
+        sentence_count = len([s for s in text.split('.') if s.strip()])
+        
+        # Base calculation on sentence count
+        if sentence_count <= 2:
+            limit = max(3, min(5, sentence_count * 2))
+        elif sentence_count <= 5:
+            limit = max(5, min(8, sentence_count * 1.5))
         else:
-            base_forms = text.lower().split()
-
-        # Get word frequencies
-        freq = Counter(base_forms)
-
-        # Calculate TF-IDF like scores
-        total_words = len(base_forms)
-        scores = {}
-
-        for word, count in freq.items():
-            if len(word) >= self.config.get("min_keyword_length", 3):
-                tf = count / total_words
-                idf = math.log(total_words / (count + 1))
-                scores[word] = tf * idf
-
-        # Normalize scores
-        if scores:
-            max_score = max(scores.values())
-            scores = {k: v / max_score for k, v in scores.items()}
-
-        return scores
+            limit = min(self.max_keywords, sentence_count)
+            
+        return int(limit)
 
     def _combine_keywords(
         self, statistical: Dict[str, float], llm: Dict[str, float], weights: Dict[str, float]

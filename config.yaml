@@ -8,7 +8,7 @@ environment: "development"  # development, test, production
 
 # Logging configuration
 logging:
-  level: "INFO"
+  level: "DEBUG" #, "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "logs/app.log"
