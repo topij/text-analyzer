@@ -1,369 +1,326 @@
 # src/analyzers/keyword_analyzer.py
 
-import json
 import logging
-import math
+from typing import Any, Dict, List, Optional, Set
 from collections import Counter
-from typing import Any, Dict, List, Optional  # , Set
+from math import log
 
+from langchain_core.messages import ChatMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
-from pydantic import Field  # BaseModel
 
-from src.core.language_processing.base import BaseTextProcessor
+from src.analyzers.base import BaseAnalyzer, TextSection, AnalyzerOutput
+from src.schemas import KeywordAnalysisResult, KeywordInfo
 
-from .base import AnalyzerOutput, TextAnalyzer
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
 
 class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
-
-    keywords: List[str] = Field(default_factory=list)
-    keyword_scores: Dict[str, float] = Field(default_factory=dict)
-    compound_words: List[str] = Field(default_factory=list)
+    keywords: List[Dict[str, Any]] = Field(default_factory=list)
     domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
-    success: bool = Field(default=True)
-    language: str = Field(default="unknown")
-    error: Optional[str] = None
 
     def dict(self) -> Dict[str, Any]:
-        """Convert to dict preserving structure."""
+        """Convert to dict with proper structure."""
         if self.error:
-            return {"keywords": {"error": self.error, "success": False, "language": self.language}}
+            return {
+                "keywords": {
+                    "error": self.error,
+                    "success": False,
+                    "language": self.language
+                }
+            }
 
         return {
             "keywords": {
                 "keywords": self.keywords,
-                "keyword_scores": self.keyword_scores,
-                "compound_words": self.compound_words,
                 "domain_keywords": self.domain_keywords,
                 "success": self.success,
-                "language": self.language,
+                "language": self.language
             }
         }
 
-
-class KeywordAnalyzer(TextAnalyzer):
-    """Analyzes text to extract keywords using statistical and LLM methods."""
-
-    def __init__(
-        self, llm=None, config: Optional[Dict[str, Any]] = None, language_processor: Optional[BaseTextProcessor] = None
-    ):
-        # def __init__(self, llm=None, config: Optional[Dict[str, Any]] = None, language_processor=None):
-        """Initialize the keyword analyzer.
-
-        Args:
-            llm: Language model to use
-            config: Configuration parameters including:
-                - max_keywords: Maximum keywords to extract
-                - min_keyword_length: Minimum keyword length
-                - include_compounds: Whether to detect compound words
-                - excluded_keywords: Set of keywords to exclude
-                - predefined_keywords: Dictionary of predefined keywords with importance
-                - min_confidence: Minimum confidence threshold
-                - weights: Weights for statistical vs LLM analysis
-            language_processor: Language-specific text processor
-        """
-        super().__init__(llm, config)
-        self.language_processor = language_processor
-        self.max_keywords = self.config.get("max_keywords", 10)
-        self.min_keyword_length = self.config.get("min_keyword_length", 3)
-        self.predefined_keywords = self.config.get("predefined_keywords", {})
-        self.excluded_keywords = self.config.get("excluded_keywords", set())
-        self.weights = self.config.get("weights", {"statistical": 0.4, "llm": 0.6})
-        self.min_confidence = self.config.get("min_confidence", 0.3)
-
-    def _create_chain(self) -> RunnableSequence:
-        """Create LangChain processing chain for keyword extraction."""
-        template = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """You are a keyword extraction expert. Extract important keywords and phrases from text.
-            Return results in JSON format with these exact fields:
-            {{
-                "keywords": ["keyword1", "keyword2", ...],
-                "keyword_scores": {{"keyword1": 0.9, "keyword2": 0.8, ...}},
-                "compound_words": ["word1", "word2"],
-                "domain_keywords": {{"domain1": ["kw1", "kw2"], ...}}
-            }}""",
-                ),
-                (
-                    "human",
-                    """Extract keywords from this text:
-            {text}
+    def to_schema(self) -> KeywordAnalysisResult:
+        """Convert to schema model."""
+        if not self.success:
+            return KeywordAnalysisResult(
+                keywords=[],
+                language=self.language,
+                success=False,
+                error=self.error
+            )
             
-            Guidelines:
-            - Max keywords: {max_keywords}
-            - Statistical keywords to consider: {statistical_keywords}
-            - Min length: {min_length} characters
-            - Focus on: {focus}""",
-                ),
-            ]
+        return KeywordAnalysisResult(
+            keywords=[KeywordInfo(**k) for k in self.keywords],
+            language=self.language,
+            success=True
         )
 
-        # Create chain with proper output handling
+class KeywordAnalyzer(BaseAnalyzer):
+    """Analyzes text to extract keywords with position-aware weighting."""
+
+    def __init__(
+        self,
+        llm=None,
+        config: Optional[Dict[str, Any]] = None,
+        language_processor=None
+    ):
+        """Initialize analyzer with LLM and config."""
+        super().__init__(config)
+        self.llm = llm
+        self.language_processor = language_processor
+        self.chain = self._create_chain()
+        
+        # Load or set default weights
+        self.weights = config.get("weights", {
+            "statistical": 0.4,
+            "llm": 0.6
+        })
+        
+        # Load domain keywords if available
+        self.domain_keywords = config.get("domain_keywords", {})
+
+    def _create_chain(self) -> RunnableSequence:
+        """Create the LangChain processing chain."""
+        template = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                """You are a keyword extraction expert. Extract important keywords and phrases from text.
+                Consider:
+                - Technical terms and domain-specific vocabulary
+                - Important concepts and themes
+                - Named entities and proper nouns
+                - Compound terms and multi-word phrases
+                
+                Return results in JSON format with these exact fields:
+                {{
+                    "keywords": [
+                        {{
+                            "keyword": "example_keyword",
+                            "score": 0.95,
+                            "domain": "technical"
+                        }}
+                    ]
+                }}""",
+            ),
+            (
+                "human",
+                """Extract keywords from this text:
+                {text}
+                
+                Guidelines:
+                - Extract up to {max_keywords} keywords
+                - Consider these statistical keywords: {statistical_keywords}
+                - Min keyword length: {min_length} characters
+                - Focus on: {focus_area}
+                """,
+            ),
+        ])
+
         chain = (
             {
                 "text": RunnablePassthrough(),
-                "max_keywords": lambda _: self.config.get("max_keywords", 8),
-                "statistical_keywords": lambda x: self._get_statistical_keywords_str(x),
+                "max_keywords": lambda _: self.config.get("max_keywords", 10),
+                "statistical_keywords": lambda x: self._get_statistical_keywords(x),
                 "min_length": lambda _: self.config.get("min_keyword_length", 3),
-                "focus": lambda _: self.config.get("focus", "general"),
+                "focus_area": lambda _: self.config.get("focus_on", "general topics")
             }
             | template
             | self.llm
-            | self._post_process_llm_output
+            | self._process_llm_output
         )
 
         return chain
 
-    async def analyze(self, text: str, **kwargs) -> KeywordOutput:
-        """Analyze text to extract keywords."""
-        try:
-            if kwargs:
-                self.config.update(kwargs)
+    async def analyze(self, text: str) -> KeywordAnalysisResult:
+        """Analyze text to extract keywords. Returns schema model for API use."""
+        # Get internal analysis results
+        output = await self._analyze_internal(text)
+        # Convert to schema model
+        return output.to_schema()
 
-            # Dynamically set keyword limit
-            self.max_keywords = self._get_keyword_limit(text)
-
-            # Get statistical keywords
-            statistical_scores = self._extract_statistical_keywords(text)
-            
-            # Get LLM keywords
-            llm_results = await self.chain.ainvoke(text)
-            
-            # Combine results (weighted)
-            combined_scores = self._combine_keywords(
-                statistical_scores,
-                llm_results.get("keyword_scores", {}),
-                self.weights
-            )
-            
-            # Sort by score and limit
-            sorted_keywords = sorted(
-                combined_scores.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )
-            
-            keywords = [k for k, _ in sorted_keywords[:self.max_keywords]]
-            scores = {k: s for k, s in sorted_keywords[:self.max_keywords]}
-            
+    async def _analyze_internal(self, text: str) -> KeywordOutput:
+        """Internal analysis method returning KeywordOutput."""
+        # Validate input
+        if error := self._validate_input(text):
             return KeywordOutput(
-                keywords=keywords,
-                keyword_scores=scores,
-                compound_words=llm_results.get("compound_words", []),
-                domain_keywords=llm_results.get("domain_keywords", {}),
-                language=self.language_processor.language,
+                error=error,
+                success=False,
+                language="unknown"
+            )
+
+        try:
+            # Detect language
+            language = (
+                self.language_processor.language 
+                if self.language_processor 
+                else "unknown"
+            )
+
+            # Split text into weighted sections
+            sections = self._split_text_sections(text)
+
+            # Get keywords with both methods
+            statistical_keywords = self._analyze_statistically(text, sections)
+            llm_keywords = await self._analyze_with_llm(text, statistical_keywords)
+            final_keywords = self._combine_results(statistical_keywords, llm_keywords)
+
+            # Group keywords by domain
+            domain_keywords = {}
+            for kw in final_keywords:
+                if kw.domain:
+                    if kw.domain not in domain_keywords:
+                        domain_keywords[kw.domain] = []
+                    domain_keywords[kw.domain].append(kw.keyword)
+
+            return KeywordOutput(
+                keywords=[k.dict() for k in final_keywords],
+                domain_keywords=domain_keywords,
+                language=language,
                 success=True
             )
 
         except Exception as e:
-            logger.error(f"Keyword analysis failed: {e}", exc_info=True)
+            logger.error(f"Analysis failed: {str(e)}")
             return KeywordOutput(
-                keywords=[],
-                keyword_scores={},
-                compound_words=[],
-                domain_keywords={},
                 error=str(e),
                 success=False,
-                language=self.language_processor.language
+                language="unknown"
             )
 
-    def _get_statistical_keywords_str(self, text: str) -> str:
-        """Get statistical keywords as a formatted string."""
-        keywords = self._extract_statistical_keywords(text)
-        return ", ".join(f"'{k}'" for k in sorted(keywords.keys(), key=keywords.get, reverse=True)[:5])
-
-    def _extract_statistical_keywords(self, text: str) -> Dict[str, float]:
-        """Extract keywords using enhanced statistical methods."""
-        if not text:
-            return {}
-
-        # Split into sentences for position weighting
-        sentences = text.split('.')
-        sentence_tokens = [
-            self.language_processor.tokenize(sent.strip())
-            for sent in sentences if sent.strip()
-        ]
-
-        # Calculate position weights (earlier sentences get higher weight)
-        sent_weights = [1.0 - (i * 0.1) for i in range(len(sentences))]
-        sent_weights = [max(0.5, w) for w in sent_weights]  # Minimum weight 0.5
-
-        # Get word frequencies with position weighting
-        word_scores = {}
-        total_words = 0
+    def _analyze_statistically(
+        self, 
+        text: str,
+        sections: List[TextSection]
+    ) -> List[KeywordInfo]:
+        """Extract keywords using statistical analysis with position weighting."""
+        keywords = []
         
-        for sent_tokens, weight in zip(sentence_tokens, sent_weights):
-            # Get base forms
-            base_forms = [
-                self.language_processor.get_base_form(token)
-                for token in sent_tokens
-                if self.language_processor.should_keep_word(token)
-            ]
-            
-            # Count with position weight
-            for word in base_forms:
-                if len(word) >= self.min_keyword_length:
-                    word_scores[word] = word_scores.get(word, 0) + weight
-                    total_words += 1
-
-        # Calculate TF-IDF-like scores
-        if total_words > 0:
-            for word in word_scores:
-                tf = word_scores[word] / total_words
-                # Simple IDF approximation based on word length and uniqueness
-                idf = math.log(1 + len(word)) * (1 + int(word_scores[word] == 1))
-                word_scores[word] = tf * idf
-
-            # Normalize scores
-            max_score = max(word_scores.values()) if word_scores else 1.0
-            word_scores = {
-                word: score / max_score 
-                for word, score in word_scores.items()
-            }
-
-        return word_scores
-    
-    def _get_keyword_limit(self, text: str) -> int:
-        """Dynamically determine number of keywords based on text length."""
-        # Count sentences
-        sentence_count = len([s for s in text.split('.') if s.strip()])
+        # Get word frequencies
+        words = self._extract_candidate_words(text)
+        word_freq = Counter(words)
         
-        # Base calculation on sentence count
-        if sentence_count <= 2:
-            limit = max(3, min(5, sentence_count * 2))
-        elif sentence_count <= 5:
-            limit = max(5, min(8, sentence_count * 1.5))
-        else:
-            limit = min(self.max_keywords, sentence_count)
+        # Calculate max frequency for normalization
+        max_freq = max(word_freq.values()) if word_freq else 1
+        
+        for word, freq in word_freq.items():
+            if not self._is_valid_keyword(word):
+                continue
+                
+            # Calculate base statistical score
+            base_score = freq / max_freq
             
-        return int(limit)
+            # Apply position weighting
+            position_score = self._calculate_position_score(word, sections)
+            final_score = min(base_score * position_score, 1.0)  # Cap at 1.0
+            
+            if final_score >= self.config.get("min_confidence", 0.1):
+                keywords.append(KeywordInfo(
+                    keyword=word,
+                    score=final_score,
+                    domain=self._detect_domain(word)
+                ))
+        
+        return sorted(
+            keywords,
+            key=lambda x: x.score,
+            reverse=True
+        )[:self.config.get("max_keywords", 10)]
 
-    def _combine_keywords(
-        self, statistical: Dict[str, float], llm: Dict[str, float], weights: Dict[str, float]
-    ) -> Dict[str, float]:
-        """Combine keywords from different sources with weights."""
-        combined = {}
+    def _extract_candidate_words(self, text: str) -> List[str]:
+        """Extract candidate words for keyword analysis."""
+        if not self.language_processor:
+            return []
+            
+        # Tokenize and process
+        tokens = self.language_processor.tokenize(text)
+        candidates = []
+        
+        for token in tokens:
+            # Get base form
+            base_form = self.language_processor.get_base_form(token)
+            
+            # Check if word should be kept
+            if self.language_processor.should_keep_word(base_form):
+                candidates.append(base_form)
+                
+        return candidates
 
-        # Normalize weights
-        total_weight = sum(weights.values())
-        weights = {k: v / total_weight for k, v in weights.items()}
+    def _is_valid_keyword(self, word: str) -> bool:
+        """Check if word is a valid keyword candidate."""
+        if not word:
+            return False
+            
+        # Length check
+        min_length = self.config.get("min_keyword_length", 3)
+        if len(word) < min_length:
+            return False
+            
+        # Stop word check
+        if self.language_processor and self.language_processor.is_stop_word(word):
+            return False
+            
+        return True
 
-        # Combine scores
-        for keyword, score in statistical.items():
-            combined[keyword] = score * weights["statistical"]
-
-        for keyword, score in llm.items():
-            if keyword in combined:
-                combined[keyword] += score * weights["llm"]
-            else:
-                combined[keyword] = score * weights["llm"]
-
-        return combined
-
-    def _apply_predefined_keywords(self, keywords: Dict[str, float], text: str) -> Dict[str, float]:
-        """Apply predefined keywords with their importance."""
-        # Check for predefined keywords in text
-        for keyword, config in self.predefined_keywords.items():
-            if self._keyword_in_text(keyword, text):
-                keywords[keyword] = max(keywords.get(keyword, 0), config.importance)
-
-            # Check compound parts if available
-            if config.compound_parts:
-                if all(self._keyword_in_text(part, text) for part in config.compound_parts):
-                    keywords[keyword] = max(keywords.get(keyword, 0), config.importance)
-
-        return keywords
-
-    def _keyword_in_text(self, keyword: str, text: str) -> bool:
-        """Check if keyword is present in text."""
+    def _detect_domain(self, word: str) -> Optional[str]:
+        """Detect domain for a keyword."""
+        # Check each domain's keywords
+        for domain, keywords in self.domain_keywords.items():
+            if word in keywords:
+                return domain
+                
+        # Check compound words
         if self.language_processor:
-            return self.language_processor.contains_word(text, keyword)
-        return keyword.lower() in text.lower()
+            try:
+                if self.language_processor.is_compound_word(word):
+                    parts = self.language_processor.get_compound_parts(word)
+                    for part in parts:
+                        for domain, keywords in self.domain_keywords.items():
+                            if part in keywords:
+                                return domain
+            except Exception as e:
+                logger.debug(f"Compound word check failed for {word}: {e}")
+                
+        return None
 
-    def _get_domain_keywords(self, keywords: List[str], llm_domains: Dict[str, List[str]]) -> Dict[str, List[str]]:
-        """Group keywords by domain."""
-        domains = {}
+    def _get_statistical_keywords(self, text: str) -> List[str]:
+        """Get statistical keywords for LLM prompt."""
+        sections = self._split_text_sections(text)
+        keywords = self._analyze_statistically(text, sections)
+        return [k.keyword for k in keywords[:5]]  # Top 5 for the prompt
 
-        # Add predefined domain keywords
-        for keyword in keywords:
-            if keyword in self.predefined_keywords:
-                domain = self.predefined_keywords[keyword].domain
-                if domain:
-                    domains.setdefault(domain, []).append(keyword)
-
-        # Add LLM-detected domain keywords
-        for domain, words in llm_domains.items():
-            existing = set(domains.get(domain, []))
-            domains[domain] = list(existing | set(w for w in words if w in keywords))
-
-        return domains
-
-    def _get_compound_words(self, text: str, keywords: List[tuple[str, float]], llm_compounds: List[str]) -> List[str]:
-        """Extract compound words from text."""
-        if not self.config.get("include_compounds", True):
+    async def _analyze_with_llm(
+        self,
+        text: str,
+        statistical_keywords: List[KeywordInfo]
+    ) -> List[KeywordInfo]:
+        """Extract keywords using LLM with statistical hints."""
+        if not self.llm:
+            return []
+            
+        try:
+            # Get LLM response using the chain
+            response = await self.chain.ainvoke(text)
+            
+            # Extract keywords from response
+            if isinstance(response, dict) and "keywords" in response:
+                return [
+                    KeywordInfo(**kw) if isinstance(kw, dict) else kw
+                    for kw in response["keywords"]
+                ]
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"LLM analysis failed: {e}")
             return []
 
-        compounds = set()
-
-        # Get predefined compounds
-        for keyword, _ in keywords:
-            if keyword in self.predefined_keywords:
-                if self.predefined_keywords[keyword].compound_parts:
-                    compounds.add(keyword)
-
-        # Get language-specific compounds
-        if self.language_processor and hasattr(self.language_processor, "get_compound_words"):
-            compounds.update(self.language_processor.get_compound_words(text))
-
-        # Add LLM-detected compounds
-        compounds.update(c for c in llm_compounds if self._keyword_in_text(c, text))
-
-        return list(compounds)
-
-    def _create_empty_output(self) -> Dict[str, Any]:
-        """Create empty output structure."""
-        return {"keywords": [], "keyword_scores": {}, "compound_words": [], "domain_keywords": {}}
-
     def _process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process raw LLM output into standard format."""
+        """Process raw LLM output."""
         try:
-            # First use base class processing
-            base_output = super()._post_process_llm_output(output)
-            if "error" in base_output:
-                return base_output
-
-            # Extract components
-            keywords = base_output.get("keywords", [])
-            scores = base_output.get("keyword_scores", {})
-            compounds = base_output.get("compound_words", [])
-            domains = base_output.get("domain_keywords", {})
-
-            # Validate and normalize scores
-            if scores and max(scores.values()) > 0:
-                max_score = max(scores.values())
-                scores = {k: v / max_score for k, v in scores.items()}
-
-            return {
-                "keywords": keywords,
-                "keyword_scores": scores,
-                "compound_words": compounds,
-                "domain_keywords": domains,
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error processing LLM output: {e}")
-            return {"error": str(e)}
-
-    def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process LLM output into standardized format."""
-        try:
-            # Get content from AIMessage or string
+            # Handle different output types
             if hasattr(output, "content"):
                 content = output.content
             elif isinstance(output, str):
@@ -371,39 +328,63 @@ class KeywordAnalyzer(TextAnalyzer):
             elif isinstance(output, dict):
                 return output
             else:
-                self.logger.error(f"Unexpected output type: {type(output)}")
-                return self._create_empty_output()
+                return {"keywords": []}
 
             # Parse JSON content
+            import json
             try:
-                if isinstance(content, str):
-                    data = json.loads(content)
-                else:
-                    data = content
-
-                # Ensure required fields with defaults
-                empty = self._create_empty_output()
-                data["keywords"] = data.get("keywords", empty["keywords"])
-                data["keyword_scores"] = data.get("keyword_scores", empty["keyword_scores"])
-                data["compound_words"] = data.get("compound_words", empty["compound_words"])
-                data["domain_keywords"] = data.get("domain_keywords", empty["domain_keywords"])
-
-                return data
-
-            except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON: {e}")
-                return self._create_empty_output()
+                return json.loads(content)
+            except json.JSONDecodeError:
+                return {"keywords": []}
 
         except Exception as e:
-            self.logger.error(f"Error processing output: {e}")
-            return self._create_empty_output()
+            logger.error(f"Error processing LLM output: {e}")
+            return {"keywords": []}
 
-    def validate_parameters(self, params: Dict[str, Any]) -> None:
-        """Validate analyzer parameters."""
-        if "max_keywords" in params and (not isinstance(params["max_keywords"], int) or params["max_keywords"] < 1):
-            raise ValueError("max_keywords must be a positive integer")
-
-        if "min_keyword_length" in params and (
-            not isinstance(params["min_keyword_length"], int) or params["min_keyword_length"] < 1
-        ):
-            raise ValueError("min_keyword_length must be a positive integer")
+    def _combine_results(
+        self,
+        statistical_keywords: List[KeywordInfo],
+        llm_keywords: List[KeywordInfo]
+    ) -> List[KeywordInfo]:
+        """Combine statistical and LLM results."""
+        combined = {}
+        
+        # Get weights
+        stat_weight = self.weights.get("statistical", 0.4)
+        llm_weight = self.weights.get("llm", 0.6)
+        
+        # Combine statistical keywords
+        for kw in statistical_keywords:
+            combined[kw.keyword] = KeywordInfo(
+                keyword=kw.keyword,
+                score=kw.score * stat_weight,
+                domain=kw.domain
+            )
+            
+        # Combine LLM keywords
+        for kw in llm_keywords:
+            if kw.keyword in combined:
+                # Update existing keyword
+                existing = combined[kw.keyword]
+                combined[kw.keyword] = KeywordInfo(
+                    keyword=kw.keyword,
+                    score=min(
+                        existing.score + (kw.score * llm_weight),
+                        1.0  # Cap at 1.0
+                    ),
+                    domain=existing.domain or kw.domain
+                )
+            else:
+                # Add new keyword
+                combined[kw.keyword] = KeywordInfo(
+                    keyword=kw.keyword,
+                    score=kw.score * llm_weight,
+                    domain=kw.domain
+                )
+                
+        # Sort by score and limit to max keywords
+        return sorted(
+            combined.values(),
+            key=lambda x: x.score,
+            reverse=True
+        )[:self.config.get("max_keywords", 10)]
