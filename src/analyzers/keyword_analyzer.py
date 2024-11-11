@@ -16,7 +16,6 @@ from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
-
 class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
     keywords: List[Dict[str, Any]] = Field(default_factory=list)
@@ -61,13 +60,33 @@ class KeywordOutput(AnalyzerOutput):
 class KeywordAnalyzer(BaseAnalyzer):
     """Analyzes text to extract keywords with position-aware weighting."""
 
+    # def __init__(
+    #     self,
+    #     llm=None,
+    #     config: Optional[Dict[str, Any]] = None,
+    #     language_processor=None
+    # ):
+    #     """Initialize analyzer with LLM and config."""
+    #     super().__init__(config)
+    #     self.llm = llm
+    #     self.language_processor = language_processor
+    #     self.chain = self._create_chain()
+        
+    #     # Load or set default weights
+    #     self.weights = config.get("weights", {
+    #         "statistical": 0.4,
+    #         "llm": 0.6
+    #     })
+        
+    #     # Load domain keywords if available
+    #     self.domain_keywords = config.get("domain_keywords", {})
+
     def __init__(
         self,
         llm=None,
         config: Optional[Dict[str, Any]] = None,
         language_processor=None
     ):
-        """Initialize analyzer with LLM and config."""
         super().__init__(config)
         self.llm = llm
         self.language_processor = language_processor
@@ -79,8 +98,17 @@ class KeywordAnalyzer(BaseAnalyzer):
             "llm": 0.6
         })
         
-        # Load domain keywords if available
+        # Domain configuration
         self.domain_keywords = config.get("domain_keywords", {})
+        
+        # Clustering configuration
+        self.clustering_config = config.get("clustering", {
+            "similarity_threshold": 0.85,
+            "max_cluster_size": 3,
+            "boost_factor": 1.2
+        })
+
+
 
     def _create_chain(self) -> RunnableSequence:
         """Create the LangChain processing chain."""
@@ -340,20 +368,158 @@ class KeywordAnalyzer(BaseAnalyzer):
         except Exception as e:
             logger.error(f"Error processing LLM output: {e}")
             return {"keywords": []}
+        
+    def _cluster_keywords(self, keywords: List[KeywordInfo]) -> List[KeywordInfo]:
+        """Group similar keywords into clusters and adjust scores."""
+        if not keywords:
+            return []
+
+        clusters: Dict[str, List[KeywordInfo]] = {}
+        processed_keywords = set()
+
+        for kw in keywords:
+            if kw.keyword in processed_keywords:
+                continue
+
+            cluster = []
+            base_form = self.language_processor.get_base_form(kw.keyword) if self.language_processor else kw.keyword.lower()
+            
+            # Find related keywords
+            for other in keywords:
+                if other.keyword in processed_keywords:
+                    continue
+                    
+                if self._are_keywords_related(kw.keyword, other.keyword, base_form):
+                    cluster.append(other)
+                    processed_keywords.add(other.keyword)
+
+            if cluster:
+                clusters[base_form] = cluster
+
+        # Adjust scores based on clusters
+        return self._adjust_cluster_scores(clusters)
+
+    def _are_keywords_related(self, kw1: str, kw2: str, base_form: str) -> bool:
+        """Check if keywords are related using multiple methods."""
+        # Exact match after normalization
+        if kw1.lower() == kw2.lower():
+            return True
+            
+        # Base form match
+        other_base = self.language_processor.get_base_form(kw2) if self.language_processor else kw2.lower()
+        if base_form == other_base:
+            return True
+            
+        # Common substring (for compound words)
+        if len(kw1) > 3 and len(kw2) > 3:
+            if kw1.lower() in kw2.lower() or kw2.lower() in kw1.lower():
+                return True
+                
+        # Check domain relationship
+        kw1_domain = self._detect_domain(kw1)
+        kw2_domain = self._detect_domain(kw2)
+        if kw1_domain and kw1_domain == kw2_domain:
+            if self._check_domain_relationship(kw1, kw2, kw1_domain):
+                return True
+
+        return False
+
+    def _check_domain_relationship(self, kw1: str, kw2: str, domain: str) -> bool:
+        """Check if keywords are related within their domain."""
+        # Get domain-specific relationships
+        domain_pairs = {
+            "technical": [
+                ("ai", "artificial intelligence"),
+                ("ml", "machine learning"),
+                ("api", "interface"),
+            ],
+            "business": [
+                ("roi", "return on investment"),
+                ("kpi", "key performance indicator"),
+                ("b2b", "business to business"),
+            ]
+        }
+        
+        pairs = domain_pairs.get(domain, [])
+        kw1_lower = kw1.lower()
+        kw2_lower = kw2.lower()
+        
+        return any(
+            (kw1_lower in pair and kw2_lower in pair)
+            for pair in pairs
+        )
+
+    def _adjust_cluster_scores(
+        self, 
+        clusters: Dict[str, List[KeywordInfo]]
+    ) -> List[KeywordInfo]:
+        """Adjust scores based on cluster relationships."""
+        boost_factor = self.clustering_config.get("boost_factor", 1.2)
+        result = []
+        
+        for base_form, cluster in clusters.items():
+            if not cluster:
+                continue
+                
+            # Sort cluster by base score
+            cluster.sort(key=lambda x: x.score, reverse=True)
+            
+            # Boost scores based on cluster size and position
+            for i, kw in enumerate(cluster):
+                # Primary term gets full boost
+                if i == 0:
+                    boost = boost_factor
+                # Related terms get diminishing boost
+                else:
+                    boost = 1.0 + (boost_factor - 1.0) * (1.0 - (i / len(cluster)))
+                    
+                # Create new keyword with adjusted score
+                result.append(KeywordInfo(
+                    keyword=kw.keyword,
+                    score=min(kw.score * boost, 1.0),  # Cap at 1.0
+                    domain=kw.domain
+                ))
+        
+        return sorted(result, key=lambda x: x.score, reverse=True)
+
+    def _calculate_confidence_score(
+        self, 
+        word: str,
+        base_score: float,
+        position_score: float,
+        domain: Optional[str] = None
+    ) -> float:
+        """Calculate enhanced confidence score."""
+        # Base importance
+        score = base_score * position_score
+        
+        # Domain relevance boost
+        if domain:
+            domain_boost = 1.2  # Configurable
+            score *= domain_boost
+            
+        # Length factor (prefer multi-word terms slightly)
+        word_count = len(word.split())
+        if word_count > 1:
+            length_boost = 1.0 + (0.1 * (word_count - 1))  # Small boost per word
+            score *= length_boost
+            
+        # Normalize to 0-1 range
+        return min(score, 1.0)
 
     def _combine_results(
         self,
         statistical_keywords: List[KeywordInfo],
         llm_keywords: List[KeywordInfo]
     ) -> List[KeywordInfo]:
-        """Combine statistical and LLM results."""
+        """Combine statistical and LLM results with clustering."""
         combined = {}
         
         # Get weights
         stat_weight = self.weights.get("statistical", 0.4)
         llm_weight = self.weights.get("llm", 0.6)
         
-        # Combine statistical keywords
+        # Combine initial keywords
         for kw in statistical_keywords:
             combined[kw.keyword] = KeywordInfo(
                 keyword=kw.keyword,
@@ -361,30 +527,28 @@ class KeywordAnalyzer(BaseAnalyzer):
                 domain=kw.domain
             )
             
-        # Combine LLM keywords
         for kw in llm_keywords:
             if kw.keyword in combined:
-                # Update existing keyword
                 existing = combined[kw.keyword]
                 combined[kw.keyword] = KeywordInfo(
                     keyword=kw.keyword,
-                    score=min(
+                    score=self._calculate_confidence_score(
+                        kw.keyword,
                         existing.score + (kw.score * llm_weight),
-                        1.0  # Cap at 1.0
+                        1.0,  # Base position score
+                        existing.domain or kw.domain
                     ),
                     domain=existing.domain or kw.domain
                 )
             else:
-                # Add new keyword
                 combined[kw.keyword] = KeywordInfo(
                     keyword=kw.keyword,
                     score=kw.score * llm_weight,
                     domain=kw.domain
                 )
-                
-        # Sort by score and limit to max keywords
-        return sorted(
-            combined.values(),
-            key=lambda x: x.score,
-            reverse=True
-        )[:self.config.get("max_keywords", 10)]
+        
+        # Apply clustering to combined results
+        clustered = self._cluster_keywords(list(combined.values()))
+        
+        # Return top keywords
+        return clustered[:self.config.get("max_keywords", 10)]
