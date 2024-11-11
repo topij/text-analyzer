@@ -1,9 +1,9 @@
 files:
   parameters:
-  - /home/topi/data-science/repos/semantic-text-analyzer/data/configurations/parameters_en.xlsx
-  - /home/topi/data-science/repos/semantic-text-analyzer/data/configurations/parameters_fi.xlsx
+  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\configurations\parameters_en.xlsx
+  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\configurations\parameters_fi.xlsx
   content:
-  - /home/topi/data-science/repos/semantic-text-analyzer/data/raw/test_content_en.xlsx
-  - /home/topi/data-science/repos/semantic-text-analyzer/data/raw/test_content_fi.xlsx
+  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\raw\test_content_en.xlsx
+  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\raw\test_content_fi.xlsx
   metadata: []
-generation_time: '2024-11-10T22:28:38.680785'
+generation_time: '2024-11-11T10:48:51.286433'

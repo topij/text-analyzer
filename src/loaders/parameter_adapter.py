@@ -73,6 +73,33 @@ class ParameterValidator:
 class ParameterAdapter:
     """Adapter for loading and converting analysis parameters."""
 
+    DEFAULT_CONFIG = {
+        "general": {
+            "max_keywords": 10,
+            "min_keyword_length": 3,
+            "language": "en",
+            "focus_on": None,
+            "include_compounds": True,
+            "max_themes": 3,
+            "min_confidence": 0.3,
+            "column_name_to_analyze": "text"
+        },
+        "categories": {},
+        "predefined_keywords": {},
+        "excluded_keywords": set(),
+        "analysis_settings": {
+            "theme_analysis": {
+                "enabled": True,
+                "min_confidence": 0.5
+            },
+            "weights": {
+                "statistical": 0.4,
+                "llm": 0.6
+            }
+        },
+        "domain_context": {}
+    }
+
     def __init__(self, file_path: Optional[Union[str, Path]] = None):
         """Initialize adapter with parameter file path."""
         self.file_utils = FileUtils()
@@ -190,6 +217,55 @@ class ParameterAdapter:
                     ),
                 )
         return keywords
+    
+    def _parse_excluded_keywords(self, df: pd.DataFrame) -> Set[str]:
+        """Parse excluded keywords sheet."""
+        excluded = set()
+        if df is not None and not df.empty:
+            col_names = ParameterConfigurations.get_column_names("keywords", self.language)
+            keyword_col = col_names.get("keyword", "keyword")
+            
+            if keyword_col in df.columns:
+                excluded = {
+                    str(row[keyword_col]).strip()
+                    for _, row in df.iterrows()
+                    if pd.notna(row[keyword_col])
+                }
+        return excluded
+    
+    def _parse_analysis_settings(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Parse analysis settings sheet."""
+        if df is None or df.empty:
+            return self.DEFAULT_CONFIG["analysis_settings"]
+
+        settings = {
+            "theme_analysis": {"enabled": True, "min_confidence": 0.5},
+            "weights": {"statistical": 0.4, "llm": 0.6},
+        }
+
+        try:
+            # Get column names for current language
+            col_names = ParameterConfigurations.get_column_names("settings", self.language)
+            setting_col = col_names.get("setting", "setting")
+            value_col = col_names.get("value", "value")
+            
+            if setting_col in df.columns and value_col in df.columns:
+                for _, row in df.iterrows():
+                    if pd.notna(row[setting_col]):
+                        setting_path = row[setting_col].split(".")
+                        value = row[value_col]
+                        
+                        # Navigate to the correct nested dictionary
+                        current = settings
+                        for part in setting_path[:-1]:
+                            current = current.setdefault(part, {})
+                        current[setting_path[-1]] = value
+                        
+        except Exception as e:
+            logger.warning(f"Error parsing analysis settings: {e}")
+            return self.DEFAULT_CONFIG["analysis_settings"]
+
+        return settings
 
     def _parse_domain_context(self, df: pd.DataFrame) -> Dict[str, DomainContext]:
         """Parse domain context sheet with language support."""

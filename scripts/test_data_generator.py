@@ -145,6 +145,17 @@ class TestDataGenerator:
                     "Analysoitavan sisällön sarake"
                 ]
             }),
+            ParameterSheets.KEYWORDS_FI.value: pd.DataFrame({
+                "avainsana": [
+                    "koneoppiminen", "data-analyysi", "pilvipalvelut",
+                    "liiketoimintatiedon hallinta", "markkina-analyysi", "liikevaihdon kasvu"
+                ],
+                "tärkeys": [1.0, 0.9, 0.8, 0.9, 0.8, 0.9],
+                "aihepiiri": [
+                    "tekninen", "tekninen", "tekninen",
+                    "liiketoiminta", "liiketoiminta", "liiketoiminta"
+                ]
+            }),
             ParameterSheets.EXCLUDED_FI.value: pd.DataFrame({
                 "avainsana": ["ja", "tai", "sekä", "kanssa", "uusi", "käyttäen"],
                 "syy": ["Yleinen sana"] * 6

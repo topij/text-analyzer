@@ -4,6 +4,7 @@
 
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -31,6 +32,27 @@ class FinnishTextProcessor(BaseTextProcessor):
         "käyttö", "kehitys", "palvelu", "asiakas", "laatu", "turva"
     }
 
+    # Platform-specific default paths
+    VOIKKO_PATHS = {
+        'win32': [
+            r"C:\scripts\Voikko",
+            r"C:\Program Files\Voikko",
+            r"C:\Voikko",
+            "~/Voikko"  # Will be expanded
+        ],
+        'linux': [
+            "/usr/lib/voikko",
+            "/usr/local/lib/voikko",
+            "/usr/share/voikko",
+            "~/voikko"  # Will be expanded
+        ],
+        'darwin': [  # macOS
+            "/usr/local/lib/voikko",
+            "/opt/voikko",
+            "~/voikko"  # Will be expanded
+        ]
+    }
+
     def __init__(
         self,
         language: str = "fi",
@@ -48,12 +70,22 @@ class FinnishTextProcessor(BaseTextProcessor):
         """
         super().__init__(language, custom_stop_words, config, file_utils)
         
+        # Get Voikko path from config
+        self.voikko_path = None
+        if config and 'voikko_path' in config:
+            self.voikko_path = config['voikko_path']
+        elif file_utils:
+            try:
+                main_config = file_utils.load_yaml(Path("config.yaml"))
+                self.voikko_path = main_config.get("languages", {}).get("fi", {}).get("voikko_path")
+            except Exception as e:
+                logger.warning(f"Could not load Voikko path from config.yaml: {e}")
+        
         # Initialize Voikko
-        voikko_path = config.get("voikko_path") if config else None
-        self.voikko = self._initialize_voikko(voikko_path)
+        self.voikko = self._initialize_voikko(self.voikko_path)
         
         if not self.voikko:
-            logger.warning("Voikko initialization failed, some functionality will be limited")
+            logger.warning("Voikko initialization failed, using fallback tokenization")
 
     def _load_stop_words(self) -> Set[str]:
         """Load Finnish stopwords from file and add technical terms."""
@@ -102,42 +134,27 @@ class FinnishTextProcessor(BaseTextProcessor):
             return set()
 
     def _initialize_voikko(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
-        """Initialize Voikko with path handling."""
+        """Initialize Voikko with cross-platform compatibility."""
         try:
-            # Get potential Voikko paths
-            config_paths = []
-            if voikko_path:
-                config_paths.append(voikko_path)
-                
-            try:
-                # Try to get paths from config
-                config = self.load_config_file("language_processing.yaml")
-                if paths := config.get("finnish", {}).get("voikko_paths", []):
-                    config_paths.extend(paths)
-            except Exception:
-                pass
-            
-            # Default paths
-            default_paths = [
-                # Linux/WSL paths
-                "/usr/lib/voikko",
-                "/usr/local/lib/voikko",
-                "/usr/share/voikko",
-                # Home directory
-                os.path.expanduser("~/voikko"),
-                # Windows paths
-                "C:/Program Files/Voikko",
-                "C:/Voikko",
-            ]
-            
-            # Combine all paths
-            search_paths = config_paths + default_paths
+            # Determine platform
+            platform = sys.platform
+            logger.info(f"Detected platform: {platform}")
 
-            # Try direct initialization first (using system libraries)
+            # Get platform-specific search paths
+            default_paths = self.VOIKKO_PATHS.get(platform, self.VOIKKO_PATHS[platform])
+            
+            # Expand user paths
+            search_paths = [os.path.expanduser(p) for p in default_paths]
+            
+            # Add config path to the beginning if provided
+            if voikko_path:
+                search_paths.insert(0, os.path.expanduser(voikko_path))
+                logger.info(f"Using Voikko path from config: {voikko_path}")
+
+            # Try direct initialization first (system libraries)
             try:
                 voikko = Voikko("fi")
-                test_result = voikko.analyze("testi")
-                if test_result:
+                if voikko.analyze("testi"):
                     logger.info("Successfully initialized Voikko using system libraries")
                     return voikko
             except Exception as e:
@@ -145,36 +162,92 @@ class FinnishTextProcessor(BaseTextProcessor):
 
             # Try with explicit paths
             for path in search_paths:
-                if not path:
-                    continue
-                
-                try:
-                    path = Path(path)
-                    if not path.exists():
-                        continue
-                        
-                    voikko = Voikko("fi", str(path))
-                    # Test the initialization
-                    test_result = voikko.analyze("testi")
-                    if test_result:
-                        logger.info(f"Successfully initialized Voikko with path: {path}")
-                        return voikko
-                        
-                except Exception as e:
-                    logger.debug(f"Failed to initialize Voikko with path {path}: {e}")
+                if not os.path.exists(path):
+                    logger.debug(f"Path does not exist: {path}")
                     continue
 
-            logger.error(
-                "Could not initialize Voikko. Please ensure libvoikko and voikko-fi "
-                "are installed. On Ubuntu/WSL: sudo apt-get install libvoikko-dev voikko-fi"
-            )
+                try:
+                    # Windows-specific DLL handling
+                    if platform == 'win32':
+                        self._add_dll_directory(path)
+                        if not self._verify_voikko_installation(path):
+                            continue
+
+                    voikko = Voikko("fi", str(path))
+                    if voikko.analyze("testi"):
+                        logger.info(f"Successfully initialized Voikko with path: {path}")
+                        return voikko
+                except Exception as e:
+                    logger.debug(f"Failed to initialize Voikko with path {path}: {e}")
+
+            # Platform-specific guidance
+            if platform == 'win32':
+                logger.warning("On Windows, ensure Voikko is installed in one of these locations: " + 
+                             ", ".join(self.VOIKKO_PATHS['win32']))
+            else:
+                logger.warning("On Linux/Unix, install Voikko using your package manager, e.g.:\n" +
+                             "Ubuntu/Debian: sudo apt-get install libvoikko-dev voikko-fi\n" +
+                             "Fedora: sudo dnf install libvoikko voikko-fi\n" +
+                             "macOS: brew install voikko")
             return None
 
         except Exception as e:
             logger.error(f"Failed to initialize Voikko: {str(e)}")
             return None
+            
+            # # Default paths
+            # default_paths = [
+            #     # Linux/WSL paths
+            #     "/usr/lib/voikko",
+            #     "/usr/local/lib/voikko",
+            #     "/usr/share/voikko",
+            #     # Home directory
+            #     os.path.expanduser("~/voikko"),
+            #     # Windows paths
+            #     "C:/scripts/Voikko",
+            #     "C:/Program Files/Voikko",
+            #     "C:/Voikko",
+            # ]
+            
 
-    # src/core/language_processing/finnish.py
+    def _add_dll_directory(self, path: str) -> None:
+        """Add directory to DLL search path on Windows."""
+        if sys.platform == 'win32':
+            try:
+                if hasattr(os, 'add_dll_directory'):  # Python 3.8+
+                    os.add_dll_directory(path)
+                else:
+                    if path not in os.environ['PATH']:
+                        os.environ['PATH'] = path + os.pathsep + os.environ['PATH']
+                logger.info(f"Added {path} to DLL search path")
+            except Exception as e:
+                logger.error(f"Error adding DLL directory {path}: {str(e)}")
+
+    def _verify_voikko_installation(self, path: str) -> bool:
+        """Verify Voikko installation (Windows-specific)."""
+        if sys.platform != 'win32':
+            return True  # Skip verification on non-Windows platforms
+            
+        logger.info("Verifying Voikko installation...")
+        
+        # Check DLL
+        dll_path = os.path.join(path, "libvoikko-1.dll")
+        dll_exists = os.path.exists(dll_path)
+        logger.info(f"DLL exists: {dll_exists} ({dll_path})")
+        
+        # Check dictionary paths
+        found_dict = False
+        for version in ['5', '2']:
+            dict_path = os.path.join(path, "voikko", version, "mor-standard")
+            if os.path.exists(dict_path):
+                logger.info(f"Found dictionary version {version} at: {dict_path}")
+                found_dict = True
+        
+        if not found_dict:
+            logger.error("No dictionary found!")
+            
+        return dll_exists and found_dict
+
 
     def get_base_form(self, word: str) -> str:
         """Get base form of a Finnish word with compound word handling."""
