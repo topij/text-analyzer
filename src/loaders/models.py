@@ -37,7 +37,14 @@ class CategoryConfig(BaseModel):
     description: str = Field(default="")
     keywords: List[str] = Field(default_factory=list)
     threshold: float = Field(default=0.5, ge=0.0, le=1.0)
-    parent: Optional[str] = None
+    parent: Optional[str] = None  # For hierarchical categories
+
+    @field_validator("keywords")
+    def split_keywords(cls, v):
+        """Handle comma-separated keywords from Excel."""
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        return v
 
 class PredefinedKeyword(BaseModel):
     """Configuration for a predefined keyword."""

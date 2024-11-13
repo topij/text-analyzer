@@ -59,37 +59,30 @@ class KeywordAnalyzer(TextAnalyzer):
             (
                 "system",
                 """You are a keyword extraction expert. Extract important keywords and phrases from text.
-                Consider:
-                - Technical terms and domain-specific vocabulary
-                - Important concepts and themes
-                - Named entities and proper nouns
-                - Compound terms and multi-word phrases"""
+                Focus on: technical terms, domain-specific vocabulary, important concepts, named entities, and compound phrases.
+                Return ONLY valid JSON with keywords and optional domain groupings."""
             ),
             (
                 "human",
-                """Extract keywords from this text:
-                {text}
+                """Analyze this text and extract keywords:
+
+                Text: {text}
                 
                 Guidelines:
-                - Extract up to {max_keywords} keywords
-                - Consider these statistical keywords: {statistical_keywords}
-                - Min keyword length: {min_length} characters
-                - Focus on: {focus_area}
+                - Maximum keywords: {max_keywords}
+                - Consider statistical keywords: {statistical_keywords}
+                - Minimum length: {min_length} characters
+                - Focus area: {focus_area}
                 
-                Return in JSON format with these fields:
-                {{
-                    "keywords": [
-                        {{
-                            "keyword": "example term",
-                            "score": 0.95,
-                            "domain": "technical"
-                        }}
-                    ],
-                    "domain_keywords": {{
-                        "technical": ["term1", "term2"],
-                        "business": ["term3", "term4"]
-                    }}
-                }}"""
+                Return the results in this exact JSON format:
+                {{"keywords": [
+                    {{"keyword": "example term", "score": 0.95, "domain": "technical"}},
+                    {{"keyword": "another term", "score": 0.85, "domain": "business"}}
+                ],
+                "domain_keywords": {{
+                    "technical": ["term1", "term2"],
+                    "business": ["term3", "term4"]
+                }}}}"""
             )
         ])
 
@@ -97,7 +90,7 @@ class KeywordAnalyzer(TextAnalyzer):
             {
                 "text": RunnablePassthrough(),
                 "max_keywords": lambda _: self.config.get("max_keywords", 10),
-                "statistical_keywords": lambda x: self._get_statistical_keywords(x),
+                "statistical_keywords": lambda x: ", ".join(self._get_statistical_keywords(x)),
                 "min_length": lambda _: self.config.get("min_keyword_length", 3),
                 "focus_area": lambda _: self.config.get("focus_on", "general topics")
             }
@@ -107,13 +100,158 @@ class KeywordAnalyzer(TextAnalyzer):
         )
 
         return chain
+    
+    def _split_text_sections(self, text: str, section_size: int = 200) -> List[TextSection]:
+        """Split text into weighted sections.
+        
+        Args:
+            text: Input text
+            section_size: Target size for each section
+            
+        Returns:
+            List of TextSection objects with position-based weights
+        """
+        sections = []
+        text = text.strip()
+        
+        # Handle short texts
+        if len(text) <= section_size:
+            return [TextSection(text, 0, len(text), 1.0)]
+            
+        # Split into sections with position-based weights
+        for i in range(0, len(text), section_size):
+            section_text = text[i:i + section_size]
+            
+            # Higher weights for start and end sections
+            if i == 0:  # First section
+                weight = 1.2
+            elif i + section_size >= len(text):  # Last section
+                weight = 1.1
+            else:  # Middle sections
+                weight = 1.0
+                
+            sections.append(TextSection(
+                content=section_text,
+                start=i,
+                end=i + len(section_text),
+                weight=weight
+            ))
+            
+        return sections
+        
+    # In keyword_analyzer.py (KeywordAnalyzer class)
+
+    def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
+        """Process LLM output specifically for keyword analysis.
+        
+        Args:
+            output: Raw LLM output
+            
+        Returns:
+            Dict[str, Any]: Processed keyword output
+        """
+        # First use base processing to get JSON
+        data = super()._post_process_llm_output(output)
+        if not data:
+            return {"keywords": [], "domain_keywords": {}}
+        
+        try:
+            # Process keywords with validation
+            keywords = []
+            for kw in data.get("keywords", []):
+                if isinstance(kw, dict) and "keyword" in kw:
+                    keywords.append({
+                        "keyword": kw["keyword"],
+                        "score": float(kw.get("score", 0.5)),
+                        "domain": kw.get("domain")
+                    })
+            
+            return {
+                "keywords": keywords,
+                "domain_keywords": data.get("domain_keywords", {})
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error processing keyword output: {e}")
+            return {"keywords": [], "domain_keywords": {}}
+
+    def _analyze_statistically(self, text: str, sections: Optional[List[TextSection]] = None) -> List[KeywordInfo]:
+        """Extract keywords using statistical analysis."""
+        try:
+            if not self.language_processor:
+                return []
+
+            # Extract word frequencies
+            words = self._extract_candidate_words(text)
+            word_freq = Counter(words)
+            
+            # Calculate max frequency for normalization
+            max_freq = max(word_freq.values()) if word_freq else 1
+            
+            # Process each word
+            keywords = []
+            for word, freq in word_freq.items():
+                if not self._is_valid_keyword(word):
+                    continue
+                    
+                # Calculate base statistical score
+                base_score = freq / max_freq
+                
+                # Calculate position score (1.0 if no sections provided)
+                position_score = 1.0
+                if sections:
+                    # Find all occurrences and their weights
+                    weights = []
+                    for section in sections:
+                        if word.lower() in section.content.lower():
+                            weights.append(section.weight)
+                    if weights:
+                        position_score = sum(weights) / len(weights)
+                
+                # Calculate final score
+                final_score = min(base_score * position_score, 1.0)
+                
+                if final_score >= self.config.get("min_confidence", 0.1):
+                    keywords.append(KeywordInfo(
+                        keyword=word,
+                        score=final_score,
+                        domain=self._detect_domain(word)
+                    ))
+            
+            return sorted(
+                keywords,
+                key=lambda x: x.score,
+                reverse=True
+            )[:self.config.get("max_keywords", 10)]
+
+        except Exception as e:
+            self.logger.error(f"Statistical analysis failed: {e}")
+            return []
 
     async def analyze(self, text: str) -> KeywordAnalysisResult:
-        """Analyze text to extract keywords. Returns schema model for API use."""
-        # Get internal analysis results
-        output = await self._analyze_internal(text)
-        # Convert to schema model
-        return output.to_schema()
+        """Analyze text to extract keywords."""
+        try:
+            # Get internal analysis results
+            output = await self._analyze_internal(text)
+            
+            # Convert to KeywordAnalysisResult
+            return KeywordAnalysisResult(
+                keywords=[k for k in output.keywords],
+                compound_words=[],  # Fill if needed
+                domain_keywords=output.domain_keywords,
+                language=self.language_processor.language if self.language_processor else "unknown",
+                success=True
+            )
+        except Exception as e:
+            self.logger.error(f"Analysis failed: {e}")
+            return KeywordAnalysisResult(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language="unknown",
+                success=False,
+                error=str(e)
+            )
 
     async def _analyze_internal(self, text: str) -> KeywordOutput:
         """Internal analysis method returning KeywordOutput."""

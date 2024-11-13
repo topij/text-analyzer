@@ -101,26 +101,58 @@ class TestDataGenerator:
                 ]
             }),
             ParameterSheets.EXCLUDED_EN.value: pd.DataFrame({
-            "keyword": ["the", "and", "with", "for", "new", "using"],
-            "reason": ["Common word"] * 6
+                "keyword": ["the", "and", "with", "for", "new", "using"],
+                "reason": ["Common word"] * 6
             }),
-            ParameterSheets.DOMAINS_EN.value: pd.DataFrame({
-                "name": ["technical", "business"],
+            # New: Categories sheet
+            ParameterSheets.CATEGORIES_EN.value: pd.DataFrame({
+                "category": [
+                    "technical_content", "business_content", "educational_content",
+                    "online_learning", "classroom_learning", "professional_development"
+                ],
                 "description": [
                     "Technical and software development content",
-                    "Business and financial content"
+                    "Business and financial analysis content",
+                    "General educational and learning content",
+                    "Online and e-learning specific content",
+                    "Traditional classroom learning content",
+                    "Professional skills development content"
+                ],
+                "keywords": [
+                    "software,development,api,programming,technical,code",
+                    "revenue,sales,market,growth,business,financial",
+                    "learning,education,training,teaching,curriculum",
+                    "elearning,virtual,remote,online,digital",
+                    "classroom,lecture,workshop,in-person,hands-on",
+                    "skills,competence,career,professional,development"
+                ],
+                "threshold": [0.6, 0.6, 0.5, 0.5, 0.5, 0.5],
+                "parent": [
+                    None, None, None,
+                    "educational_content", "educational_content", None
+                ]
+            }),
+            ParameterSheets.DOMAINS_EN.value: pd.DataFrame({
+                "name": ["technical", "business", "educational"],
+                "description": [
+                    "Technical and software development content",
+                    "Business and financial content",
+                    "Educational and training content"
                 ],
                 "key_terms": [
                     "software,development,algorithm,system",
-                    "revenue,growth,market,financial"
+                    "revenue,growth,market,financial",
+                    "learning,training,education,skills"
                 ],
                 "context": [
                     "Focus on technical implementation details",
-                    "Focus on business performance metrics"
+                    "Focus on business performance metrics",
+                    "Focus on learning and development aspects"
                 ],
                 "stopwords": [
                     "using,implementation,basic,simple",
-                    "new,current,various,general"
+                    "new,current,various,general",
+                    "basic,simple,just,like"
                 ]
             })
         }
@@ -160,23 +192,55 @@ class TestDataGenerator:
                 "avainsana": ["ja", "tai", "sekä", "kanssa", "uusi", "käyttäen"],
                 "syy": ["Yleinen sana"] * 6
             }),
+            # New: Finnish Categories sheet
+            ParameterSheets.CATEGORIES_FI.value: pd.DataFrame({
+                "kategoria": [
+                    "tekninen_sisältö", "liiketoiminta_sisältö", "koulutussisältö",
+                    "verkko_oppiminen", "lähiopetus", "ammatillinen_kehitys"
+                ],
+                "kuvaus": [
+                    "Tekninen ja ohjelmistokehitys sisältö",
+                    "Liiketoiminta ja talousanalyysi sisältö",
+                    "Yleinen koulutus ja oppimissisältö",
+                    "Verkko-oppimisen ja e-oppimisen sisältö",
+                    "Perinteinen lähiopetussisältö",
+                    "Ammatillisen osaamisen kehittämissisältö"
+                ],
+                "avainsanat": [
+                    "ohjelmisto,kehitys,rajapinta,ohjelmointi,tekninen,koodi",
+                    "liikevaihto,myynti,markkina,kasvu,liiketoiminta,talous",
+                    "oppiminen,koulutus,opetus,opetussuunnitelma",
+                    "verkko-oppiminen,virtuaalinen,etä,online,digitaalinen",
+                    "lähiopetus,luento,työpaja,läsnäolo,käytäntö",
+                    "osaaminen,pätevyys,ura,ammatillinen,kehitys"
+                ],
+                "kynnysarvo": [0.6, 0.6, 0.5, 0.5, 0.5, 0.5],
+                "yläkategoria": [
+                    None, None, None,
+                    "koulutussisältö", "koulutussisältö", None
+                ]
+            }),
             ParameterSheets.DOMAINS_FI.value: pd.DataFrame({
-                "nimi": ["tekninen", "liiketoiminta"],
+                "nimi": ["tekninen", "liiketoiminta", "koulutus"],
                 "kuvaus": [
                     "Tekninen ja ohjelmistokehityssisältö",
-                    "Liiketoiminta ja taloussisältö"
+                    "Liiketoiminta ja taloussisältö",
+                    "Koulutus ja oppimissisältö"
                 ],
                 "keskeiset_termit": [
                     "ohjelmisto,kehitys,algoritmi,järjestelmä",
-                    "liikevaihto,kasvu,markkina,talous"
+                    "liikevaihto,kasvu,markkina,talous",
+                    "oppiminen,koulutus,opetus,osaaminen"
                 ],
                 "konteksti": [
                     "Keskittyy teknisiin toteutusyksityiskohtiin",
-                    "Keskittyy liiketoiminnan suorituskykyyn"
+                    "Keskittyy liiketoiminnan suorituskykyyn",
+                    "Keskittyy oppimiseen ja kehitykseen"
                 ],
                 "ohitettavat_sanat": [
                     "käyttäen,toteutus,perus,yksinkertainen",
-                    "uusi,nykyinen,erilainen,yleinen"
+                    "uusi,nykyinen,erilainen,yleinen",
+                    "perus,yksinkertainen,vain,kuten"
                 ]
             })
         }
@@ -193,33 +257,41 @@ class TestDataGenerator:
         output_dir = self.file_utils.get_data_path("raw")
         files = {}
 
-        # Define test content
+        # Define test content with category-focused examples
         content = {
             "en": {
                 "technical": [
-                    "Machine learning models are trained using large datasets to recognize patterns. The neural network architecture includes multiple layers for feature extraction. Data preprocessing and feature engineering are crucial steps in the pipeline. ",
-                    "Cloud computing services provide scalable infrastructure for deployments. Microservices architecture enables modular and maintainable system design. API endpoints handle authentication and data validation requirements. ",
-                    "Version control systems track changes in source code repositories. Continuous integration ensures code quality and automated testing. Documentation covers API usage and system architecture details. "],
+                    "Machine learning models are trained using large datasets to recognize patterns. The neural network architecture includes multiple layers for feature extraction. Data preprocessing and feature engineering are crucial steps in the pipeline.",
+                    "Cloud computing services provide scalable infrastructure for deployments. Microservices architecture enables modular and maintainable system design. API endpoints handle authentication and data validation requirements.",
+                    "Version control systems track changes in source code repositories. Continuous integration ensures code quality and automated testing. Documentation covers API usage and system architecture details."
+                ],
                 "business": [
-                    "Q3 financial results show 15% revenue growth and improved profit margins. Customer acquisition costs decreased while retention rates increased. Market expansion strategy focuses on emerging technology sectors. ",
-                    "Strategic partnerships drive innovation and market penetration. Investment in R&D resulted in three new product launches. Sales performance exceeded targets in key market segments. ",
-                    "Operational efficiency improved through process automation. Customer satisfaction metrics show positive trend year-over-year. Cost optimization initiatives delivered 12% savings in Q4. "],
-                "general": [
-                    "Team collaboration improved with new communication tools. Project timeline adjustments accommodate additional requirements. Resource allocation ensures optimal task distribution. ",
-                    "Knowledge sharing sessions enhance team capabilities. Regular updates maintain stakeholder engagement levels. Quality assurance practices meet industry standards. "]
+                    "Q3 financial results show 15% revenue growth and improved profit margins. Customer acquisition costs decreased while retention rates increased. Market expansion strategy focuses on emerging technology sectors.",
+                    "Strategic partnerships drive innovation and market penetration. Investment in R&D resulted in three new product launches. Sales performance exceeded targets in key market segments.",
+                    "Operational efficiency improved through process automation. Customer satisfaction metrics show positive trend year-over-year. Cost optimization initiatives delivered 12% savings in Q4."
+                ],
+                "educational": [
+                    "The online learning platform features interactive modules and self-paced progress tracking. Virtual classrooms enable real-time collaboration between students and instructors. Digital assessment tools provide immediate feedback on learning outcomes.",
+                    "Classroom workshops combine theoretical concepts with hands-on exercises. Small group activities promote peer learning and knowledge sharing. Practice sessions reinforce key learning objectives.",
+                    "Professional development programs focus on industry-relevant skills. Mentoring sessions provide guidance for career advancement. Competency assessments track progress towards learning goals."
+                ]
             },
             "fi": {
                 "technical": [
-                    "Koneoppimismalleja koulutetaan suurilla datajoukolla tunnistamaan kaavoja. Neuroverkon arkkitehtuuri sisältää useita kerroksia piirteiden erottamiseen. Datan esikäsittely ja piirteiden suunnittelu ovat keskeisiä vaiheita prosessissa. ",
-                    "Pilvipalvelut tarjoavat skaalautuvan infrastruktuurin käyttöönottoon. Mikropalveluarkkitehtuuri mahdollistaa modulaarisen järjestelmäsuunnittelun. Rajapintapalvelut hoitavat autentikoinnin ja datan validoinnin. ",
-                    "Versionhallintajärjestelmät seuraavat lähdekoodin muutoksia. Jatkuva integraatio varmistaa koodin laadun ja automaattitestauksen. Dokumentaatio kattaa rajapintojen käytön ja järjestelmäarkkitehtuurin. "],
+                    "Koneoppimismalleja koulutetaan suurilla datajoukolla tunnistamaan kaavoja. Neuroverkon arkkitehtuuri sisältää useita kerroksia piirteiden erottamiseen. Datan esikäsittely ja piirteiden suunnittelu ovat keskeisiä vaiheita prosessissa.",
+                    "Pilvipalvelut tarjoavat skaalautuvan infrastruktuurin käyttöönottoon. Mikropalveluarkkitehtuuri mahdollistaa modulaarisen järjestelmäsuunnittelun. Rajapintapalvelut hoitavat autentikoinnin ja datan validoinnin.",
+                    "Versionhallintajärjestelmät seuraavat lähdekoodin muutoksia. Jatkuva integraatio varmistaa koodin laadun ja automaattitestauksen. Dokumentaatio kattaa rajapintojen käytön ja järjestelmäarkkitehtuurin."
+                ],
                 "business": [
-                    "Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun ja parantuneet katteet. Asiakashankinnan kustannukset laskivat ja asiakaspysyvyys parani. Markkinalaajennusstrategia keskittyy nouseviin teknologiasektoreihin. ",
-                    "Strategiset kumppanuudet edistävät innovaatiota ja markkinapenetraatiota. T&K-investoinnit johtivat kolmeen uuteen tuotelanseeraukseen. Myyntitulos ylitti tavoitteet keskeisissä markkinasegmenteissä. ",
-                    "Toiminnan tehokkuus parani prosessiautomaation avulla. Asiakastyytyväisyysmittarit osoittavat positiivista kehitystä. Kustannusoptimointi tuotti 12% säästöt Q4:llä. "],
-                "general": [
-                    "Tiimin yhteistyö parani uusien viestintätyökalujen myötä. Projektiaikataulua mukautettiin lisävaatimusten vuoksi. Resurssien kohdentaminen varmistaa optimaalisen tehtäväjaon. ",
-                    "Tiedonjakotilaisuudet kehittävät tiimin osaamista. Säännölliset päivitykset ylläpitävät sidosryhmien sitoutumista. Laadunvarmistuskäytännöt täyttävät toimialan standardit. "]
+                    "Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun ja parantuneet katteet. Asiakashankinnan kustannukset laskivat ja asiakaspysyvyys parani. Markkinalaajennusstrategia keskittyy nouseviin teknologiasektoreihin.",
+                    "Strategiset kumppanuudet edistävät innovaatiota ja markkinapenetraatiota. T&K-investoinnit johtivat kolmeen uuteen tuotelanseeraukseen. Myyntitulos ylitti tavoitteet keskeisissä markkinasegmenteissä.",
+                    "Toiminnan tehokkuus parani prosessiautomaation avulla. Asiakastyytyväisyysmittarit osoittavat positiivista kehitystä. Kustannusoptimointi tuotti 12% säästöt Q4:llä."
+                ],
+                "educational": [
+                    "Verkko-oppimisalusta sisältää interaktiivisia moduuleja ja oman tahdin edistymisen seurannan. Virtuaaliluokat mahdollistavat reaaliaikaisen yhteistyön opiskelijoiden ja ohjaajien välillä. Digitaaliset arviointityökalut antavat välitöntä palautetta oppimistuloksista.",
+                    "Lähiopetuksen työpajat yhdistävät teoreettiset käsitteet käytännön harjoituksiin. Pienryhmätoiminta edistää vertaisoppimista ja tiedon jakamista. Harjoitukset vahvistavat keskeisiä oppimistavoitteita.",
+                    "Ammatillisen kehityksen ohjelmat keskittyvät toimialan kannalta olennaisiin taitoihin. Mentorointi tarjoaa ohjausta urakehitykseen. Osaamisarvioinnit seuraavat edistymistä kohti oppimistavoitteita."
+                ]
             }
         }
 

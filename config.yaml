@@ -8,11 +8,11 @@ environment: "development"  # development, test, production
 
 # Logging configuration
 logging:
-  level: "DEBUG" #, "INFO"
+  level: "INFO" #, "DEBUG" #
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "logs/app.log"
-  disable_existing_loggers: false
+  disable_existing_loggers: true #false
 
 # Core analyzer settings
 analyzer:

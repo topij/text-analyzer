@@ -103,26 +103,42 @@ class TextAnalyzer(ABC):
         return sections
 
     def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process and validate LLM output."""
+        """Process raw LLM output into dictionary format.
+        
+        Args:
+            output: Raw LLM output
+            
+        Returns:
+            Dict[str, Any]: Processed output
+        """
         try:
-            # Handle AIMessage output
+            # Extract content from different output types
             if hasattr(output, "content"):
                 content = output.content
             elif isinstance(output, str):
                 content = output
+            elif isinstance(output, dict):
+                return output
             else:
                 self.logger.error(f"Unexpected output type: {type(output)}")
-                return {"error": f"Unexpected output type: {type(output)}"}
+                return {}
 
-            # Parse JSON content
+            # Clean and parse JSON
             try:
-                if isinstance(content, str):
-                    return json.loads(content)
-                return content
+                import json
+                # Remove any potential prefix/suffix text
+                content = content.strip()
+                if content.startswith('```json'):
+                    content = content[7:]
+                if content.endswith('```'):
+                    content = content[:-3]
+                    
+                return json.loads(content)
+                
             except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON: {e}")
-                return {"error": "Failed to parse LLM output"}
+                self.logger.error(f"JSON parse error: {e}\nContent: {content}")
+                return {}
 
         except Exception as e:
             self.logger.error(f"Error processing LLM output: {e}")
-            return {"error": str(e)}
+            return {}
