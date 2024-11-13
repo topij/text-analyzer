@@ -9,7 +9,7 @@ from langchain_core.messages import ChatMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 
-from src.analyzers.base import BaseAnalyzer, TextSection, AnalyzerOutput
+from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection  # Changed from BaseAnalyzer
 from src.schemas import KeywordAnalysisResult, KeywordInfo
 
 from pydantic import Field
@@ -18,78 +18,21 @@ logger = logging.getLogger(__name__)
 
 class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
-    keywords: List[Dict[str, Any]] = Field(default_factory=list)
+    keywords: List[KeywordInfo] = Field(default_factory=list)
     domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
 
-    def dict(self) -> Dict[str, Any]:
-        """Convert to dict with proper structure."""
-        if self.error:
-            return {
-                "keywords": {
-                    "error": self.error,
-                    "success": False,
-                    "language": self.language
-                }
-            }
-
-        return {
-            "keywords": {
-                "keywords": self.keywords,
-                "domain_keywords": self.domain_keywords,
-                "success": self.success,
-                "language": self.language
-            }
-        }
-
-    def to_schema(self) -> KeywordAnalysisResult:
-        """Convert to schema model."""
-        if not self.success:
-            return KeywordAnalysisResult(
-                keywords=[],
-                language=self.language,
-                success=False,
-                error=self.error
-            )
-            
-        return KeywordAnalysisResult(
-            keywords=[KeywordInfo(**k) for k in self.keywords],
-            language=self.language,
-            success=True
-        )
-
-class KeywordAnalyzer(BaseAnalyzer):
+class KeywordAnalyzer(TextAnalyzer):
     """Analyzes text to extract keywords with position-aware weighting."""
-
-    # def __init__(
-    #     self,
-    #     llm=None,
-    #     config: Optional[Dict[str, Any]] = None,
-    #     language_processor=None
-    # ):
-    #     """Initialize analyzer with LLM and config."""
-    #     super().__init__(config)
-    #     self.llm = llm
-    #     self.language_processor = language_processor
-    #     self.chain = self._create_chain()
-        
-    #     # Load or set default weights
-    #     self.weights = config.get("weights", {
-    #         "statistical": 0.4,
-    #         "llm": 0.6
-    #     })
-        
-    #     # Load domain keywords if available
-    #     self.domain_keywords = config.get("domain_keywords", {})
-
+    
     def __init__(
         self,
         llm=None,
         config: Optional[Dict[str, Any]] = None,
         language_processor=None
     ):
-        super().__init__(config)
-        self.llm = llm
+        super().__init__(llm, config)
         self.language_processor = language_processor
+        self.llm = llm
         self.chain = self._create_chain()
         
         # Load or set default weights
@@ -111,7 +54,7 @@ class KeywordAnalyzer(BaseAnalyzer):
 
 
     def _create_chain(self) -> RunnableSequence:
-        """Create the LangChain processing chain."""
+        """Create LangChain processing chain."""
         template = ChatPromptTemplate.from_messages([
             (
                 "system",
@@ -120,18 +63,7 @@ class KeywordAnalyzer(BaseAnalyzer):
                 - Technical terms and domain-specific vocabulary
                 - Important concepts and themes
                 - Named entities and proper nouns
-                - Compound terms and multi-word phrases
-                
-                Return results in JSON format with these exact fields:
-                {{
-                    "keywords": [
-                        {{
-                            "keyword": "example_keyword",
-                            "score": 0.95,
-                            "domain": "technical"
-                        }}
-                    ]
-                }}""",
+                - Compound terms and multi-word phrases"""
             ),
             (
                 "human",
@@ -143,8 +75,22 @@ class KeywordAnalyzer(BaseAnalyzer):
                 - Consider these statistical keywords: {statistical_keywords}
                 - Min keyword length: {min_length} characters
                 - Focus on: {focus_area}
-                """,
-            ),
+                
+                Return in JSON format with these fields:
+                {{
+                    "keywords": [
+                        {{
+                            "keyword": "example term",
+                            "score": 0.95,
+                            "domain": "technical"
+                        }}
+                    ],
+                    "domain_keywords": {{
+                        "technical": ["term1", "term2"],
+                        "business": ["term3", "term4"]
+                    }}
+                }}"""
+            )
         ])
 
         chain = (
@@ -157,7 +103,7 @@ class KeywordAnalyzer(BaseAnalyzer):
             }
             | template
             | self.llm
-            | self._process_llm_output
+            | self._post_process_llm_output
         )
 
         return chain
@@ -218,7 +164,7 @@ class KeywordAnalyzer(BaseAnalyzer):
                 language="unknown"
             )
 
-    def _analyze_statistically(
+    def analyze_statistically(
         self, 
         text: str,
         sections: List[TextSection]

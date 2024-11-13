@@ -1,101 +1,82 @@
 # src/analyzers/theme_analyzer.py
 
+from typing import Any, Dict, List, Optional, Union
 import logging
-from typing import Any, Dict, List, Optional
-
-from langchain_core.messages import ChatMessage  # Add this import
+import json
+from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
-from pydantic import Field
 
-from .base import AnalyzerOutput, TextAnalyzer
+from src.analyzers.base import TextAnalyzer, AnalyzerOutput
 
 logger = logging.getLogger(__name__)
 
+class ThemeInfo(BaseModel):
+    """Information about an identified theme."""
+    name: str
+    description: str = ""
+    confidence: float = 0.0
+    keywords: List[str] = Field(default_factory=list)
 
-class ThemeOutput(AnalyzerOutput):
-    def dict(self) -> Dict[str, Any]:
-        base = super().dict()
-        if "error" in base:
-            return {"themes": {"error": base["error"], "success": False, "language": self.language}}
-
-        return {
-            "themes": {
-                "themes": self.themes,
-                "theme_descriptions": self.theme_descriptions,
-                "theme_confidence": self.theme_confidence,
-                "related_keywords": self.related_keywords,
-                "language": self.language,
-                "success": True,
-            }
-        }
-
+class ThemeOutput(AnalyzerOutput):  # Inherit from AnalyzerOutput
+    """Output model for theme analysis results."""
+    themes: List[ThemeInfo] = Field(default_factory=list)
+    theme_descriptions: Dict[str, str] = Field(default_factory=dict)
+    theme_confidence: Dict[str, float] = Field(default_factory=dict)
+    related_keywords: Dict[str, List[str]] = Field(default_factory=dict)
 
 class ThemeAnalyzer(TextAnalyzer):
     """Analyzes text to identify main themes and topics."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.logger = logging.getLogger(__name__)
+    
+    def __init__(
+        self,
+        llm=None,
+        config: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(llm, config)
+        self.chain = self._create_chain()
 
     def _create_chain(self) -> RunnableSequence:
         """Create LangChain processing chain for theme extraction."""
-        template = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    """You are an expert at identifying main themes and topics in text.
-            When analyzing business and technical content, focus on:
-            - Business performance (revenue, growth, costs)
-            - Financial metrics and indicators
-            - Market and strategy themes
-            - Technical and operational aspects
-            - Industry-specific terminology
-            
-            Always identify clear, concrete themes rather than abstract concepts.""",
-                ),
-                (
-                    "human",
-                    """Analyze this text and identify the main themes.
-            
-            Text: {text}
-            Maximum Themes: {max_themes}
-            Focus Areas: {focus_areas}
-            
-            Guidelines:
-            - For business text, emphasize financial and operational themes
-            - Include clear theme names that match the content domain
-            - Provide evidence-based confidence scores
-            - Connect themes to specific text elements
-            
-            Return results in this format:
-            {{
-                "themes": ["Business Performance", "Financial Growth", "Market Strategy"],
-                "descriptions": {{
-                    "Business Performance": "Focus on operational metrics and results",
-                    "Financial Growth": "Revenue and growth indicators",
-                    "Market Strategy": "Strategic initiatives and market position"
-                }},
-                "confidence": {{
-                    "Business Performance": 0.9,
-                    "Financial Growth": 0.85,
-                    "Market Strategy": 0.75
-                }},
-                "related_keywords": {{
-                    "Business Performance": ["revenue", "metrics", "performance"],
-                    "Financial Growth": ["growth", "revenue increase", "financial results"],
-                    "Market Strategy": ["market expansion", "strategic initiative"]
-                }}
-            }}""",
-                ),
-            ]
-        )
+        template = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                """You are a text analysis expert focusing on theme identification.
+                Your task is to identify main themes in the given text and output them in a structured JSON format.
+                Focus on clear, concrete themes rather than abstract concepts."""
+            ),
+            (
+                "human",
+                """Analyze this text and identify key themes.
+                
+                Text: {text}
+                Maximum Themes: {max_themes}
+                Focus Areas: {focus_areas}
+                
+                Output the results in this exact JSON format:
+                {{
+                    "themes": ["Theme 1", "Theme 2"],
+                    "descriptions": {{
+                        "Theme 1": "Description of theme 1",
+                        "Theme 2": "Description of theme 2"
+                    }},
+                    "confidence": {{
+                        "Theme 1": 0.85,
+                        "Theme 2": 0.75
+                    }},
+                    "related_keywords": {{
+                        "Theme 1": ["keyword1", "keyword2"],
+                        "Theme 2": ["keyword3", "keyword4"]
+                    }}
+                }}"""
+            )
+        ])
 
         chain = (
             {
                 "text": RunnablePassthrough(),
                 "max_themes": lambda _: self.config.get("max_themes", 3),
-                "focus_areas": lambda _: self.config.get("focus_areas", "business,finance,technical"),
+                "focus_areas": lambda _: self.config.get("focus_areas", "business,finance,technical")
             }
             | template
             | self.llm
@@ -104,161 +85,170 @@ class ThemeAnalyzer(TextAnalyzer):
 
         return chain
 
+    def _process_initial_content(self, content: Any) -> Dict[str, Any]:
+        """Process the initial LLM output content."""
+        try:
+            # Parse JSON if needed
+            if isinstance(content, str):
+                parsed = json.loads(content)
+            else:
+                parsed = content
+            
+            # Create theme objects
+            theme_objects = []
+            descriptions = {}
+            confidence_scores = {}
+            keywords_dict = {}
+            
+            # Get theme data
+            theme_names = parsed.get("themes", [])
+            desc_dict = parsed.get("descriptions", {})
+            conf_dict = parsed.get("confidence", {})
+            kw_dict = parsed.get("related_keywords", {})
+            
+            # Process each theme
+            for theme_name in theme_names:
+                theme_info = ThemeInfo(
+                    name=theme_name,
+                    description=desc_dict.get(theme_name, ""),
+                    confidence=float(conf_dict.get(theme_name, 0.0)),
+                    keywords=kw_dict.get(theme_name, [])
+                )
+                theme_objects.append(theme_info)
+                
+                # Store metadata using string keys
+                descriptions[theme_name] = theme_info.description
+                confidence_scores[theme_name] = theme_info.confidence
+                keywords_dict[theme_name] = theme_info.keywords
+            
+            return {
+                "themes": theme_objects,
+                "theme_descriptions": descriptions,
+                "theme_confidence": confidence_scores,
+                "related_keywords": keywords_dict
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing initial content: {str(e)}", exc_info=True)
+            return None
+
     def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
         """Process LLM output to standardized format."""
         try:
-            # Convert message content to dict
+            # Get raw content
             if hasattr(output, "content"):
-                import json
-
-                try:
-                    parsed = json.loads(output.content)
-                except json.JSONDecodeError:
-                    logger.error("Failed to parse LLM output as JSON")
-                    return {
-                        "themes": [],
-                        "descriptions": {},
-                        "confidence": {},
-                        "related_keywords": {},
-                    }
-            elif isinstance(output, str):
-                try:
-                    parsed = json.loads(output)
-                except json.JSONDecodeError:
-                    logger.error("Failed to parse LLM output as JSON")
-                    return {
-                        "themes": [],
-                        "descriptions": {},
-                        "confidence": {},
-                        "related_keywords": {},
-                    }
+                content = output.content
+                logger.debug(f"Raw LLM output content: {content}")
+                processed = self._process_initial_content(content)
             else:
-                parsed = output
-
-            return {
-                "themes": parsed.get("themes", []),
-                "descriptions": parsed.get("descriptions", {}),
-                "confidence": parsed.get("confidence", {}),
-                "related_keywords": parsed.get("related_keywords", {}),
-            }
+                # Direct content
+                processed = output
+                
+            if processed is None:
+                return self._create_empty_output()
+                
+            logger.debug(f"Processed {len(processed['themes'])} themes successfully")
+            return processed
 
         except Exception as e:
-            logger.error(f"Error processing LLM output: {str(e)}")
-            return {
-                "themes": [],
-                "descriptions": {},
-                "confidence": {},
-                "related_keywords": {},
-            }
+            logger.error(f"Error in post processing: {str(e)}", exc_info=True)
+            return self._create_empty_output()
+
+    def _create_empty_output(self) -> Dict[str, Any]:
+        """Create empty output structure."""
+        return {
+            "themes": [],
+            "theme_descriptions": {},
+            "theme_confidence": {},
+            "related_keywords": {}
+        }
 
     async def analyze(self, text: str, **kwargs) -> ThemeOutput:
         """Analyze text to identify themes."""
         if not text:
-            return self._handle_error("Empty text")
+            return ThemeOutput(error="Empty text", success=False)
 
         try:
-            # Log input text for debugging
-            logger.debug(f"Analyzing text for themes: {text[:100]}...")
-
-            # Build input for chain
-            chain_input = {
-                "text": text,
-                "max_themes": self.config.get("max_themes", 3),
-                "focus_areas": "business,finance",  # Force business focus
-            }
-
-            # Get and log raw LLM results
-            raw_result = await self.chain.ainvoke(chain_input)
-            logger.debug(f"Raw LLM output: {raw_result}")
-
+            # Get LLM analysis
+            logger.debug("Getting LLM analysis...")
+            raw_result = await self.chain.ainvoke(text)
+            
             # Process results
+            logger.debug("Processing LLM results...")
             processed = self._post_process_llm_output(raw_result)
-            logger.debug(f"Processed output: {processed}")
+            
+            # Check for themes
+            if not processed["themes"]:
+                return ThemeOutput(
+                    error="No themes identified",
+                    success=False,
+                    language=self._detect_language(text)
+                )
 
-            # Force business theme if not present
-            themes = processed.get("themes", [])
-            if themes and not any("business" in t.lower() or "financial" in t.lower() for t in themes):
-                if any(kw in text.lower() for kw in ["revenue", "growth", "financial", "business"]):
-                    themes.insert(0, "Business Performance")
-                    processed["descriptions"]["Business Performance"] = "Business metrics and performance indicators"
-                    processed["confidence"]["Business Performance"] = 0.9
-                    processed["related_keywords"]["Business Performance"] = [
-                        "revenue",
-                        "growth",
-                    ]
-
+            # Create successful output
             return ThemeOutput(
-                themes=themes,
-                theme_descriptions=processed.get("descriptions", {}),
-                theme_confidence=processed.get("confidence", {}),
-                related_keywords=processed.get("related_keywords", {}),
+                themes=processed["themes"],
+                theme_descriptions=processed["theme_descriptions"],
+                theme_confidence=processed["theme_confidence"],
+                related_keywords=processed["related_keywords"],
                 language=self._detect_language(text),
+                success=True
             )
 
         except Exception as e:
-            logger.error(f"Theme analysis error: {str(e)}")
-            return self._handle_error(str(e))
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            return ThemeOutput(
+                error=str(e),
+                success=False,
+                language=self._detect_language(text)
+            )
 
-    # async def analyze(self, text: str, **kwargs) -> ThemeOutput:
-    #     """Analyze text to identify themes."""
-    #     # Validate input
-    #     if error := self._validate_input(text):
-    #         return self._handle_error(error)
+    def display_theme_results(self, results: Union[Dict[str, Any], ThemeOutput]) -> None:
+        """Display theme analysis results."""
+        print("\nTheme Analysis Results")
+        print("=" * 50)
+        
+        try:
+            # Convert to dict if needed
+            if hasattr(results, "model_dump"):
+                results = results.model_dump()
+            elif hasattr(results, "dict"):
+                results = results.dict()
 
-    #     try:
-    #         # Process input data
-    #         llm_results = await self.chain.ainvoke({
-    #             "text": text,
-    #             "max_themes": self.config.get("max_themes", 3),
-    #             "focus_areas": self.config.get("focus_areas", "general topics")
-    #         })
+            # Handle error case
+            if results.get("error"):
+                print(f"\nError: {results['error']}")
+                return
 
-    #         # Process results
-    #         processed_results = self._post_process_llm_output(llm_results)
+            # Display themes
+            themes = results.get("themes", [])
+            if not themes:
+                print("\nNo themes identified.")
+                return
 
-    #         return ThemeOutput(
-    #             themes=processed_results["themes"],
-    #             theme_descriptions=processed_results["descriptions"],
-    #             theme_confidence=processed_results["confidence"],
-    #             related_keywords=processed_results["related_keywords"],
-    #             language=self._detect_language(text)
-    #         )
+            print(f"\nIdentified {len(themes)} themes:\n")
+            
+            for i, theme in enumerate(themes, 1):
+                # Extract theme data based on type
+                if isinstance(theme, dict):
+                    name = theme.get('name', 'Unnamed')
+                    desc = theme.get('description', 'No description')
+                    conf = theme.get('confidence', 0.0)
+                    kw = theme.get('keywords', [])
+                else:
+                    name = theme.name
+                    desc = theme.description
+                    conf = theme.confidence
+                    kw = theme.keywords
 
-    #     except Exception as e:
-    #         logger.error(f"Error in theme analysis: {str(e)}")
-    #         return self._handle_error(f"Theme analysis failed: {str(e)}")
+                # Print formatted theme info
+                print(f"\nTheme {i}: {name}")
+                print("-" * (len(f"Theme {i}: {name}") + 5))
+                print(f"Description: {desc}")
+                print(f"Confidence: {conf:.2f}")
+                if kw:
+                    print(f"Keywords: {', '.join(kw)}")
 
-    def _validate_themes(
-        self,
-        themes: List[str],
-        descriptions: Dict[str, str],
-        confidence: Dict[str, float],
-        related_keywords: Dict[str, List[str]],
-    ) -> Dict[str, Any]:
-        """Validate and clean theme data."""
-        valid_themes = []
-        valid_descriptions = {}
-        valid_confidence = {}
-        valid_keywords = {}
-
-        for theme in themes:
-            if not theme or not isinstance(theme, str):
-                continue
-
-            theme = theme.strip()
-            if not theme:
-                continue
-
-            valid_themes.append(theme)
-            valid_descriptions[theme] = descriptions.get(theme, "").strip()
-            valid_confidence[theme] = min(max(confidence.get(theme, 0.5), 0.0), 1.0)
-            valid_keywords[theme] = [
-                k.strip() for k in related_keywords.get(theme, []) if k and isinstance(k, str) and k.strip()
-            ]
-
-        return {
-            "themes": valid_themes,
-            "descriptions": valid_descriptions,
-            "confidence": valid_confidence,
-            "related_keywords": valid_keywords,
-        }
+        except Exception as e:
+            logger.error(f"Display error: {str(e)}", exc_info=True)
+            print("Error displaying theme results.")

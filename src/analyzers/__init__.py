@@ -1,5 +1,3 @@
-# src/analyzers/__init__.py
-
 """
 Text Analysis Components
 ======================
