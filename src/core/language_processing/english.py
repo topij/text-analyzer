@@ -230,3 +230,74 @@ class EnglishTextProcessor(BaseTextProcessor):
             return False
 
         return True
+
+    def is_compound_word(self, word: str) -> bool:
+        """Check if word is a compound word."""
+        word = word.lower()
+        
+        # Check for common compound delimiters
+        if '-' in word or ' ' in word:
+            return True
+            
+        # Check for camelCase and PascalCase
+        if any(c.isupper() for c in word[1:]):
+            return True
+        
+        # Check for known compound patterns
+        parts = self._split_compound_word(word)
+        return len(parts) > 1
+
+    def get_compound_parts(self, word: str) -> List[str]:
+        """Get parts of a compound word."""
+        word = word.lower()
+        
+        # Handle hyphenated words
+        if '-' in word:
+            return [part.strip() for part in word.split('-')]
+            
+        # Handle space-separated words
+        if ' ' in word:
+            return [part.strip() for part in word.split()]
+            
+        # Handle camelCase and PascalCase
+        parts = self._split_compound_word(word)
+        return [part.lower() for part in parts]
+
+    def _split_compound_word(self, word: str) -> List[str]:
+        """Split compound word into parts."""
+        # Base case
+        if len(word) <= 3:
+            return [word]
+            
+        # Try to find known word combinations
+        for i in range(3, len(word)-2):
+            left = word[:i]
+            right = word[i:]
+            
+            left_base = self.get_base_form(left)
+            right_base = self.get_base_form(right)
+            
+            left_valid = (
+                left_base in self._get_wordnet_words() and
+                not self.is_stop_word(left_base)
+            )
+            right_valid = (
+                right_base in self._get_wordnet_words() and
+                not self.is_stop_word(right_base)
+            )
+            
+            if left_valid and right_valid:
+                return [left_base, right_base]
+        
+        return [word]
+
+    def _get_wordnet_words(self) -> Set[str]:
+        """Get set of English words from WordNet."""
+        if not hasattr(self, '_wordnet_words'):
+            from nltk.corpus import wordnet
+            self._wordnet_words = {
+                lemma.name().lower()
+                for synset in wordnet.all_synsets()
+                for lemma in synset.lemmas()
+            }
+        return self._wordnet_words
