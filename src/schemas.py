@@ -3,13 +3,20 @@
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field, confloat
 
+# class KeywordInfo(BaseModel):
+#     """Information about an extracted keyword."""
+    
+#     keyword: str = Field(..., description="The extracted keyword or phrase")
+#     score: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence score for the keyword")
+#     domain: Optional[str] = Field(None, description="Domain/category the keyword belongs to")
+#     compound_parts: Optional[List[str]] = Field(None, description="Parts of compound word")
+
 class KeywordInfo(BaseModel):
     """Information about an extracted keyword."""
-    
     keyword: str = Field(..., description="The extracted keyword or phrase")
-    score: confloat(ge=0.0, le=1.0) = Field(..., description="Confidence score for the keyword")
-    domain: Optional[str] = Field(None, description="Domain/category the keyword belongs to")
-    compound_parts: Optional[List[str]] = Field(None, description="Parts of compound word")
+    score: float = Field(..., ge=0.0, le=1.0, description="Confidence score")
+    domain: Optional[str] = Field(None, description="Domain/category")
+    compound_parts: Optional[List[str]] = Field(None, description="Parts if compound word")
 
 class ThemeInfo(BaseModel):
     """Information about an identified theme."""

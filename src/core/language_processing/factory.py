@@ -158,6 +158,7 @@ def create_text_processor(
     config: Optional[Dict[str, Any]] = None,
     file_utils: Optional[FileUtils] = None
 ) -> BaseTextProcessor:
+
     """Create a text processor instance.
     
     Args:
@@ -181,9 +182,10 @@ def create_text_processor(
                 lang_config.update(config)
             config = lang_config
         except Exception as e:
-            logger.warning(f"Could not load language config from config.yaml: {e}")
+            logger.debug(f"Could not load language config from config.yaml: {e}")  # Changed to DEBUG
             config = config or {}
     
+    logger.debug("Creating text processor with config")  # Changed to DEBUG
     return factory.create_processor(
         language=language,
         config=config

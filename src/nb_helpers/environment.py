@@ -77,4 +77,4 @@ def setup_notebook_env() -> None:
     setup = EnvironmentSetup()
     if not str(setup.project_root) in sys.path:
         sys.path.append(str(setup.project_root))
-    configure_logging()  # from logging module
+    # configure_logging()  # from logging module

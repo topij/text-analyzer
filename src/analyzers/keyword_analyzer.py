@@ -609,37 +609,6 @@ class KeywordAnalyzer(TextAnalyzer):
         
         return {"parts": None, "domain": self._detect_domain(word)}
 
-    # def _combine_results(
-    #     self,
-    #     statistical_keywords: List[KeywordInfo],
-    #     llm_keywords: List[KeywordInfo]
-    # ) -> List[KeywordInfo]:
-    #     """Combine statistical and LLM results with clustering."""
-    #     combined = {}
-    #     compound_words = []
-        
-    #     # Get weights
-    #     stat_weight = self.weights.get("statistical", 0.4)
-    #     llm_weight = self.weights.get("llm", 0.6)
-        
-    #     # Process keywords
-    #     for kw in statistical_keywords + llm_keywords:
-    #         compound_info = self._process_compound_word(kw.keyword)
-            
-    #         if compound_info["parts"]:
-    #             compound_words.append(kw.keyword)
-                
-    #         combined[kw.keyword] = KeywordInfo(
-    #             keyword=kw.keyword,
-    #             score=kw.score * (stat_weight if kw in statistical_keywords else llm_weight),
-    #             domain=compound_info["domain"],
-    #             compound_parts=compound_info["parts"]
-    #         )
-        
-    #     # Apply clustering to combined results
-    #     clustered = self._cluster_keywords(list(combined.values()))
-    #     return clustered[:self.config.get("max_keywords", 10)], compound_words
-
     def _combine_results(
         self,
         statistical_keywords: List[KeywordInfo],
@@ -653,20 +622,25 @@ class KeywordAnalyzer(TextAnalyzer):
         stat_weight = self.weights.get("statistical", 0.4)
         llm_weight = self.weights.get("llm", 0.6)
         
-        # Combine initial keywords
+        # Process statistical keywords
         for kw in statistical_keywords:
+            compound_info = self._process_compound_word(kw.keyword)
+            if compound_info["parts"]:
+                compound_words.append(kw.keyword)
+                
             combined[kw.keyword] = KeywordInfo(
                 keyword=kw.keyword,
                 score=kw.score * stat_weight,
-                domain=kw.domain
+                domain=compound_info["domain"] or kw.domain,
+                compound_parts=compound_info["parts"]
             )
-            
+        
+        # Process LLM keywords
         for kw in llm_keywords:
-            #  compound_info = self._process_compound_word(kw.keyword)
-            
-            # if compound_info["parts"]:
-            #     compound_words.append(kw.keyword)
-
+            compound_info = self._process_compound_word(kw.keyword)
+            if compound_info["parts"]:
+                compound_words.append(kw.keyword)
+                
             if kw.keyword in combined:
                 existing = combined[kw.keyword]
                 combined[kw.keyword] = KeywordInfo(
@@ -675,15 +649,17 @@ class KeywordAnalyzer(TextAnalyzer):
                         kw.keyword,
                         existing.score + (kw.score * llm_weight),
                         1.0,  # Base position score
-                        existing.domain or kw.domain
+                        existing.domain or compound_info["domain"] or kw.domain
                     ),
-                    domain=existing.domain or kw.domain
+                    domain=existing.domain or compound_info["domain"] or kw.domain,
+                    compound_parts=compound_info["parts"]
                 )
             else:
                 combined[kw.keyword] = KeywordInfo(
                     keyword=kw.keyword,
                     score=kw.score * llm_weight,
-                    domain=kw.domain
+                    domain=compound_info["domain"] or kw.domain,
+                    compound_parts=compound_info["parts"]
                 )
         
         # Apply clustering to combined results
@@ -691,3 +667,50 @@ class KeywordAnalyzer(TextAnalyzer):
         
         # Return top keywords
         return clustered[:self.config.get("max_keywords", 10)]
+
+    # def _combine_results(
+    #     self,
+    #     statistical_keywords: List[KeywordInfo],
+    #     llm_keywords: List[KeywordInfo]
+    # ) -> List[KeywordInfo]:
+    #     """Combine statistical and LLM results with clustering."""
+    #     combined = {}
+    #     compound_words = []
+        
+    #     # Get weights
+    #     stat_weight = self.weights.get("statistical", 0.4)
+    #     llm_weight = self.weights.get("llm", 0.6)
+        
+    #     # Combine initial keywords
+    #     for kw in statistical_keywords:
+    #         combined[kw.keyword] = KeywordInfo(
+    #             keyword=kw.keyword,
+    #             score=kw.score * stat_weight,
+    #             domain=kw.domain
+    #         )
+            
+    #     for kw in llm_keywords:
+    #         if kw.keyword in combined:
+    #             existing = combined[kw.keyword]
+    #             combined[kw.keyword] = KeywordInfo(
+    #                 keyword=kw.keyword,
+    #                 score=self._calculate_confidence_score(
+    #                     kw.keyword,
+    #                     existing.score + (kw.score * llm_weight),
+    #                     1.0,  # Base position score
+    #                     existing.domain or kw.domain
+    #                 ),
+    #                 domain=existing.domain or kw.domain
+    #             )
+    #         else:
+    #             combined[kw.keyword] = KeywordInfo(
+    #                 keyword=kw.keyword,
+    #                 score=kw.score * llm_weight,
+    #                 domain=kw.domain
+    #             )
+        
+    #     # Apply clustering to combined results
+    #     clustered = self._cluster_keywords(list(combined.values()))
+        
+    #     # Return top keywords
+    #     return clustered[:self.config.get("max_keywords", 10)]

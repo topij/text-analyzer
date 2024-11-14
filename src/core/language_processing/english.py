@@ -33,6 +33,10 @@ download_nltk_data()
 class EnglishTextProcessor(BaseTextProcessor):
     """English text processor using NLTK."""
 
+    # def __init__(self, language: str = "en", 
+    #              custom_stop_words: Optional[Set[str]] = None, 
+    #              config: Optional[Dict[str, Any]] = None):
+    #     """Initialize English text processor."""
     def __init__(
         self,
         language: str = "en",
@@ -46,7 +50,8 @@ class EnglishTextProcessor(BaseTextProcessor):
         # Call parent init which will call _load_stop_words
         super().__init__(language, custom_stop_words, config)
         
-        logger.info(f"Initialized English processor with {len(self._stop_words)} stopwords")
+        logger.debug(f"Initialized English processor with {len(self._stop_words)} stopwords")  # Changed to DEBUG
+
 
     def _load_stop_words(self) -> Set[str]:
         """Load English stopwords from multiple sources."""
@@ -55,7 +60,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             
             # 1. Load NLTK stopwords
             nltk_stops = set(word.lower() for word in stopwords.words('english'))
-            logger.debug(f"Loaded {len(nltk_stops)} NLTK stopwords")
+            logger.debug(f"Loaded {len(nltk_stops)} NLTK stopwords")  # Changed to DEBUG
             stop_words.update(nltk_stops)
             
             # 2. Load additional stopwords from file
@@ -65,7 +70,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             if stop_words_path.exists():
                 with open(stop_words_path, 'r', encoding='utf-8') as f:
                     file_stops = {line.strip().lower() for line in f if line.strip()}
-                    logger.debug(f"Loaded {len(file_stops)} additional stopwords from file")
+                    logger.debug(f"Loaded {len(file_stops)} additional stopwords from file")  # Changed to DEBUG
                     stop_words.update(file_stops)
             
             # 3. Add common contractions and special cases
@@ -101,7 +106,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             }
             stop_words.update(additional_words)
             
-            logger.info(f"Initialized English processor with {len(stop_words)} stopwords")
+            logger.debug(f"Total English stopwords: {len(stop_words)}")  # Changed to DEBUG
             return stop_words
             
         except Exception as e:
@@ -230,38 +235,89 @@ class EnglishTextProcessor(BaseTextProcessor):
             return False
 
         return True
+    
+    # Add debug logging to EnglishTextProcessor methods:
 
     def is_compound_word(self, word: str) -> bool:
         """Check if word is a compound word."""
-        word = word.lower()
-        
-        # Check for common compound delimiters
-        if '-' in word or ' ' in word:
-            return True
+        try:
+            # Add basic space check
+            if ' ' in word:
+                return True
+                
+            # Check for hyphenation
+            if '-' in word:
+                return True
+                
+            # Check camelCase and PascalCase
+            if any(c.isupper() for c in word[1:]):
+                return True
+                
+            # Use wordnet-based check
+            parts = self._split_compound_word(word)
+            if len(parts) > 1:
+                logger.debug(f"Found compound word '{word}' with parts: {parts}")
+                return True
+                
+            return False
             
-        # Check for camelCase and PascalCase
-        if any(c.isupper() for c in word[1:]):
-            return True
-        
-        # Check for known compound patterns
-        parts = self._split_compound_word(word)
-        return len(parts) > 1
+        except Exception as e:
+            logger.error(f"Error in is_compound_word for '{word}': {e}")
+            return False
 
     def get_compound_parts(self, word: str) -> List[str]:
         """Get parts of a compound word."""
-        word = word.lower()
+        try:
+            # Handle space-separated words first
+            if ' ' in word:
+                parts = [part.strip() for part in word.split()]
+                logger.debug(f"Split space-separated word '{word}' into: {parts}")
+                return parts
+                
+            # Handle hyphenated words
+            if '-' in word:
+                parts = [part.strip() for part in word.split('-')]
+                logger.debug(f"Split hyphenated word '{word}' into: {parts}")
+                return parts
+
+            # Handle other compound words
+            return self._split_compound_word(word)
+            
+        except Exception as e:
+            logger.error(f"Error in get_compound_parts for '{word}': {e}")
+            return [word]
+
+    # def is_compound_word(self, word: str) -> bool:
+    #     """Check if word is a compound word."""
+    #     word = word.lower()
         
-        # Handle hyphenated words
-        if '-' in word:
-            return [part.strip() for part in word.split('-')]
+    #     # Check for common compound delimiters
+    #     if '-' in word or ' ' in word:
+    #         return True
             
-        # Handle space-separated words
-        if ' ' in word:
-            return [part.strip() for part in word.split()]
+    #     # Check for camelCase and PascalCase
+    #     if any(c.isupper() for c in word[1:]):
+    #         return True
+        
+    #     # Check for known compound patterns
+    #     parts = self._split_compound_word(word)
+    #     return len(parts) > 1
+
+    # def get_compound_parts(self, word: str) -> List[str]:
+    #     """Get parts of a compound word."""
+    #     word = word.lower()
+        
+    #     # Handle hyphenated words
+    #     if '-' in word:
+    #         return [part.strip() for part in word.split('-')]
             
-        # Handle camelCase and PascalCase
-        parts = self._split_compound_word(word)
-        return [part.lower() for part in parts]
+    #     # Handle space-separated words
+    #     if ' ' in word:
+    #         return [part.strip() for part in word.split()]
+            
+    #     # Handle camelCase and PascalCase
+    #     parts = self._split_compound_word(word)
+    #     return [part.lower() for part in parts]
 
     def _split_compound_word(self, word: str) -> List[str]:
         """Split compound word into parts."""

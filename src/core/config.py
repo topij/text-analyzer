@@ -38,6 +38,7 @@ class AnalyzerConfig:
     }
 
     def __init__(self, file_utils: Optional[FileUtils] = None):
+
         """Initialize configuration handler.
 
         Args:
@@ -55,8 +56,9 @@ class AnalyzerConfig:
         # Validate required variables
         self._validate_required_vars()
 
-        # Initialize logging using FileUtils configuration
-        self._setup_logging()
+        # Only set up logging if not already configured
+        if not logging.getLogger().handlers:
+            self._setup_logging()
 
     def _load_env_vars(self) -> None:
         """Load environment variables from .env file."""
@@ -121,9 +123,24 @@ class AnalyzerConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
     def _setup_logging(self) -> None:
-        """Set up logging using FileUtils configuration."""
-        # FileUtils already handles logging setup
-        pass
+        """Set up logging only if not already configured."""
+        root_logger = logging.getLogger()
+        
+        # If handlers exist and level is set, respect existing configuration
+        if root_logger.handlers and root_logger.level != logging.NOTSET:
+            return
+            
+        # Get logging config from loaded configuration
+        log_config = self.config.get("logging", {})
+        level = getattr(logging, log_config.get("level", "INFO"))
+        format_str = log_config.get("format", "%(levelname)s: %(message)s")
+        
+        # Configure handler
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(format_str)
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+        root_logger.setLevel(level)
 
     # Public interface methods remain the same
     def get_model_config(self) -> Dict[str, Any]:
