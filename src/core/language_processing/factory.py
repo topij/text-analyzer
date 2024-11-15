@@ -40,10 +40,10 @@ class TextProcessorFactory:
                 import yaml
                 with open(config_file, "r", encoding="utf-8") as f:
                     self.config = yaml.safe_load(f)
-                logger.info(f"Loaded configuration from {config_file}")
+                logger.debug(f"Loaded configuration from {config_file}")  # Changed to DEBUG
             else:
                 self.config = self._get_default_config()
-                logger.info("Using default configuration")
+                logger.debug("Using default configuration")  # Changed to DEBUG
         except Exception as e:
             logger.warning(f"Error loading config: {e}. Using defaults.")
             self.config = self._get_default_config()
