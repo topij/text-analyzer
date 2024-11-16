@@ -9,13 +9,11 @@ import logging
 import sys
 
 
-# src/nb_helpers/environment.py
-
-
 class EnvironmentSetup:
-    def __init__(self, project_root: Optional[Path] = None):
+    def __init__(self, project_root: Optional[Path] = None, log_level: Optional[str] = None):
         self.project_root = project_root or Path().resolve().parent
-        self.file_utils = FileUtils()  # This initializes FileUtils which may set up logging
+        # Initialize FileUtils with optional log level
+        self.file_utils = FileUtils(log_level=log_level)
         self.required_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
 
     def verify(self) -> bool:
@@ -80,18 +78,23 @@ class EnvironmentSetup:
         print("Environment Status:", "Ready ✓" if all_passed else "Setup needed ✗")
 
 
-def verify_environment(configure_logging: bool = False) -> bool:  # Add parameter
-    setup = EnvironmentSetup()
+def verify_environment(log_level: Optional[str] = None) -> bool:
+    """
+    Verify environment setup with optional logging level control.
+
+    Args:
+        log_level: Optional logging level to use (e.g., "DEBUG", "INFO")
+                  If None, uses FileUtils default
+    """
+    setup = EnvironmentSetup(log_level=log_level)
     return setup.verify()
 
 
-def setup_notebook_env() -> None:
-    """Setup notebook environment."""
-    import logging
-
+def setup_notebook_env(log_level: Optional[str] = None) -> None:
+    """Setup notebook environment with optional logging level control."""
     logger = logging.getLogger(__name__)
 
-    setup = EnvironmentSetup()
+    setup = EnvironmentSetup(log_level=log_level)
     if not str(setup.project_root) in sys.path:
         sys.path.append(str(setup.project_root))
 

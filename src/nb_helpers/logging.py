@@ -1,6 +1,6 @@
 # src/nb_helpers/logging.py
 import logging
-from typing import Optional
+from typing import Optional, List
 
 
 def configure_logging(level: str = "WARNING", format_string: Optional[str] = None) -> None:
@@ -61,8 +61,14 @@ def configure_logging(level: str = "WARNING", format_string: Optional[str] = Non
     test_logger.debug("Logging configured at %s level", level)
 
 
-def verify_logging_setup():
-    """Verify logging configuration is correct."""
+# In src/nb_helpers/logging.py
+
+
+def verify_logging_setup() -> None:
+    """Verify logging configuration is correct.
+
+    Shows both the actual logger level and effective level (inherited from parent).
+    """
     loggers_to_check = [
         "",  # Root logger
         "src.nb_helpers.analyzers",
@@ -75,16 +81,65 @@ def verify_logging_setup():
 
     print("\nLogging Configuration:")
     print("-" * 50)
+
     for name in loggers_to_check:
         logger = logging.getLogger(name)
         logger_name = "root" if name == "" else name
         print(f"\nLogger: {logger_name}")
-        print(f"Level: {logging.getLevelName(logger.level)}")
+        print(f"Set Level: {logging.getLevelName(logger.level)}")
+        print(f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}")
         print(f"Handlers: {len(logger.handlers)}")
         print(f"Propagate: {logger.propagate}")
+
         if logger.handlers:
             for i, handler in enumerate(logger.handlers):
                 print(f"Handler {i+1} level: {logging.getLevelName(handler.level)}")
+
+
+def _get_logger_hierarchy(logger_name: str) -> List[str]:
+    """Get the hierarchy of logger names from root to the specified logger."""
+    parts = logger_name.split(".")
+    return [".".join(parts[: i + 1]) for i in range(len(parts))]
+
+
+def verify_logging_setup_with_hierarchy() -> None:
+    """Verify logging configuration with detailed hierarchy information."""
+    loggers_to_check = [
+        "",  # Root logger
+        "src.nb_helpers.analyzers",
+        "src.analyzers.keyword_analyzer",
+        "src.analyzers.theme_analyzer",
+        "src.analyzers.category_analyzer",
+        "src.utils.FileUtils.file_utils",
+        "httpx",
+    ]
+
+    print("\nLogging Configuration:")
+    print("-" * 50)
+
+    for name in loggers_to_check:
+        logger = logging.getLogger(name)
+        logger_name = "root" if name == "" else name
+        print(f"\nLogger: {logger_name}")
+
+        # Show hierarchy
+        if name:
+            print("Hierarchy:")
+            hierarchy = _get_logger_hierarchy(name)
+            for ancestor in hierarchy:
+                ancestor_logger = logging.getLogger(ancestor)
+                print(f"  {ancestor}: {logging.getLevelName(ancestor_logger.level)}")
+
+        print(f"Set Level: {logging.getLevelName(logger.level)}")
+        print(f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}")
+        print(f"Propagates to root: {logger.propagate}")
+
+        if logger.handlers:
+            print("Handlers:")
+            for i, handler in enumerate(logger.handlers):
+                print(f"  Handler {i+1} level: {logging.getLevelName(handler.level)}")
+        else:
+            print("No handlers (uses root handlers)")
 
 
 def setup_debug_logging(logger_name: str) -> None:
