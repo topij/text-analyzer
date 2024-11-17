@@ -3,11 +3,11 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
+from langdetect import detect, DetectorFactory
 
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.language_processing.english import EnglishTextProcessor
 from src.core.language_processing.finnish import FinnishTextProcessor
-
 from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class TextProcessorFactory:
             config_file = self.config_path / "language_processing.yaml"
             if config_file.exists():
                 import yaml
+
                 with open(config_file, "r", encoding="utf-8") as f:
                     self.config = yaml.safe_load(f)
                 logger.debug(f"Loaded configuration from {config_file}")  # Changed to DEBUG
@@ -66,32 +67,29 @@ class TextProcessorFactory:
         }
 
     def create_processor(
-        self,
-        language: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None
+        self, language: Optional[str] = None, config: Optional[Dict[str, Any]] = None
     ) -> BaseTextProcessor:
         """Create a text processor for the specified language.
-        
+
         Args:
             language: Language code
             config: Configuration parameters
-            
+
         Returns:
             BaseTextProcessor: Appropriate text processor instance
         """
-        language = language or "en"
-        
+        # Normalize language code
+        if language:
+            language = language.lower()[:2]  # Get first two chars: "fin" -> "fi"
+
         if language not in self.PROCESSORS:
-            raise ValueError(f"Unsupported language: {language}")
+            logger.warning(f"Unsupported language: {language}, defaulting to English")
+            language = "en"
 
         try:
-            # Create processor
             processor_class = self.PROCESSORS[language]
-            return processor_class(
-                language=language,
-                config=config
-            )
-
+            logger.debug(f"Creating {language} processor")
+            return processor_class(language=language, config=config or {})
         except Exception as e:
             logger.error(f"Error creating processor for {language}: {e}")
             raise
@@ -106,12 +104,27 @@ class TextProcessorFactory:
             str: Detected language code
         """
         try:
-            from langdetect import detect
+            # Remove excess whitespace and ensure we have enough text
+            text = " ".join(text.split())
+            if len(text) < 20:  # Require minimum length for better accuracy
+                logger.warning("Text too short for reliable detection, defaulting to English")
+                return "en"
 
-            return detect(text)
+            detected = detect(text)
+            # Map common language codes
+            lang_map = {"fin": "fi", "eng": "en", "en": "en", "fi": "fi"}
+            detected = lang_map.get(detected.lower(), detected.lower()[:2])
+
+            if detected not in self.PROCESSORS:
+                logger.warning(f"Detected unsupported language {detected}, defaulting to English")
+                return "en"
+
+            logger.debug(f"Detected language: {detected}")
+            return detected
+
         except Exception as e:
-            logger.warning(f"Language detection failed: {e}")
-            return self.config.get("default_language", "en")
+            logger.error(f"Language detection failed: {e}")
+            return "en"
 
     def create_processor_for_text(
         self,
@@ -153,40 +166,35 @@ class TextProcessorFactory:
 
 # Convenience function
 
-def create_text_processor(
-    language: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
-    file_utils: Optional[FileUtils] = None
-) -> BaseTextProcessor:
 
+def create_text_processor(
+    language: Optional[str] = None, config: Optional[Dict[str, Any]] = None, file_utils: Optional[FileUtils] = None
+) -> BaseTextProcessor:
     """Create a text processor instance.
-    
+
     Args:
         language: Language code
         config: Configuration parameters
         file_utils: Optional FileUtils instance for file operations
-    
+
     Returns:
         BaseTextProcessor: Language processor instance
     """
+
     factory = TextProcessorFactory()
-    
+
     # Load main config if not provided
     if config is None and file_utils:
         try:
             main_config = file_utils.load_yaml(Path("config.yaml"))
             lang_config = main_config.get("languages", {}).get(language or "en", {})
-            
-            # If config was provided, merge it with the loaded config
-            if config:
+
+            if config:  # Merge if config was provided
                 lang_config.update(config)
             config = lang_config
         except Exception as e:
-            logger.debug(f"Could not load language config from config.yaml: {e}")  # Changed to DEBUG
+            logger.debug(f"Could not load language config: {e}")
             config = config or {}
-    
-    logger.debug("Creating text processor with config")  # Changed to DEBUG
-    return factory.create_processor(
-        language=language,
-        config=config
-    )
+
+    logger.debug(f"Creating text processor for language: {language}")
+    return factory.create_processor(language=language, config=config)

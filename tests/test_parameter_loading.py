@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 import pandas as pd
 import pytest
 
+# old parameter model
 from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
 from src.loaders.parameter_adapter import ParameterAdapter
 from src.loaders.parameter_validator import ParameterValidator

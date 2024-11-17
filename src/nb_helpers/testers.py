@@ -9,30 +9,36 @@ from src.core.language_processing import create_text_processor
 from src.core.llm.factory import create_llm
 from src.loaders.models import CategoryConfig
 from src.schemas import KeywordInfo, ThemeInfo
+from src.loaders.parameter_handler import ParameterHandler
 
 logger = logging.getLogger(__name__)
 
 
-class KeywordTester(AnalysisTester, DisplayMixin):
+class BaseTester(AnalysisTester, DisplayMixin):
+    """Base class for all testers with common parameter handling."""
+
     def __init__(
         self,
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
-        parameter_file: Optional[str] = None,  # Add parameter_file
+        parameter_file: Optional[str] = None,
     ):
-        # Load config from parameter file if provided
+        """Initialize with unified parameter handling."""
         if parameter_file:
             try:
-                from src.loaders.parameter_adapter import ParameterAdapter
-
-                adapter = ParameterAdapter(parameter_file)
-                params = adapter.load_and_convert()
+                handler = ParameterHandler(parameter_file)
+                params = handler.get_parameters()
                 config = config or {}
-                config.update(params.analysis_settings.weights.model_dump())
+                config.update(params.model_dump())
             except Exception as e:
                 logger.warning(f"Could not load parameters from file: {e}")
 
         super().__init__(llm, config)
+
+
+class KeywordTester(BaseTester):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.analyzer = KeywordAnalyzer(
             llm=self.llm,
             config=self.config or {"weights": {"statistical": 0.4, "llm": 0.6}},
@@ -53,25 +59,9 @@ class KeywordTester(AnalysisTester, DisplayMixin):
                 print(f"  • {kw.keyword:<20} [{bar}] ({kw.score:.2f})")
 
 
-class ThemeTester(AnalysisTester, DisplayMixin):
-    def __init__(
-        self,
-        llm: Optional[BaseChatModel] = None,
-        config: Optional[Dict[str, Any]] = None,
-        parameter_file: Optional[str] = None,
-    ):
-        if parameter_file:
-            try:
-                from src.loaders.parameter_adapter import ParameterAdapter
-
-                adapter = ParameterAdapter(parameter_file)
-                params = adapter.load_and_convert()
-                config = config or {}
-                config.update(params.analysis_settings.theme_analysis.model_dump())
-            except Exception as e:
-                logger.warning(f"Could not load parameters from file: {e}")
-
-        super().__init__(llm, config)
+class ThemeTester(BaseTester):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.analyzer = ThemeAnalyzer(llm=self.llm, config=self.config or {"max_themes": 3, "min_confidence": 0.3})
 
     async def analyze(self, text: str, **kwargs) -> Dict[str, Any]:
@@ -87,26 +77,14 @@ class ThemeTester(AnalysisTester, DisplayMixin):
                 print(f"    {theme.description}")
 
 
-class CategoryTester(AnalysisTester, DisplayMixin):
-    def __init__(
-        self,
-        llm: Optional[BaseChatModel] = None,
-        config: Optional[Dict[str, Any]] = None,
-        parameter_file: Optional[str] = None,
-        categories: Optional[Dict[str, CategoryConfig]] = None,
-    ):
-        if parameter_file:
-            try:
-                from src.loaders.parameter_adapter import ParameterAdapter
+class CategoryTester(BaseTester):
+    def __init__(self, *args, categories: Optional[Dict[str, CategoryConfig]] = None, **kwargs):
+        super().__init__(*args, **kwargs)
 
-                adapter = ParameterAdapter(parameter_file)
-                params = adapter.load_and_convert()
-                config = config or {}
-                categories = categories or params.categories
-            except Exception as e:
-                logger.warning(f"Could not load parameters from file: {e}")
+        # Get categories from parameters if available
+        if not categories and self.config and "categories" in self.config:
+            categories = self.config["categories"]
 
-        super().__init__(llm, config)
         self.categories = categories or self._get_default_categories()
         self.analyzer = CategoryAnalyzer(
             categories=self.categories, llm=self.llm, config=self.config, language_processor=create_text_processor()

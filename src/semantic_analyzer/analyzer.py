@@ -11,11 +11,36 @@ from src.analyzers.theme_analyzer import ThemeAnalyzer
 from src.core.config import AnalyzerConfig
 from src.core.language_processing.factory import create_text_processor
 from src.core.llm.factory import create_llm
-from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
-from src.loaders.parameter_adapter import ParameterAdapter
+
+# from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
+# from src.loaders.parameter_adapter import ParameterAdapter
 from src.utils.FileUtils.file_utils import FileUtils
 
+from src.loaders.parameter_handler import ParameterHandler
+from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
+
+
 logger = logging.getLogger(__name__)
+
+
+class SemanticAnalyzer:
+    def __init__(
+        self,
+        config: Optional[AnalyzerConfig] = None,
+        file_utils: Optional[FileUtils] = None,
+        llm=None,
+        language: Optional[str] = None,
+        categories: Optional[Dict[str, CategoryConfig]] = None,
+        parameter_file: Optional[Union[str, Path]] = None,
+        **kwargs,
+    ):
+        # Replace parameter adapter initialization
+        self.parameter_handler = ParameterHandler(parameter_file)
+        self.parameters = self.parameter_handler.get_parameters()
+
+        # Update parameter handling
+        if categories:
+            self.parameters.categories.update(categories)
 
 
 class SemanticAnalyzer:
@@ -35,9 +60,13 @@ class SemanticAnalyzer:
         **kwargs,
     ):
         """Initialize semantic analyzer."""
-        # Load parameters first
-        self.parameter_adapter = ParameterAdapter(parameter_file)
-        self.parameters = self.parameter_adapter.load_and_convert()
+        # Load parameters
+        self.parameter_handler = ParameterHandler(parameter_file)
+        self.parameters = self.parameter_handler.get_parameters()
+
+        # Update parameter handling
+        if categories:
+            self.parameters.categories.update(categories)
 
         # Initialize core components
         self.file_utils = file_utils or FileUtils()

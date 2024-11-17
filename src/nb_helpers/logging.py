@@ -158,3 +158,25 @@ def setup_debug_logging(logger_name: str) -> None:
 
 def silence_logger(logger_name: str) -> None:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def reset_debug_logging():
+    """Reset all loggers to DEBUG level."""
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    for handler in root.handlers:
+        handler.setLevel(logging.DEBUG)
+
+    # Reset specific loggers
+    loggers_to_debug = [
+        "src.nb_helpers.analyzers",
+        "src.analyzers.keyword_analyzer",
+        "src.analyzers.theme_analyzer",
+        "src.analyzers.category_analyzer",
+        "src.utils.FileUtils.file_utils",
+        "src.loaders.parameter_handler",
+    ]
+
+    for logger_name in loggers_to_debug:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.DEBUG)
