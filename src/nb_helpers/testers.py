@@ -6,6 +6,7 @@ from langchain_core.language_models import BaseChatModel
 from src.nb_helpers.base import AnalysisTester, DisplayMixin
 from src.analyzers import KeywordAnalyzer, ThemeAnalyzer, CategoryAnalyzer
 from src.core.language_processing import create_text_processor
+from src.core.language_processing.base import BaseTextProcessor
 from src.core.llm.factory import create_llm
 from src.loaders.models import CategoryConfig
 from src.schemas import KeywordInfo, ThemeInfo
@@ -22,6 +23,9 @@ class BaseTester(AnalysisTester, DisplayMixin):
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
         parameter_file: Optional[str] = None,
+        language_processor: Optional[
+            BaseTextProcessor
+        ] = None,  # Add language_processor
     ):
         """Initialize with unified parameter handling."""
         if parameter_file:
@@ -34,24 +38,30 @@ class BaseTester(AnalysisTester, DisplayMixin):
                 logger.warning(f"Could not load parameters from file: {e}")
 
         super().__init__(llm, config)
+        self.language_processor = language_processor  # Store language processor
 
 
 class KeywordTester(BaseTester):
     def __init__(self, *args, **kwargs):
+        # Extract language_processor before calling super
+        language_processor = kwargs.pop("language_processor", None)
         super().__init__(*args, **kwargs)
+
         self.analyzer = KeywordAnalyzer(
             llm=self.llm,
             config=self.config or {"weights": {"statistical": 0.4, "llm": 0.6}},
-            language_processor=create_text_processor(),
+            language_processor=language_processor or create_text_processor(),
         )
 
     async def analyze(self, text: str, **kwargs) -> Dict[str, Any]:
-        logger.debug("KeywordTester starting analysis")  # Add debug logging
+        logger.debug("KeywordTester starting analysis")
         result = await self.analyzer.analyze(text)
-        logger.debug("KeywordTester analysis complete")  # Add debug logging
+        logger.debug("KeywordTester analysis complete")
         return result
 
-    def _display_specific_results(self, results: Dict[str, Any], detailed: bool) -> None:
+    def _display_specific_results(
+        self, results: Dict[str, Any], detailed: bool
+    ) -> None:
         if hasattr(results, "keywords"):
             print("\nKeywords Found:")
             for kw in results.keywords:
@@ -61,13 +71,21 @@ class KeywordTester(BaseTester):
 
 class ThemeTester(BaseTester):
     def __init__(self, *args, **kwargs):
+        # Extract language_processor before calling super
+        language_processor = kwargs.pop("language_processor", None)
         super().__init__(*args, **kwargs)
-        self.analyzer = ThemeAnalyzer(llm=self.llm, config=self.config or {"max_themes": 3, "min_confidence": 0.3})
+
+        self.analyzer = ThemeAnalyzer(
+            llm=self.llm,
+            config=self.config or {"max_themes": 3, "min_confidence": 0.3},
+        )
 
     async def analyze(self, text: str, **kwargs) -> Dict[str, Any]:
         return await self.analyzer.analyze(text)
 
-    def _display_specific_results(self, results: Dict[str, Any], detailed: bool) -> None:
+    def _display_specific_results(
+        self, results: Dict[str, Any], detailed: bool
+    ) -> None:
         if hasattr(results, "themes"):
             print("\nThemes Found:")
             for theme in results.themes:
@@ -78,7 +96,14 @@ class ThemeTester(BaseTester):
 
 
 class CategoryTester(BaseTester):
-    def __init__(self, *args, categories: Optional[Dict[str, CategoryConfig]] = None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        categories: Optional[Dict[str, CategoryConfig]] = None,
+        **kwargs,
+    ):
+        # Extract language_processor before calling super
+        language_processor = kwargs.pop("language_processor", None)
         super().__init__(*args, **kwargs)
 
         # Get categories from parameters if available
@@ -87,13 +112,18 @@ class CategoryTester(BaseTester):
 
         self.categories = categories or self._get_default_categories()
         self.analyzer = CategoryAnalyzer(
-            categories=self.categories, llm=self.llm, config=self.config, language_processor=create_text_processor()
+            categories=self.categories,
+            llm=self.llm,
+            config=self.config,
+            language_processor=language_processor or create_text_processor(),
         )
 
     async def analyze(self, text: str, **kwargs) -> Dict[str, Any]:
         return await self.analyzer.analyze(text)
 
-    def _display_specific_results(self, results: Dict[str, Any], detailed: bool) -> None:
+    def _display_specific_results(
+        self, results: Dict[str, Any], detailed: bool
+    ) -> None:
         if hasattr(results, "categories"):
             print("\nCategories Found:")
             for cat in results.categories:
@@ -109,9 +139,13 @@ class CategoryTester(BaseTester):
     def _get_default_categories(self) -> Dict[str, CategoryConfig]:
         return {
             "technical": CategoryConfig(
-                description="Technical content", keywords=["software", "development", "api", "system"], threshold=0.6
+                description="Technical content",
+                keywords=["software", "development", "api", "system"],
+                threshold=0.6,
             ),
             "business": CategoryConfig(
-                description="Business content", keywords=["revenue", "sales", "market", "growth"], threshold=0.6
+                description="Business content",
+                keywords=["revenue", "sales", "market", "growth"],
+                threshold=0.6,
             ),
         }

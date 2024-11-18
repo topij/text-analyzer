@@ -8,15 +8,19 @@ import pandas as pd
 
 from src.nb_helpers.base import DebugMixin
 from src.nb_helpers.testers import KeywordTester, ThemeTester, CategoryTester
-from src.nb_helpers.visualizers import create_analysis_summary  # , format_confidence_bar,
+from src.nb_helpers.visualizers import (
+    create_analysis_summary,
+)  # , format_confidence_bar,
 from src.core.language_parameters import LanguageParameterManager
 
 
 from src.analyzers.base import BaseAnalyzer, AnalyzerOutput
 from src.loaders.parameter_handler import ParameterHandler  # Updated import
+from src.utils.FileUtils.file_utils import FileUtils
+from src.loaders.models import GeneralParameters, ParameterSet
 
-# from src.core.language_processing import create_text_processor
-# from src.core.llm.factory import create_llm
+from src.core.language_processing import create_text_processor
+from src.core.llm.factory import create_llm
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +43,19 @@ class TextAnalyzer(DebugMixin):
         """Initialize analyzer with options."""
         self.options = options or AnalysisOptions()
         # Use ParameterHandler instead of LanguageParameterManager
-        self.parameter_handler = ParameterHandler(file_path=self.options.parameter_file if self.options else None)
+        self.parameter_handler = ParameterHandler(
+            file_path=self.options.parameter_file if self.options else None
+        )
         logger.debug(f"Initialized TextAnalyzer with options: {self.options}")
 
     def display_analysis(self, text: str, analyzer_name: str) -> None:
         """Display analysis setup and results."""
         # Get language from parameter handler if available
-        language = self.options.language or self.parameter_handler.language or self._detect_language(text)
+        language = (
+            self.options.language
+            or self.parameter_handler.language
+            or self._detect_language(text)
+        )
         logger.debug(f"Starting {analyzer_name} analysis in {language}")
         logger.debug(f"Parameter file: {self.options.parameter_file}")
 
@@ -74,36 +84,50 @@ class TextAnalyzer(DebugMixin):
             return "en"
 
 
-async def analyze_keywords(text: str, options: Optional[AnalysisOptions] = None) -> Dict[str, Any]:
+async def analyze_keywords(
+    text: str, options: Optional[AnalysisOptions] = None
+) -> Dict[str, Any]:
     """Analyze text for keywords with language support."""
     logger.debug("Starting keyword analysis")
     analyzer = TextAnalyzer(options)
-    analyzer.display_analysis(text, "Keyword")
 
-    # Get parameters from parameter handler
-    params = analyzer.parameter_handler.get_parameters()
+    try:
+        # Initialize language processor with correct language
+        language_processor = create_text_processor(
+            language=options.language if options else "en"
+        )
 
-    # Update with language if specified
-    if options and options.language:
-        params.general.language = options.language
+        # Create tester with proper initialization
+        tester = KeywordTester(
+            config={
+                "language": options.language if options else "en",
+                "weights": {"statistical": 0.4, "llm": 0.6},
+            },
+            language_processor=language_processor,
+        )
 
-    logger.debug("Creating keyword tester with parameters")
-    tester = KeywordTester(config=params.model_dump())
+        logger.debug("Running keyword analysis")
+        results = await tester.analyze(text)
+        logger.debug("Keyword analysis completed")
 
-    logger.debug("Running keyword analysis")
-    results = await tester.analyze(text)
-    logger.debug("Keyword analysis completed")
+        logger.debug("Formatting results")
+        tester.format_results(results, detailed=True)
+        if options and options.debug_mode:
+            logger.debug("Displaying debug information")
+            analyzer.display_debug_info(results)
 
-    logger.debug("Formatting results")
-    tester.format_results(results, detailed=True)
-    if options and options.debug_mode:
-        logger.debug("Displaying debug information")
-        analyzer.display_debug_info(results)
+        return results
 
-    return results
+    except Exception as e:
+        logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+        if options and options.debug_mode:
+            analyzer.display_debug_info({"error": str(e), "success": False})
+        return {"error": str(e), "success": False}
 
 
-async def analyze_themes(text: str, options: Optional[AnalysisOptions] = None) -> Dict[str, Any]:
+async def analyze_themes(
+    text: str, options: Optional[AnalysisOptions] = None
+) -> Dict[str, Any]:
     """Analyze text for themes with language support."""
     logger.debug("Starting theme analysis")
     analyzer = TextAnalyzer(options)
@@ -132,7 +156,9 @@ async def analyze_themes(text: str, options: Optional[AnalysisOptions] = None) -
     return results
 
 
-async def analyze_categories(text: str, options: Optional[AnalysisOptions] = None) -> Dict[str, Any]:
+async def analyze_categories(
+    text: str, options: Optional[AnalysisOptions] = None
+) -> Dict[str, Any]:
     """Analyze text for categories with language support."""
     logger.debug("Starting category analysis")
     analyzer = TextAnalyzer(options)
@@ -146,7 +172,9 @@ async def analyze_categories(text: str, options: Optional[AnalysisOptions] = Non
         params.general.language = options.language
 
     logger.debug("Creating category tester with parameters")
-    tester = CategoryTester(config=params.model_dump(), categories=params.categories)
+    tester = CategoryTester(
+        config=params.model_dump(), categories=params.categories
+    )
 
     logger.debug("Running category analysis")
     results = await tester.analyze(text)
@@ -161,12 +189,18 @@ async def analyze_categories(text: str, options: Optional[AnalysisOptions] = Non
     return results
 
 
-async def analyze_text(text: str, options: Optional[AnalysisOptions] = None) -> Dict[str, Any]:
+async def analyze_text(
+    text: str, options: Optional[AnalysisOptions] = None
+) -> Dict[str, Any]:
     """Run complete text analysis with language support."""
     logger.debug("Starting complete text analysis")
     results = {}
 
-    analyzers = [("keywords", analyze_keywords), ("themes", analyze_themes), ("categories", analyze_categories)]
+    analyzers = [
+        ("keywords", analyze_keywords),
+        ("themes", analyze_themes),
+        ("categories", analyze_categories),
+    ]
 
     for analyzer_type, analyze_func in analyzers:
         logger.debug(f"Running {analyzer_type} analysis")
@@ -221,17 +255,28 @@ async def analyze_excel_content(
 
         except Exception as e:
             print(f"✗ Analysis failed: {e}")
-            results.append(pd.Series({"keywords": "", "categories": "", "themes": ""}))
+            results.append(
+                pd.Series({"keywords": "", "categories": "", "themes": ""})
+            )
 
     # Create output DataFrame
     output_df = pd.DataFrame(results)
     output_df.insert(0, content_column, df[content_column])
     if language_column:
-        output_df.insert(1, "detected_language", [param_manager.detect_language(text) for text in df[content_column]])
+        output_df.insert(
+            1,
+            "detected_language",
+            [
+                param_manager.detect_language(text)
+                for text in df[content_column]
+            ],
+        )
 
     # Save results
     analyzer.file_utils.save_data_to_disk(
-        data={"Analysis Results": output_df}, output_filetype="xlsx", file_name=output_file
+        data={"Analysis Results": output_df},
+        output_filetype="xlsx",
+        file_name=output_file,
     )
 
     print(f"\nResults saved to: {output_file}")

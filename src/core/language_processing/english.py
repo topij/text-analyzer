@@ -9,9 +9,11 @@ from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
 from src.core.language_processing.base import BaseTextProcessor
+
 # from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
+
 
 def download_nltk_data():
     """Download required NLTK data."""
@@ -19,7 +21,7 @@ def download_nltk_data():
         "punkt_tab",
         "wordnet",
         "averaged_perceptron_tagger",
-        "stopwords"
+        "stopwords",
     ]
     for package in required_packages:
         try:
@@ -27,88 +29,175 @@ def download_nltk_data():
         except Exception as e:
             logger.warning(f"Failed to download NLTK package {package}: {e}")
 
+
 # Download resources when module is imported
 download_nltk_data()
+
 
 class EnglishTextProcessor(BaseTextProcessor):
     """English text processor using NLTK."""
 
-    # def __init__(self, language: str = "en", 
-    #              custom_stop_words: Optional[Set[str]] = None, 
-    #              config: Optional[Dict[str, Any]] = None):
-    #     """Initialize English text processor."""
+    # Update compound word parts dictionary
+    COMPOUND_PARTS = {
+        # Technical terms
+        "pipeline": ["pipe", "line"],
+        "devops": ["development", "operations"],
+        "streamline": ["stream", "line"],
+        "database": ["data", "base"],
+        "middleware": ["middle", "ware"],
+        "workflow": ["work", "flow"],
+        # Business terms
+        "stakeholder": ["stake", "holder"],
+        "benchmark": ["bench", "mark"],
+        "timeline": ["time", "line"],
+        "framework": ["frame", "work"],
+    }
+
     def __init__(
         self,
         language: str = "en",
         custom_stop_words: Optional[Set[str]] = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize English text processor."""
         # Initialize NLTK components first
         self.lemmatizer = WordNetLemmatizer()
-        
+
         # Call parent init which will call _load_stop_words
         super().__init__(language, custom_stop_words, config)
-        
-        logger.debug(f"Initialized English processor with {len(self._stop_words)} stopwords")  # Changed to DEBUG
 
+        logger.debug(
+            f"Initialized English processor with {len(self._stop_words)} stopwords"
+        )  # Changed to DEBUG
 
     def _load_stop_words(self) -> Set[str]:
         """Load English stopwords from multiple sources."""
         try:
             stop_words = set()
-            
+
             # 1. Load NLTK stopwords
-            nltk_stops = set(word.lower() for word in stopwords.words('english'))
-            logger.debug(f"Loaded {len(nltk_stops)} NLTK stopwords")  # Changed to DEBUG
+            nltk_stops = set(
+                word.lower() for word in stopwords.words("english")
+            )
+            logger.debug(
+                f"Loaded {len(nltk_stops)} NLTK stopwords"
+            )  # Changed to DEBUG
             stop_words.update(nltk_stops)
-            
+
             # 2. Load additional stopwords from file
             config_dir = self.get_data_path("configurations")
             stop_words_path = config_dir / "stop_words" / "en.txt"
-            
+
             if stop_words_path.exists():
-                with open(stop_words_path, 'r', encoding='utf-8') as f:
-                    file_stops = {line.strip().lower() for line in f if line.strip()}
-                    logger.debug(f"Loaded {len(file_stops)} additional stopwords from file")  # Changed to DEBUG
+                with open(stop_words_path, "r", encoding="utf-8") as f:
+                    file_stops = {
+                        line.strip().lower() for line in f if line.strip()
+                    }
+                    logger.debug(
+                        f"Loaded {len(file_stops)} additional stopwords from file"
+                    )  # Changed to DEBUG
                     stop_words.update(file_stops)
-            
+
             # 3. Add common contractions and special cases
             contractions = {
-                "'s", "'t", "'re", "'ve", "'ll", "'d", "n't",
-                "i'm", "you're", "he's", "she's", "it's", "we're", "they're",
-                "i've", "you've", "we've", "they've",
-                "won't", "wouldn't", "can't", "cannot", "couldn't",
-                "mustn't", "shouldn't", "wouldn't"
+                "'s",
+                "'t",
+                "'re",
+                "'ve",
+                "'ll",
+                "'d",
+                "n't",
+                "i'm",
+                "you're",
+                "he's",
+                "she's",
+                "it's",
+                "we're",
+                "they're",
+                "i've",
+                "you've",
+                "we've",
+                "they've",
+                "won't",
+                "wouldn't",
+                "can't",
+                "cannot",
+                "couldn't",
+                "mustn't",
+                "shouldn't",
+                "wouldn't",
             }
             stop_words.update(contractions)
 
             # Add common English words often not in NLTK's list
             additional_words = {
                 # Modal verbs and auxiliaries
-                "would", "could", "should", "must", "might", "may",
-                
+                "would",
+                "could",
+                "should",
+                "must",
+                "might",
+                "may",
                 # Common adverbs and conjunctions
-                "really", "actually", "probably", "usually", "certainly",
-                "however", "therefore", "moreover", "furthermore", "nevertheless",
-                
+                "really",
+                "actually",
+                "probably",
+                "usually",
+                "certainly",
+                "however",
+                "therefore",
+                "moreover",
+                "furthermore",
+                "nevertheless",
                 # Business/technical common words
-                "etc", "eg", "ie", "example", "use", "using", "used", "new",
-                "way", "ways", "like", "also", "though", "although",
-                
+                "etc",
+                "eg",
+                "ie",
+                "example",
+                "use",
+                "using",
+                "used",
+                "new",
+                "way",
+                "ways",
+                "like",
+                "also",
+                "though",
+                "although",
                 # Numbers and measurements
-                "one", "two", "three", "many", "much", "several", "various",
-                
+                "one",
+                "two",
+                "three",
+                "many",
+                "much",
+                "several",
+                "various",
                 # Common adjectives
-                "good", "better", "best", "bad", "worse", "worst",
-                "big","biggest","small","smaller","smallest",
-                "high", "higher", "highest", "low", "lower", "lowest"
+                "good",
+                "better",
+                "best",
+                "bad",
+                "worse",
+                "worst",
+                "big",
+                "biggest",
+                "small",
+                "smaller",
+                "smallest",
+                "high",
+                "higher",
+                "highest",
+                "low",
+                "lower",
+                "lowest",
             }
             stop_words.update(additional_words)
-            
-            logger.debug(f"Total English stopwords: {len(stop_words)}")  # Changed to DEBUG
+
+            logger.debug(
+                f"Total English stopwords: {len(stop_words)}"
+            )  # Changed to DEBUG
             return stop_words
-            
+
         except Exception as e:
             logger.error(f"Error loading stopwords: {e}")
             return set()
@@ -118,9 +207,9 @@ class EnglishTextProcessor(BaseTextProcessor):
         try:
             if not word:
                 return ""
-                
+
             word = self.handle_contractions(word)
-            
+
             # Get POS tag
             pos_tag = self._get_wordnet_pos(word)
 
@@ -131,7 +220,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             # Try different POS tags to get shortest lemma
             lemmas = [
                 self.lemmatizer.lemmatize(word.lower(), pos=pos)
-                for pos in ['n', 'v', 'a', 'r']
+                for pos in ["n", "v", "a", "r"]
             ]
 
             return min(lemmas, key=len)
@@ -144,23 +233,35 @@ class EnglishTextProcessor(BaseTextProcessor):
         """Handle contractions and possessives."""
         if not word:
             return ""
-            
+
         word_lower = word.lower()
-        
+
         # Split possessives from nouns
         if word_lower.endswith("'s"):
             return word[:-2]
-        
+
         # Map common contractions
         contractions_map = {
-            "i'm": "i", "you're": "you", "he's": "he", "she's": "she",
-            "it's": "it", "we're": "we", "they're": "they",
-            "i've": "i", "you've": "you", "we've": "we", "they've": "they",
-            "won't": "will", "wouldn't": "would", "can't": "can",
-            "cannot": "can", "couldn't": "could", "shouldn't": "should",
-            "mustn't": "must"
+            "i'm": "i",
+            "you're": "you",
+            "he's": "he",
+            "she's": "she",
+            "it's": "it",
+            "we're": "we",
+            "they're": "they",
+            "i've": "i",
+            "you've": "you",
+            "we've": "we",
+            "they've": "they",
+            "won't": "will",
+            "wouldn't": "would",
+            "can't": "can",
+            "cannot": "can",
+            "couldn't": "could",
+            "shouldn't": "should",
+            "mustn't": "must",
         }
-        
+
         return contractions_map.get(word_lower, word)
 
     def _get_wordnet_pos(self, word: str) -> Optional[str]:
@@ -168,13 +269,13 @@ class EnglishTextProcessor(BaseTextProcessor):
         try:
             if not word:
                 return None
-                
+
             pos = nltk.pos_tag([word])[0][1]
             tag_map = {
-                'JJ': 'a',  # Adjective
-                'VB': 'v',  # Verb
-                'NN': 'n',  # Noun
-                'RB': 'r',  # Adverb
+                "JJ": "a",  # Adjective
+                "VB": "v",  # Verb
+                "NN": "n",  # Noun
+                "RB": "r",  # Adverb
             }
             for prefix, tag in tag_map.items():
                 if pos.startswith(prefix):
@@ -190,27 +291,27 @@ class EnglishTextProcessor(BaseTextProcessor):
         try:
             if not text:
                 return []
-                
+
             # First preprocess the text
             text = self.preprocess_text(text)
-            
+
             # Use NLTK's tokenizer
             tokens = word_tokenize(text)
-            
+
             # Process tokens
             processed_tokens = []
             for token in tokens:
                 # Skip punctuation
                 if self.is_punctuation(token):
                     continue
-                    
+
                 # Handle contractions and check stopwords
                 processed = self.handle_contractions(token)
                 if processed and not self.is_stop_word(processed):
                     processed_tokens.append(processed)
-            
+
             return processed_tokens
-            
+
         except Exception as e:
             logger.error(f"Tokenization error: {e}")
             return []
@@ -219,141 +320,127 @@ class EnglishTextProcessor(BaseTextProcessor):
         """Determine if word should be kept based on English-specific rules."""
         if not word:
             return False
-            
+
         word_lower = word.lower()
-        
+
         # First check base criteria
         if not super().should_keep_word(word):
             return False
-        
+
         # Always check lowercase version against stopwords
         if word_lower in self._stop_words:
             return False
 
         # Skip single letters except 'a' and 'i'
-        if len(word_lower) == 1 and word_lower not in ['a', 'i']:
+        if len(word_lower) == 1 and word_lower not in ["a", "i"]:
             return False
 
         return True
-    
+
     # Add debug logging to EnglishTextProcessor methods:
 
     def is_compound_word(self, word: str) -> bool:
-        """Check if word is a compound word."""
-        try:
-            # Add basic space check
-            if ' ' in word:
-                return True
-                
-            # Check for hyphenation
-            if '-' in word:
-                return True
-                
-            # Check camelCase and PascalCase
-            if any(c.isupper() for c in word[1:]):
-                return True
-                
-            # Use wordnet-based check
-            parts = self._split_compound_word(word)
-            if len(parts) > 1:
-                logger.debug(f"Found compound word '{word}' with parts: {parts}")
-                return True
-                
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error in is_compound_word for '{word}': {e}")
-            return False
+        """Enhanced compound word detection."""
+        word_lower = word.lower()
+
+        # Check predefined compounds
+        if word_lower in self.COMPOUND_PARTS:
+            return True
+
+        # Check hyphenation
+        if "-" in word:
+            return True
+
+        # Check camelCase and PascalCase
+        if any(c.isupper() for c in word[1:]):
+            return True
+
+        # Check common compound patterns
+        common_joining_parts = ["based", "driven", "oriented", "ready", "aware"]
+        return any(part in word_lower for part in common_joining_parts)
 
     def get_compound_parts(self, word: str) -> List[str]:
-        """Get parts of a compound word."""
-        try:
-            # Handle space-separated words first
-            if ' ' in word:
-                parts = [part.strip() for part in word.split()]
-                logger.debug(f"Split space-separated word '{word}' into: {parts}")
-                return parts
-                
-            # Handle hyphenated words
-            if '-' in word:
-                parts = [part.strip() for part in word.split('-')]
-                logger.debug(f"Split hyphenated word '{word}' into: {parts}")
-                return parts
+        """Get parts of compound word with improved accuracy."""
+        word_lower = word.lower()
 
-            # Handle other compound words
-            return self._split_compound_word(word)
-            
-        except Exception as e:
-            logger.error(f"Error in get_compound_parts for '{word}': {e}")
-            return [word]
+        # Check predefined parts first
+        if word_lower in self.COMPOUND_PARTS:
+            return self.COMPOUND_PARTS[word_lower]
 
-    # def is_compound_word(self, word: str) -> bool:
-    #     """Check if word is a compound word."""
-    #     word = word.lower()
-        
-    #     # Check for common compound delimiters
-    #     if '-' in word or ' ' in word:
-    #         return True
-            
-    #     # Check for camelCase and PascalCase
-    #     if any(c.isupper() for c in word[1:]):
-    #         return True
-        
-    #     # Check for known compound patterns
-    #     parts = self._split_compound_word(word)
-    #     return len(parts) > 1
+        # Handle hyphenated words
+        if "-" in word:
+            parts = [part.strip() for part in word.split("-")]
+            return [part for part in parts if part]
 
-    # def get_compound_parts(self, word: str) -> List[str]:
-    #     """Get parts of a compound word."""
-    #     word = word.lower()
-        
-    #     # Handle hyphenated words
-    #     if '-' in word:
-    #         return [part.strip() for part in word.split('-')]
-            
-    #     # Handle space-separated words
-    #     if ' ' in word:
-    #         return [part.strip() for part in word.split()]
-            
-    #     # Handle camelCase and PascalCase
-    #     parts = self._split_compound_word(word)
-    #     return [part.lower() for part in parts]
+        # Handle camelCase/PascalCase
+        if any(c.isupper() for c in word[1:]):
+            import re
+
+            parts = re.findall("[A-Z][^A-Z]*", word)
+            if parts:
+                return [part.lower() for part in parts]
+
+        # Default to original word if no compound structure found
+        return [word]
 
     def _split_compound_word(self, word: str) -> List[str]:
         """Split compound word into parts."""
         # Base case
         if len(word) <= 3:
             return [word]
-            
+
         # Try to find known word combinations
-        for i in range(3, len(word)-2):
+        for i in range(3, len(word) - 2):
             left = word[:i]
             right = word[i:]
-            
+
             left_base = self.get_base_form(left)
             right_base = self.get_base_form(right)
-            
+
             left_valid = (
-                left_base in self._get_wordnet_words() and
-                not self.is_stop_word(left_base)
+                left_base in self._get_wordnet_words()
+                and not self.is_stop_word(left_base)
             )
             right_valid = (
-                right_base in self._get_wordnet_words() and
-                not self.is_stop_word(right_base)
+                right_base in self._get_wordnet_words()
+                and not self.is_stop_word(right_base)
             )
-            
+
             if left_valid and right_valid:
                 return [left_base, right_base]
-        
+
         return [word]
 
-    def _get_wordnet_words(self) -> Set[str]:
-        """Get set of English words from WordNet."""
-        if not hasattr(self, '_wordnet_words'):
-            from nltk.corpus import wordnet
-            self._wordnet_words = {
-                lemma.name().lower()
-                for synset in wordnet.all_synsets()
-                for lemma in synset.lemmas()
+    def _get_wordnet_pos(self, word: str) -> Optional[str]:
+        """Get WordNet POS tag with context awareness."""
+        try:
+            if not word:
+                return None
+
+            # Check technical terms first
+            tech_pos_map = {"api": "n", "cloud": "n", "data": "n", "code": "n"}
+            if word.lower() in tech_pos_map:
+                return tech_pos_map[word.lower()]
+
+            pos = nltk.pos_tag([word])[0][1]
+            tag_map = {
+                "JJ": "a",  # Adjective
+                "VB": "v",  # Verb
+                "NN": "n",  # Noun
+                "RB": "r",  # Adverb
             }
-        return self._wordnet_words
+
+            # Check for technical terms that might be misclassified
+            if (
+                word.isupper() or "-" in word
+            ):  # Likely an acronym or technical term
+                return "n"
+
+            for prefix, tag in tag_map.items():
+                if pos.startswith(prefix):
+                    return tag
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting POS tag for '{word}': {str(e)}")
+            return None
