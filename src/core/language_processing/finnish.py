@@ -58,9 +58,23 @@ class FinnishTextProcessor(BaseTextProcessor):
 
     # Platform-specific default paths
     VOIKKO_PATHS = {
-        "win32": [r"C:\scripts\Voikko", r"C:\Program Files\Voikko", r"C:\Voikko", "~/Voikko"],  # Will be expanded
-        "linux": ["/usr/lib/voikko", "/usr/local/lib/voikko", "/usr/share/voikko", "~/voikko"],  # Will be expanded
-        "darwin": ["/usr/local/lib/voikko", "/opt/voikko", "~/voikko"],  # macOS  # Will be expanded
+        "win32": [
+            r"C:\scripts\Voikko",
+            r"C:\Program Files\Voikko",
+            r"C:\Voikko",
+            "~/Voikko",
+        ],  # Will be expanded
+        "linux": [
+            "/usr/lib/voikko",
+            "/usr/local/lib/voikko",
+            "/usr/share/voikko",
+            "~/voikko",
+        ],  # Will be expanded
+        "darwin": [
+            "/usr/local/lib/voikko",
+            "/opt/voikko",
+            "~/voikko",
+        ],  # macOS  # Will be expanded
     }
 
     def __init__(
@@ -87,15 +101,23 @@ class FinnishTextProcessor(BaseTextProcessor):
         elif file_utils:
             try:
                 main_config = file_utils.load_yaml(Path("config.yaml"))
-                self.voikko_path = main_config.get("languages", {}).get("fi", {}).get("voikko_path")
+                self.voikko_path = (
+                    main_config.get("languages", {})
+                    .get("fi", {})
+                    .get("voikko_path")
+                )
             except Exception as e:
-                logger.warning(f"Could not load Voikko path from config.yaml: {e}")
+                logger.warning(
+                    f"Could not load Voikko path from config.yaml: {e}"
+                )
 
         # Initialize Voikko
         self.voikko = self._initialize_voikko(self.voikko_path)
 
         if not self.voikko:
-            logger.warning("Voikko initialization failed, using fallback tokenization")
+            logger.warning(
+                "Voikko initialization failed, using fallback tokenization"
+            )
 
     def _load_stop_words(self) -> Set[str]:
         """Load Finnish stopwords from file and add technical terms."""
@@ -103,11 +125,17 @@ class FinnishTextProcessor(BaseTextProcessor):
             stop_words = set()
 
             # Load stopwords from file
-            stopwords_path = self.get_data_path("configurations") / "stop_words" / "fi.txt"
+            stopwords_path = (
+                self.get_data_path("configurations") / "stop_words" / "fi.txt"
+            )
             if stopwords_path.exists():
                 with open(stopwords_path, "r", encoding="utf-8") as f:
-                    stop_words.update(word.strip().lower() for word in f if word.strip())
-                logger.info(f"Loaded {len(stop_words)} stopwords from {stopwords_path}")
+                    stop_words.update(
+                        word.strip().lower() for word in f if word.strip()
+                    )
+                logger.info(
+                    f"Loaded {len(stop_words)} stopwords from {stopwords_path}"
+                )
             else:
                 logger.warning(f"Stopwords file not found: {stopwords_path}")
 
@@ -159,7 +187,9 @@ class FinnishTextProcessor(BaseTextProcessor):
             logger.error(f"Error loading Finnish stopwords: {e}")
             return set()
 
-    def _initialize_voikko(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
+    def _initialize_voikko(
+        self, voikko_path: Optional[str] = None
+    ) -> Optional[Voikko]:
         """Initialize Voikko with cross-platform compatibility."""
         try:
             # Determine platform
@@ -167,7 +197,9 @@ class FinnishTextProcessor(BaseTextProcessor):
             logger.info(f"Detected platform: {platform}")
 
             # Get platform-specific search paths
-            default_paths = self.VOIKKO_PATHS.get(platform, self.VOIKKO_PATHS[platform])
+            default_paths = self.VOIKKO_PATHS.get(
+                platform, self.VOIKKO_PATHS[platform]
+            )
 
             # Expand user paths
             search_paths = [os.path.expanduser(p) for p in default_paths]
@@ -181,10 +213,14 @@ class FinnishTextProcessor(BaseTextProcessor):
             try:
                 voikko = Voikko("fi")
                 if voikko.analyze("testi"):
-                    logger.info("Successfully initialized Voikko using system libraries")
+                    logger.info(
+                        "Successfully initialized Voikko using system libraries"
+                    )
                     return voikko
             except Exception as e:
-                logger.debug(f"Could not initialize Voikko using system libraries: {e}")
+                logger.debug(
+                    f"Could not initialize Voikko using system libraries: {e}"
+                )
 
             # Try with explicit paths
             for path in search_paths:
@@ -201,10 +237,14 @@ class FinnishTextProcessor(BaseTextProcessor):
 
                     voikko = Voikko("fi", str(path))
                     if voikko.analyze("testi"):
-                        logger.info(f"Successfully initialized Voikko with path: {path}")
+                        logger.info(
+                            f"Successfully initialized Voikko with path: {path}"
+                        )
                         return voikko
                 except Exception as e:
-                    logger.debug(f"Failed to initialize Voikko with path {path}: {e}")
+                    logger.debug(
+                        f"Failed to initialize Voikko with path {path}: {e}"
+                    )
 
             # Platform-specific guidance
             if platform == "win32":
@@ -247,7 +287,9 @@ class FinnishTextProcessor(BaseTextProcessor):
                     os.add_dll_directory(path)
                 else:
                     if path not in os.environ["PATH"]:
-                        os.environ["PATH"] = path + os.pathsep + os.environ["PATH"]
+                        os.environ["PATH"] = (
+                            path + os.pathsep + os.environ["PATH"]
+                        )
                 logger.info(f"Added {path} to DLL search path")
             except Exception as e:
                 logger.error(f"Error adding DLL directory {path}: {str(e)}")
@@ -269,7 +311,9 @@ class FinnishTextProcessor(BaseTextProcessor):
         for version in ["5", "2"]:
             dict_path = os.path.join(path, "voikko", version, "mor-standard")
             if os.path.exists(dict_path):
-                logger.info(f"Found dictionary version {version} at: {dict_path}")
+                logger.info(
+                    f"Found dictionary version {version} at: {dict_path}"
+                )
                 found_dict = True
 
         if not found_dict:
@@ -308,6 +352,40 @@ class FinnishTextProcessor(BaseTextProcessor):
             logger.error(f"Error getting base form for {word}: {e}")
             return word.lower()
 
+    def get_pos_tag(self, word: str) -> Optional[str]:
+        """Get part-of-speech tag using Voikko.
+
+        Maps Voikko classes to standard POS tags:
+        - Nominit -> NN (nouns)
+        - Verbit -> VB (verbs)
+        - Adjektiivit -> JJ (adjectives)
+        - Adverbit -> RB (adverbs)
+        """
+        try:
+            if not self.voikko:
+                return None
+
+            analyses = self.voikko.analyze(word)
+            if not analyses:
+                return None
+
+            # Map Voikko classes to standard POS tags
+            class_mapping = {
+                "nimisana": "NN",  # Noun
+                "laatusana": "JJ",  # Adjective
+                "teonsana": "VB",  # Verb
+                "seikkasana": "RB",  # Adverb
+                "etunimi": "NNP",  # Proper noun
+                "sukunimi": "NNP",  # Proper noun
+            }
+
+            word_class = analyses[0].get("CLASS", "")
+            return class_mapping.get(word_class, "NN")  # Default to noun
+
+        except Exception as e:
+            logger.error(f"Error getting POS tag for '{word}': {e}")
+            return None
+
     def preprocess_text(self, text: str) -> str:
         """Preprocess Finnish text with proper encoding."""
         if not isinstance(text, str):
@@ -332,7 +410,11 @@ class FinnishTextProcessor(BaseTextProcessor):
 
             if self.voikko:
                 tokens = self.voikko.tokens(text)
-                words = [t.tokenText for t in tokens if hasattr(t, "tokenType") and t.tokenType == 1]  # Word tokens
+                words = [
+                    t.tokenText
+                    for t in tokens
+                    if hasattr(t, "tokenType") and t.tokenType == 1
+                ]  # Word tokens
             else:
                 # Fallback tokenization
                 words = text.split()
@@ -359,7 +441,10 @@ class FinnishTextProcessor(BaseTextProcessor):
             word_lower = word.lower()
 
             # Check predefined compounds
-            if word_lower in self.COMPOUND_PARTS and len(self.COMPOUND_PARTS[word_lower]) > 1:
+            if (
+                word_lower in self.COMPOUND_PARTS
+                and len(self.COMPOUND_PARTS[word_lower]) > 1
+            ):
                 return True
 
             # Check hyphenated words
@@ -394,7 +479,9 @@ class FinnishTextProcessor(BaseTextProcessor):
 
             # Handle hyphenated words
             if "-" in word:
-                return [part.strip() for part in word.split("-") if part.strip()]
+                return [
+                    part.strip() for part in word.split("-") if part.strip()
+                ]
 
             # Use Voikko for analysis
             if self.voikko:

@@ -411,35 +411,37 @@ class EnglishTextProcessor(BaseTextProcessor):
 
         return [word]
 
-    def _get_wordnet_pos(self, word: str) -> Optional[str]:
-        """Get WordNet POS tag with context awareness."""
+    def get_pos_tag(self, word: str) -> Optional[str]:
+        """Get part-of-speech tag for a word.
+
+        Args:
+            word: Word to analyze
+
+        Returns:
+            Optional[str]: POS tag or None if not determinable
+        """
         try:
             if not word:
                 return None
 
             # Check technical terms first
-            tech_pos_map = {"api": "n", "cloud": "n", "data": "n", "code": "n"}
+            tech_pos_map = {
+                "api": "NN",
+                "cloud": "NN",
+                "data": "NN",
+                "code": "NN",
+            }
             if word.lower() in tech_pos_map:
                 return tech_pos_map[word.lower()]
 
+            # Get NLTK tag
             pos = nltk.pos_tag([word])[0][1]
-            tag_map = {
-                "JJ": "a",  # Adjective
-                "VB": "v",  # Verb
-                "NN": "n",  # Noun
-                "RB": "r",  # Adverb
-            }
 
-            # Check for technical terms that might be misclassified
-            if (
-                word.isupper() or "-" in word
-            ):  # Likely an acronym or technical term
-                return "n"
+            # Handle special cases
+            if word.isupper() or "-" in word:  # Acronym or technical term
+                return "NN"
 
-            for prefix, tag in tag_map.items():
-                if pos.startswith(prefix):
-                    return tag
-            return None
+            return pos
 
         except Exception as e:
             logger.error(f"Error getting POS tag for '{word}': {str(e)}")

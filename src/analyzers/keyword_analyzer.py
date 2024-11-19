@@ -1,246 +1,231 @@
 # src/analyzers/keyword_analyzer.py
-
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional, Set, Any, Tuple
+from collections import Counter, defaultdict
 import logging
-from typing import Any, Dict, List, Optional, Set
-from collections import Counter
-from math import log
-import asyncio
+import json
+import re
 
-from langchain_core.messages import ChatMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 
-from src.analyzers.base import (
-    TextAnalyzer,
-    AnalyzerOutput,
-    TextSection,
-)  # Changed from BaseAnalyzer
+from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection
 from src.schemas import KeywordAnalysisResult, KeywordInfo
 
-from pydantic import Field
-
 logger = logging.getLogger(__name__)
+
+
+class DomainType(str, Enum):
+    TECHNICAL = "technical"
+    BUSINESS = "business"
+
+
+@dataclass
+class DomainTerms:
+    terms: Set[str]
+    boost_factor: float = 1.0
 
 
 class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
 
-    keywords: List[KeywordInfo] = Field(default_factory=list)
-    domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+    keywords: List[KeywordInfo]
+    domain_keywords: Dict[str, List[str]]
 
 
 class KeywordAnalyzer(TextAnalyzer):
     """Analyzes text to extract keywords with position-aware weighting."""
 
+    # Base domain terms (English)
+    DOMAIN_TERMS = {
+        DomainType.TECHNICAL: DomainTerms(
+            {
+                "cloud",
+                "infrastructure",
+                "platform",
+                "kubernetes",
+                "deployment",
+                "pipeline",
+                "integration",
+                "monitoring",
+                "microservices",
+                "api",
+                "devops",
+                "architecture",
+                "latency",
+                "throughput",
+                "availability",
+                "reliability",
+            },
+            boost_factor=1.2,
+        ),
+        DomainType.BUSINESS: DomainTerms(
+            {
+                "revenue",
+                "cost",
+                "profit",
+                "margin",
+                "growth",
+                "efficiency",
+                "performance",
+                "optimization",
+                "strategy",
+                "operations",
+                "analytics",
+                "metrics",
+            },
+            boost_factor=1.15,
+        ),
+    }
+
+    FINNISH_DOMAIN_TERMS = {
+        DomainType.TECHNICAL: DomainTerms(
+            {
+                # Cloud/Infrastructure
+                "pilvipalvelu",
+                "pilvipohjainen",
+                "mikropalvelu",
+                "infrastruktuuri",
+                "konttiteknologia",
+                "skaalautuvuus",
+                # Integration/APIs
+                "rajapinta",
+                "integraatio",
+                "käyttöönotto",
+                # Performance/Ops
+                "monitorointi",
+                "vikasietoisuus",
+                "kuormantasaus",
+                "suorituskyky",
+                "automaatio",
+                "palvelutaso",
+            },
+            boost_factor=1.2,
+        ),
+        DomainType.BUSINESS: DomainTerms(
+            {
+                # Financial
+                "liikevaihto",
+                "tuotto",
+                "kustannus",
+                "markkinaosuus",
+                "toistuvaislaskutus",
+                "vuosineljännes",
+                "investointi",
+                # Customer
+                "asiakaspysyvyys",
+                "asiakashankinta",
+                "asiakaskokemus",
+                "asiakassegmentti",
+                "asiakaskanta",
+                # Market
+                "markkinaosuus",
+                "kilpailuasema",
+                "markkina-asema",
+                "markkinasegmentti",
+                "markkinajohtaja",
+            },
+            boost_factor=1.15,
+        ),
+    }
+
+    GENERIC_TERMS = {
+        "fi": {
+            "prosentti",
+            "määrä",
+            "osuus",
+            "kasvaa",
+            "vahvistua",
+            "tehostua",
+            "parantua",
+            "merkittävä",
+            "huomattava",
+            "tärkeä",
+            "kasvu",
+            "vahva",
+            "heikko",
+            "suuri",
+            "pieni",
+        },
+        "en": {
+            "percent",
+            "amount",
+            "increase",
+            "improve",
+            "significant",
+            "important",
+            "growth",
+            "strong",
+            "weak",
+            "large",
+            "small",
+        },
+    }
+
+    DEFAULT_WEIGHTS = {
+        "statistical": 0.4,
+        "llm": 0.6,
+        "compound_bonus": 0.2,
+        "domain_bonus": 0.15,
+        "length_factor": 0.1,
+        "generic_penalty": 0.3,
+        "position_boost": 0.1,
+        "frequency_factor": 0.15,
+        "cluster_boost": 0.2,
+    }
+
+    # Technical term variations for better matching
+    TERM_VARIATIONS = {
+        "api": ["apis", "rest-api", "api-driven"],
+        "cloud": ["cloud-based", "cloud-native", "multi-cloud"],
+        "devops": ["dev-ops", "devsecops"],
+        "data": ["dataset", "database", "datastore"],
+        "ai": ["artificial-intelligence", "machine-learning", "ml"],
+    }
+
     def __init__(
-        self,
-        llm=None,
-        config: Optional[Dict[str, Any]] = None,
-        language_processor=None,
+        self, llm=None, config: Optional[Dict] = None, language_processor=None
     ):
-        """Initialize KeywordAnalyzer with complete configuration."""
+        """Initialize analyzer with config and weights."""
         super().__init__(llm, config)
         self.language_processor = language_processor
-        self.llm = llm
+        self.weights = self._initialize_weights(config)
+        self.clustering_config = self._initialize_clustering_config(config)
+        self._frequency_cache = {}
+        self._current_text = ""
+        self.chain = self._create_chain()
 
-        # Define all weights with clear purposes
-        self.weights = {
-            # Source weights (sum should be 1.0)
-            "statistical": 0.4,
-            "llm": 0.6,
-            # Bonus/penalty factors
-            "compound_bonus": 0.2,  # Bonus for compound words
-            "domain_bonus": 0.15,  # Bonus for domain-specific terms
-            "length_factor": 0.1,  # Bonus for multi-word terms
-            "generic_penalty": 0.3,  # Penalty for common/generic terms
-            # Additional weights for fine-tuning
-            "technical_bonus": 0.25,  # Extra boost for technical terms
-            "position_boost": 0.1,  # Boost for terms at start/end
-            "frequency_factor": 0.15,  # Impact of term frequency
-            "cluster_boost": 0.2,  # Boost for terms in strong clusters
-        }
-
-        # Update weights from config if provided
+    def _initialize_weights(self, config: Optional[Dict]) -> Dict[str, float]:
+        """Initialize and validate weights."""
+        weights = self.DEFAULT_WEIGHTS.copy()
         if config and "weights" in config:
-            self.weights.update(config["weights"])
+            weights.update(config["weights"])
 
         # Validate source weights sum to 1.0
-        source_sum = self.weights["statistical"] + self.weights["llm"]
+        source_sum = weights["statistical"] + weights["llm"]
         if abs(source_sum - 1.0) > 0.001:
             logger.warning(
                 f"Source weights sum to {source_sum}, normalizing..."
             )
-            self.weights["statistical"] /= source_sum
-            self.weights["llm"] /= source_sum
+            weights["statistical"] /= source_sum
+            weights["llm"] /= source_sum
 
-        # Define generic terms to be filtered or penalized
-        self.generic_terms = {
-            # Common verbs
-            "reduce",
-            "increase",
-            "decrease",
-            "improve",
-            "change",
-            "update",
-            "implement",
-            "use",
-            "make",
-            "create",
-            "modify",
-            "perform",
-            # Common adjectives
-            "new",
-            "current",
-            "existing",
-            "previous",
-            "next",
-            "good",
-            "better",
-            "best",
-            "high",
-            "low",
-            "various",
-            # Common nouns
-            "project",
-            "system",
-            "process",
-            "department",
-            "part",
-            "type",
-            "kind",
-            "way",
-            "thing",
-            "item",
-            # Common business words
-            "meeting",
-            "report",
-            "update",
-            "status",
-            "progress",
-        }
+        return weights
 
-        # Domain-specific terms that override generic penalties
-        self.domain_specific_terms = {
-            "technical": {
-                # Development terms
-                "implementation",
-                "deployment",
-                "integration",
-                "architecture",
-                "framework",
-                "platform",
-                # Infrastructure terms
-                "system",
-                "server",
-                "network",
-                "database",
-                "cloud",
-                "container",
-                "instance",
-                # Process terms
-                "pipeline",
-                "workflow",
-                "automation",
-                "monitoring",
-                "logging",
-                "testing",
-            },
-            "business": {
-                # Financial terms
-                "cost",
-                "revenue",
-                "growth",
-                "profit",
-                "margin",
-                "investment",
-                "budget",
-                "forecast",
-                # Strategic terms
-                "strategy",
-                "initiative",
-                "objective",
-                "goal",
-                "market",
-                "customer",
-                "competitor",
-                # Process terms
-                "process",
-                "optimization",
-                "efficiency",
-                "performance",
-                "metrics",
-                "analytics",
-            },
-        }
-
-        # Clustering configuration
-        self.clustering_config = config.get(
+    def _initialize_clustering_config(self, config: Optional[Dict]) -> Dict:
+        """Initialize clustering configuration."""
+        return config.get(
             "clustering",
             {
                 "similarity_threshold": 0.85,
                 "max_cluster_size": 3,
                 "boost_factor": 1.2,
-                "domain_bonus": 0.1,  # Additional boost for same-domain clusters
-                "min_cluster_size": 2,  # Minimum size for cluster formation
-                "max_relation_distance": 2,  # Maximum steps for term relationship
+                "domain_bonus": 0.1,
+                "min_cluster_size": 2,
+                "max_relation_distance": 2,
             },
         )
-
-        # Domain configuration
-        self.domain_keywords = config.get("domain_keywords", {})
-
-        # Technical term variations for clustering
-        self.term_variations = {
-            "api": ["apis", "rest-api", "api-driven", "api-first", "api-based"],
-            "cloud": [
-                "cloud-based",
-                "cloud-native",
-                "multi-cloud",
-                "cloud-enabled",
-            ],
-            "devops": [
-                "dev-ops",
-                "devsecops",
-                "devops-driven",
-                "devops-enabled",
-            ],
-            "data": [
-                "dataset",
-                "database",
-                "datastore",
-                "data-driven",
-                "big-data",
-            ],
-            "micro": ["microservice", "micro-service", "microservices-based"],
-            "ai": [
-                "artificial-intelligence",
-                "machine-learning",
-                "ml",
-                "deep-learning",
-            ],
-        }
-        self._frequency_cache = {}
-        self._current_text = ""
-
-        # Initialize chain
-        self.chain = self._create_chain()
-        logger.debug(f"Initialized with weights: {self.weights}")
-        logger.debug(f"Initialized with config: {self.config}")
-
-    def _is_technical_variation(self, term: str) -> bool:
-        """Check if term is a technical variation."""
-        term_lower = term.lower()
-        return any(
-            term_lower in variations or term_lower == base
-            for base, variations in self.term_variations.items()
-        )
-
-    def _get_technical_base(self, term: str) -> Optional[str]:
-        """Get base form of technical term if it exists."""
-        term_lower = term.lower()
-        for base, variations in self.term_variations.items():
-            if term_lower in variations or term_lower == base:
-                return base
 
     def _create_chain(self) -> RunnableSequence:
         """Create LangChain processing chain."""
@@ -248,47 +233,51 @@ class KeywordAnalyzer(TextAnalyzer):
             [
                 (
                     "system",
-                    """You are a keyword extraction expert. Extract important keywords and phrases from text.
-                Focus on: technical terms, domain-specific vocabulary, important concepts, named entities, and compound phrases.
-                Return ONLY valid JSON with keywords and optional domain groupings.""",
+                    """You are a keyword extraction expert specialized in identifying 
+            compound terms and technical concepts. Extract keywords with attention to:
+            1. Multi-word technical terms
+            2. Domain-specific compound phrases
+            3. Technical and business terminology
+            Return ONLY valid JSON format.""",
                 ),
                 (
                     "human",
                     """Analyze this text and extract keywords:
-
-                Text: {text}
-                
-                Guidelines:
-                - Maximum keywords: {max_keywords}
-                - Consider statistical keywords: {statistical_keywords}
-                - Minimum length: {min_length} characters
-                - Focus area: {focus_area}
-                
-                Return the results in this exact JSON format:
-                {{"keywords": [
-                    {{"keyword": "example term", "score": 0.95, "domain": "technical"}},
-                    {{"keyword": "another term", "score": 0.85, "domain": "business"}}
+            Text: {text}
+            Guidelines:
+            - Maximum keywords: {max_keywords}
+            - Consider these statistical keywords: {statistical_keywords}
+            - Identify technical compound terms
+            - Classify by domain (technical/business)
+            
+            Return in this exact format:
+            {{
+                "keywords": [
+                    {{
+                        "keyword": "term",
+                        "score": 0.95,
+                        "domain": "technical",
+                        "compound_parts": ["part1", "part2"]
+                    }}
                 ],
-                "domain_keywords": {{
-                    "technical": ["term1", "term2"],
-                    "business": ["term3", "term4"]
-                }}}}""",
+                "compound_phrases": [
+                    {{
+                        "phrase": "term",
+                        "parts": ["part1", "part2"],
+                        "domain": "technical"
+                    }}
+                ]
+            }}""",
                 ),
             ]
         )
 
-        chain = (
+        return (
             {
                 "text": RunnablePassthrough(),
                 "max_keywords": lambda _: self.config.get("max_keywords", 10),
                 "statistical_keywords": lambda x: ", ".join(
                     self._get_statistical_keywords(x)
-                ),
-                "min_length": lambda _: self.config.get(
-                    "min_keyword_length", 3
-                ),
-                "focus_area": lambda _: self.config.get(
-                    "focus_on", "general topics"
                 ),
             }
             | template
@@ -296,20 +285,472 @@ class KeywordAnalyzer(TextAnalyzer):
             | self._post_process_llm_output
         )
 
-        return chain
+    def _create_error_result(self) -> KeywordAnalysisResult:
+        """Create error result."""
+        return KeywordAnalysisResult(
+            keywords=[],
+            compound_words=[],
+            domain_keywords={},
+            language=self._get_language(),
+            success=False,
+            error="Analysis failed",
+        )
+
+    def _handle_error(self, error: str) -> KeywordOutput:
+        """Create error output that matches model requirements."""
+        return KeywordOutput(
+            keywords=[],
+            domain_keywords={},
+            error=str(error),
+            success=False,
+            language=self._get_language(),
+        )
+
+    async def analyze(self, text: str) -> KeywordAnalysisResult:
+        """Analyze text to extract keywords."""
+        logger.debug("Starting keyword analysis")
+        try:
+            self._current_text = text  # Store for frequency calculations
+            output = await self._analyze_internal(text)
+            result = KeywordAnalysisResult(
+                keywords=output.keywords,
+                compound_words=[
+                    k.keyword for k in output.keywords if k.compound_parts
+                ],
+                domain_keywords=output.domain_keywords,
+                language=self._get_language(),
+                success=True,
+            )
+            logger.debug(
+                f"Analysis complete. Found {len(result.keywords)} keywords"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}", exc_info=True)
+            return self._create_error_result()
+
+    async def _analyze_with_llm(
+        self, text: str, statistical_keywords: List[KeywordInfo]
+    ) -> List[KeywordInfo]:
+        """Get keyword analysis from LLM."""
+        try:
+            # Use the LangChain chain to get LLM response
+            response = await self.chain.ainvoke(text)
+            logger.debug(f"Got LLM response for keyword analysis")
+
+            if not isinstance(response, dict) or "keywords" not in response:
+                logger.warning("Invalid LLM response format")
+                return []
+
+            # Convert response keywords to KeywordInfo objects
+            keywords = []
+            for kw in response.get("keywords", []):
+                if isinstance(kw, dict) and "keyword" in kw:
+                    keywords.append(
+                        KeywordInfo(
+                            keyword=kw["keyword"],
+                            score=float(kw.get("score", 0.5)),
+                            domain=kw.get("domain"),
+                            compound_parts=kw.get("compound_parts"),
+                        )
+                    )
+                    logger.debug(f"Processed LLM keyword: {kw['keyword']}")
+
+            return keywords
+
+        except Exception as e:
+            logger.error(f"LLM analysis failed: {e}")
+            return []
+
+    async def _analyze_internal(self, text: str) -> KeywordOutput:
+        """Internal analysis implementation."""
+        if error := self._validate_input(text):
+            return self._handle_error(error)
+
+        try:
+            # Get statistical and LLM keywords
+            sections = self._split_text_sections(text)
+            statistical_keywords = self._analyze_statistically(text, sections)
+            llm_keywords = await self._analyze_with_llm(
+                text, statistical_keywords
+            )
+
+            # Process and combine results
+            all_keywords = self._combine_keywords(
+                statistical_keywords, llm_keywords
+            )
+
+            # Apply clustering and filtering
+            clustered_keywords = self._cluster_keywords(all_keywords)
+            final_keywords = self._filter_keywords(clustered_keywords)
+
+            # Group by domain
+            domain_keywords = self._group_by_domain(final_keywords)
+
+            return KeywordOutput(
+                keywords=final_keywords,
+                domain_keywords=domain_keywords,
+                language=self._get_language(),
+                success=True,
+            )
+
+        except Exception as e:
+            logger.error(f"Internal analysis failed: {str(e)}", exc_info=True)
+            return self._handle_error(str(e))
+
+    def _get_statistical_keywords(self, text: str) -> List[str]:
+        """Get keywords for LLM prompt."""
+        sections = self._split_text_sections(text)
+        keywords = self._analyze_statistically(text, sections)
+        return [k.keyword for k in keywords[:5]]  # Top 5 for prompt
+
+    def is_compound_word(self, word: str) -> bool:
+        """Check if word is a true compound."""
+        parts = self._get_compound_parts(word)
+        return bool(parts and len(parts) > 1)
+
+    def _update_combined_keywords(
+        self,
+        combined: Dict[str, KeywordInfo],
+        keyword: KeywordInfo,
+        weight: float,
+    ) -> None:
+        """Update combined keywords with weighted scoring."""
+        if keyword.keyword in combined:
+            # Take highest weighted score
+            existing = combined[keyword.keyword]
+            score = max(
+                existing.score * self.weights["statistical"],
+                keyword.score * weight,
+            )
+        else:
+            score = keyword.score * weight
+
+        # Process compound words
+        compound_parts = None
+        if self.language_processor:
+            if self.language_processor.is_compound_word(keyword.keyword):
+                compound_parts = self.language_processor.get_compound_parts(
+                    keyword.keyword
+                )
+
+        # Calculate final score
+        final_score = self._calculate_score(
+            keyword.keyword, score, keyword.domain, compound_parts
+        )
+
+        combined[keyword.keyword] = KeywordInfo(
+            keyword=keyword.keyword,
+            score=final_score,
+            domain=keyword.domain,
+            compound_parts=compound_parts,
+        )
+
+    def _analyze_statistically(
+        self, text: str, sections: List[TextSection]
+    ) -> List[KeywordInfo]:
+        """Extract keywords using statistical analysis."""
+        try:
+            if not self.language_processor:
+                return []
+
+            # Get word frequencies
+            words = self._extract_candidate_words(text)
+            word_freq = Counter(words)
+
+            # Calculate scores
+            keywords = []
+            max_freq = max(word_freq.values()) if word_freq else 1
+
+            for word, freq in word_freq.items():
+                if not self._is_valid_keyword(word):
+                    continue
+
+                # Calculate base score
+                base_score = freq / max_freq
+                position_score = self._calculate_position_score(word, sections)
+
+                # Calculate final score
+                final_score = self._calculate_score(
+                    word,
+                    base_score * position_score,
+                    self._detect_domain(word),
+                    self._get_compound_parts(word),
+                )
+
+                if final_score >= self.config.get("min_confidence", 0.1):
+                    keywords.append(
+                        KeywordInfo(
+                            keyword=word,
+                            score=final_score,
+                            domain=self._detect_domain(word),
+                        )
+                    )
+
+            return sorted(keywords, key=lambda x: x.score, reverse=True)
+
+        except Exception as e:
+            logger.error(f"Statistical analysis failed: {e}")
+            return []
+
+    def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
+        """Process LLM output into standardized format."""
+        try:
+            if hasattr(output, "content"):
+                content = output.content
+                data = json.loads(content)
+            elif isinstance(output, dict):
+                data = output
+            else:
+                return {"keywords": [], "compound_phrases": []}
+
+            # Process keywords
+            keywords = []
+            for kw in data.get("keywords", []):
+                if isinstance(kw, dict) and "keyword" in kw:
+                    keywords.append(
+                        {
+                            "keyword": kw["keyword"],
+                            "score": float(kw.get("score", 0.5)),
+                            "domain": kw.get("domain"),
+                            "compound_parts": kw.get("compound_parts"),
+                        }
+                    )
+
+            return {
+                "keywords": keywords,
+                "compound_phrases": data.get("compound_phrases", []),
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing LLM output: {e}")
+            return {"keywords": [], "compound_phrases": []}
+
+    def _calculate_score(
+        self,
+        keyword: str,
+        base_score: float,
+        domain: Optional[str] = None,
+        compound_parts: Optional[List[str]] = None,
+    ) -> float:
+        """Calculate score with language-specific adjustments."""
+        score = base_score
+        is_finnish = (
+            self.language_processor
+            and getattr(self.language_processor, "language", "") == "fi"
+        )
+
+        # Domain boost based on language
+        if domain:
+            terms = (
+                self.FINNISH_DOMAIN_TERMS if is_finnish else self.DOMAIN_TERMS
+            )
+            domain_terms = terms.get(domain)
+            if domain_terms and keyword.lower() in domain_terms.terms:
+                score *= domain_terms.boost_factor
+                logger.debug(
+                    f"Applied domain boost ({domain_terms.boost_factor}) to {keyword}"
+                )
+
+        # Compound word boost
+        if compound_parts and len(compound_parts) > 1:
+            compound_bonus = self.weights["compound_bonus"] * (
+                len(compound_parts) - 1
+            )
+            score *= 1.0 + compound_bonus
+            logger.debug(f"Applied compound bonus to {keyword}")
+
+        return min(score, 1.0)
+
+    def _evaluate_quality(self, word: str) -> float:
+        """Simpler quality evaluation with flat penalty."""
+        if not self.language_processor:
+            return 1.0
+
+        word_lower = word.lower()
+        quality_score = 1.0
+        lang = self.language_processor.language
+
+        # Single flat penalty for generic terms
+        if word_lower in self.GENERIC_TERMS.get(lang, set()):
+            quality_score *= 0.5  # 50% penalty for generic terms
+            logger.debug(f"Applied generic penalty to {word}")
+
+        # POS-based scoring
+        pos_tag = self.language_processor.get_pos_tag(word)
+        if pos_tag:
+            pos_penalties = {
+                "JJ": 0.5,  # Adjective
+                "RB": 0.4,  # Adverb
+                "VB": 0.4,  # Verb
+            }
+            if pos_tag[:2] in pos_penalties:
+                quality_score *= pos_penalties[pos_tag[:2]]
+                logger.debug(f"Applied POS penalty to {word} ({pos_tag})")
+
+        return quality_score
+
+    def _detect_domain(self, word: str) -> Optional[str]:
+        """Detect domain for a keyword."""
+        word_lower = word.lower()
+
+        # Check direct matches
+        for domain, terms in self.DOMAIN_TERMS.items():
+            if word_lower in terms.terms:
+                return domain
+
+        # Check variations
+        for domain, terms in self.DOMAIN_TERMS.items():
+            for base_term in terms.terms:
+                if base_term in self.TERM_VARIATIONS:
+                    if word_lower in self.TERM_VARIATIONS[base_term]:
+                        return domain
+
+        return None
+
+    def _get_compound_parts(self, word: str) -> Optional[List[str]]:
+        """Get compound word parts with strict Finnish compound rules."""
+        if not self.language_processor:
+            return None
+
+        if "-" in word:
+            parts = [p.strip() for p in word.split("-") if p.strip()]
+            return parts if len(parts) > 1 else None
+
+        if self.language_processor.language == "fi" and hasattr(
+            self.language_processor, "voikko"
+        ):
+            # Check if it's just a generic term
+            if word.lower() in self.GENERIC_TERMS.get(
+                self.language_processor.language, set()
+            ):
+                return None
+
+            try:
+                analyses = self.language_processor.voikko.analyze(word)
+                if not analyses:
+                    return None
+
+                for analysis in analyses:
+                    structure = analysis.get("STRUCTURE", "")
+                    wordbases = analysis.get("WORDBASES", "")
+
+                    # Skip if not a compound structure
+                    if "=" not in structure[1:]:
+                        continue
+
+                    # Skip derivational forms
+                    if "+" not in wordbases or "+(" in wordbases:
+                        continue
+
+                    parts = []
+                    for part in wordbases.split("+"):
+                        if "(" in part and not part.startswith("+"):
+                            base = part.split("(")[0].strip()
+                            if len(base) > 2:
+                                parts.append(base)
+
+                    if len(parts) > 1:
+                        return parts
+
+                return None
+
+            except Exception as e:
+                logger.debug(f"Voikko analysis failed for {word}: {e}")
+                return None
+
+        elif self.language_processor.language == "en":
+            # English handling remains the same
+            patterns = {
+                "base": ["cloud", "data", "web", "api", "micro", "dev"],
+                "suffix": [
+                    "based",
+                    "driven",
+                    "oriented",
+                    "aware",
+                    "ready",
+                    "ops",
+                ],
+            }
+            word_lower = word.lower()
+
+            for base in patterns["base"]:
+                for suffix in patterns["suffix"]:
+                    if (
+                        word_lower == f"{base}{suffix}"
+                        or word_lower == f"{base}-{suffix}"
+                    ):
+                        return [base, suffix]
+
+            if " " in word:
+                parts = word.split()
+                return parts if len(parts) > 1 else None
+
+        return None
+
+    def _combine_keywords(
+        self, statistical: List[KeywordInfo], llm: List[KeywordInfo]
+    ) -> List[KeywordInfo]:
+        """Combine and deduplicate keywords from different sources."""
+        combined = {}
+
+        # Process statistical keywords
+        for kw in statistical:
+            self._update_combined_keywords(
+                combined, kw, self.weights["statistical"]
+            )
+
+        # Process LLM keywords
+        for kw in llm:
+            self._update_combined_keywords(combined, kw, self.weights["llm"])
+
+        return list(combined.values())
+
+    def _group_by_domain(
+        self, keywords: List[KeywordInfo]
+    ) -> Dict[str, List[str]]:
+        """Group keywords by their domains."""
+        domains: Dict[str, List[str]] = defaultdict(list)
+        for kw in keywords:
+            if kw.domain:
+                domains[kw.domain].append(kw.keyword)
+        return dict(domains)
+
+    def _get_language(self) -> str:
+        """Get current language."""
+        return (
+            self.language_processor.language
+            if self.language_processor
+            else "unknown"
+        )
+
+    async def analyze_batch(
+        self, texts: List[str], batch_size: int = 3, timeout: float = 30.0
+    ) -> List[KeywordAnalysisResult]:
+        """Process multiple texts with controlled concurrency."""
+        import asyncio
+
+        results = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts
+            batch = texts[i : i + batch_size]
+            try:
+                tasks = [self.analyze(text) for text in batch]
+                batch_results = await asyncio.gather(*tasks)
+                results.extend(batch_results)
+            except Exception as e:
+                logger.error(f"Batch processing failed: {e}")
+                # Add error results for failed batch
+                error_results = [self._create_error_result() for _ in batch]
+                results.extend(error_results)
+
+        return results
 
     def _split_text_sections(
         self, text: str, section_size: int = 200
     ) -> List[TextSection]:
-        """Split text into weighted sections.
-
-        Args:
-            text: Input text
-            section_size: Target size for each section
-
-        Returns:
-            List of TextSection objects with position-based weights
-        """
+        """Split text into weighted sections for analysis."""
         sections = []
         text = text.strip()
 
@@ -322,12 +763,9 @@ class KeywordAnalyzer(TextAnalyzer):
             section_text = text[i : i + section_size]
 
             # Higher weights for start and end sections
-            if i == 0:  # First section
-                weight = 1.2
-            elif i + section_size >= len(text):  # Last section
-                weight = 1.1
-            else:  # Middle sections
-                weight = 1.0
+            weight = (
+                1.2 if i == 0 else 1.1 if i + section_size >= len(text) else 1.0
+            )
 
             sections.append(
                 TextSection(
@@ -340,200 +778,50 @@ class KeywordAnalyzer(TextAnalyzer):
 
         return sections
 
-    def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process LLM output specifically for keyword analysis.
+    def _calculate_position_score(
+        self, word: str, sections: List[TextSection]
+    ) -> float:
+        """Calculate position-based score for a word."""
+        if not sections:
+            return 1.0
 
-        Args:
-            output: Raw LLM output
+        weights = []
+        word_lower = word.lower()
 
-        Returns:
-            Dict[str, Any]: Processed keyword output
-        """
-        # First use base processing to get JSON
-        data = super()._post_process_llm_output(output)
-        if not data:
-            return {"keywords": [], "domain_keywords": {}}
+        for section in sections:
+            if word_lower in section.content.lower():
+                weights.append(section.weight)
 
-        try:
-            # Process keywords with validation
-            keywords = []
-            for kw in data.get("keywords", []):
-                if isinstance(kw, dict) and "keyword" in kw:
-                    keywords.append(
-                        {
-                            "keyword": kw["keyword"],
-                            "score": float(kw.get("score", 0.5)),
-                            "domain": kw.get("domain"),
-                        }
-                    )
-
-            return {
-                "keywords": keywords,
-                "domain_keywords": data.get("domain_keywords", {}),
-            }
-
-        except Exception as e:
-            self.logger.error(f"Error processing keyword output: {e}")
-            return {"keywords": [], "domain_keywords": {}}
-
-    def _analyze_statistically(
-        self, text: str, sections: Optional[List[TextSection]] = None
-    ) -> List[KeywordInfo]:
-        """Extract keywords using statistical analysis."""
-        try:
-            if not self.language_processor:
-                return []
-
-            # Extract word frequencies
-            words = self._extract_candidate_words(text)
-            word_freq = Counter(words)
-
-            # Calculate max frequency for normalization
-            max_freq = max(word_freq.values()) if word_freq else 1
-
-            # Process each word
-            keywords = []
-            for word, freq in word_freq.items():
-                if not self._is_valid_keyword(word):
-                    continue
-
-                # Calculate base statistical score
-                base_score = freq / max_freq
-
-                # Calculate position score (1.0 if no sections provided)
-                position_score = 1.0
-                if sections:
-                    # Find all occurrences and their weights
-                    weights = []
-                    for section in sections:
-                        if word.lower() in section.content.lower():
-                            weights.append(section.weight)
-                    if weights:
-                        position_score = sum(weights) / len(weights)
-
-                # Calculate final score
-                final_score = min(base_score * position_score, 1.0)
-
-                if final_score >= self.config.get("min_confidence", 0.1):
-                    keywords.append(
-                        KeywordInfo(
-                            keyword=word,
-                            score=final_score,
-                            domain=self._detect_domain(word),
-                        )
-                    )
-
-            return sorted(keywords, key=lambda x: x.score, reverse=True)[
-                : self.config.get("max_keywords", 10)
-            ]
-
-        except Exception as e:
-            self.logger.error(f"Statistical analysis failed: {e}")
-            return []
-
-    async def analyze(self, text: str) -> KeywordAnalysisResult:
-        """Analyze text to extract keywords."""
-        logger.debug("Starting keyword analysis")
-        try:
-            # Get internal analysis results
-            logger.debug(f"Analyzing text of length {len(text)}")
-            output = await self._analyze_internal(text)
-
-            result = KeywordAnalysisResult(
-                keywords=[k for k in output.keywords],
-                compound_words=[],  # Fill if needed
-                domain_keywords=output.domain_keywords,
-                language=(
-                    self.language_processor.language
-                    if self.language_processor
-                    else "unknown"
-                ),
-                success=True,
-            )
-            logger.debug(
-                f"Analysis complete. Found {len(result.keywords)} keywords"
-            )
-            return result
-        except Exception as e:
-            logger.error(f"Analysis failed: {e}", exc_info=True)
-            return KeywordAnalysisResult(
-                keywords=[],
-                compound_words=[],
-                domain_keywords={},
-                language="unknown",
-                success=False,
-                error=str(e),
-            )
-
-    def analyze_statistically(
-        self, text: str, sections: List[TextSection]
-    ) -> List[KeywordInfo]:
-        """Extract keywords using statistical analysis with position weighting."""
-        keywords = []
-
-        # Get word frequencies
-        words = self._extract_candidate_words(text)
-        word_freq = Counter(words)
-
-        # Calculate max frequency for normalization
-        max_freq = max(word_freq.values()) if word_freq else 1
-
-        for word, freq in word_freq.items():
-            if not self._is_valid_keyword(word):
-                continue
-
-            # Calculate base statistical score
-            base_score = freq / max_freq
-
-            # Apply position weighting
-            position_score = self._calculate_position_score(word, sections)
-            final_score = min(base_score * position_score, 1.0)  # Cap at 1.0
-
-            if final_score >= self.config.get("min_confidence", 0.1):
-                keywords.append(
-                    KeywordInfo(
-                        keyword=word,
-                        score=final_score,
-                        domain=self._detect_domain(word),
-                    )
-                )
-
-        return sorted(keywords, key=lambda x: x.score, reverse=True)[
-            : self.config.get("max_keywords", 10)
-        ]
+        return sum(weights) / len(weights) if weights else 1.0
 
     def _get_keyword_frequency(self, keyword: str) -> int:
-        """Get frequency of keyword in the analyzed text."""
+        """Get frequency of keyword in the current text."""
         if keyword not in self._frequency_cache:
-            # Use language processor to get normalized frequency if available
             if self.language_processor:
-                tokens = self.language_processor.tokenize(self._current_text)
+                # Use language processor for accurate counting
                 base_form = self.language_processor.get_base_form(keyword)
+                tokens = self.language_processor.tokenize(self._current_text)
 
-                # Count occurrences of base form
+                # Count base form matches
                 freq = sum(
                     1
                     for token in tokens
                     if self.language_processor.get_base_form(token) == base_form
                 )
 
-                # Count occurrences of original form
+                # Add matches for original form
                 freq += self._current_text.lower().count(keyword.lower())
 
-                # Get compound word variations if applicable
-                if self.language_processor.is_compound_word(keyword):
-                    compound_parts = self.language_processor.get_compound_parts(
-                        keyword
+                # Check compound variations if applicable
+                compound_parts = self._get_compound_parts(keyword)
+                if compound_parts:
+                    part_freq = sum(
+                        self._current_text.lower().count(part.lower())
+                        for part in compound_parts
                     )
-                    if compound_parts:
-                        # Add partial matches for compound words
-                        part_freq = sum(
-                            self._current_text.lower().count(part.lower())
-                            for part in compound_parts
-                        )
-                        freq = max(freq, part_freq)
+                    freq = max(freq, part_freq)
             else:
-                # Simple case insensitive count if no language processor
+                # Simple case-insensitive count
                 freq = self._current_text.lower().count(keyword.lower())
 
             self._frequency_cache[keyword] = freq
@@ -545,511 +833,49 @@ class KeywordAnalyzer(TextAnalyzer):
         if not self.language_processor:
             return []
 
-        # Tokenize and process
-        tokens = self.language_processor.tokenize(text)
         candidates = []
+        tokens = self.language_processor.tokenize(text)
 
         for token in tokens:
-            # Get base form
             base_form = self.language_processor.get_base_form(token)
-
-            # Check if word should be kept
-            if self.language_processor.should_keep_word(base_form):
+            if self._is_valid_keyword(base_form):
                 candidates.append(base_form)
 
         return candidates
 
     def _is_valid_keyword(self, word: str) -> bool:
         """Check if word is a valid keyword candidate."""
-        if not word:
+        if not word or len(word) < self.config.get("min_keyword_length", 3):
             return False
 
-        # Length check
-        min_length = self.config.get("min_keyword_length", 3)
-        if len(word) < min_length:
-            return False
+        if self.language_processor:
+            if self.language_processor.is_stop_word(word.lower()):
+                return False
 
-        # Stop word check
-        if self.language_processor and self.language_processor.is_stop_word(
-            word
-        ):
-            return False
+            # Additional checks can be added here
+            if any(c.isdigit() for c in word):
+                return False
+
+            if not any(c.isalnum() for c in word):
+                return False
 
         return True
 
-    def _detect_domain(self, word: str) -> Optional[str]:
-        """Detect domain for a keyword."""
-        # Check each domain's keywords
-        for domain, keywords in self.domain_keywords.items():
-            if word in keywords:
-                return domain
-
-        # Check compound words
-        if self.language_processor:
-            try:
-                if self.language_processor.is_compound_word(word):
-                    parts = self.language_processor.get_compound_parts(word)
-                    for part in parts:
-                        for domain, keywords in self.domain_keywords.items():
-                            if part in keywords:
-                                return domain
-            except Exception as e:
-                logger.debug(f"Compound word check failed for {word}: {e}")
-
-        return None
-
-    def _get_statistical_keywords(self, text: str) -> List[str]:
-        """Get statistical keywords for LLM prompt."""
-        sections = self._split_text_sections(text)
-        keywords = self._analyze_statistically(text, sections)
-        return [k.keyword for k in keywords[:5]]  # Top 5 for the prompt
-
-    async def _analyze_with_llm(
-        self, text: str, statistical_keywords: List[KeywordInfo]
-    ) -> List[KeywordInfo]:
-        """Get keyword analysis from LLM."""
-        if not self.llm:
-            return []
-
-        try:
-            # Use the LangChain chain to get LLM response
-            response = await self.chain.ainvoke(text)
-
-            if isinstance(response, dict) and "keywords" in response:
-                return [
-                    KeywordInfo(**kw) if isinstance(kw, dict) else kw
-                    for kw in response["keywords"]
-                ]
-            return []
-
-        except Exception as e:
-            logger.error(f"LLM analysis failed: {e}")
-            return []
-
-    def _process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process raw LLM output."""
-        try:
-            # Handle different output types
-            if hasattr(output, "content"):
-                content = output.content
-            elif isinstance(output, str):
-                content = output
-            elif isinstance(output, dict):
-                return output
-            else:
-                return {"keywords": []}
-
-            # Parse JSON content
-            import json
-
-            try:
-                return json.loads(content)
-            except json.JSONDecodeError:
-                return {"keywords": []}
-
-        except Exception as e:
-            logger.error(f"Error processing LLM output: {e}")
-            return {"keywords": []}
-
     def _cluster_keywords(
         self, keywords: List[KeywordInfo]
     ) -> List[KeywordInfo]:
-        """Group similar keywords into clusters and adjust scores."""
+        """Group similar keywords into clusters."""
         if not keywords:
             return []
 
-        clusters: Dict[str, List[KeywordInfo]] = {}
-        processed_keywords = set()
+        clusters = defaultdict(list)
+        processed = set()
 
-        for kw in keywords:
-            if kw.keyword in processed_keywords:
-                continue
-
-            cluster = []
-            base_form = (
-                self.language_processor.get_base_form(kw.keyword)
-                if self.language_processor
-                else kw.keyword.lower()
-            )
-
-            # Find related keywords
-            for other in keywords:
-                if other.keyword in processed_keywords:
-                    continue
-
-                if self._are_keywords_related(
-                    kw.keyword, other.keyword, base_form
-                ):
-                    cluster.append(other)
-                    processed_keywords.add(other.keyword)
-
-            if cluster:
-                clusters[base_form] = cluster
-
-        # Adjust scores based on clusters
-        return self._adjust_cluster_scores(clusters)
-
-    def _are_keywords_related(self, kw1: str, kw2: str, base_form: str) -> bool:
-        """Check if keywords are related using multiple methods."""
-        # Exact match after normalization
-        if kw1.lower() == kw2.lower():
-            return True
-
-        # Base form match
-        other_base = (
-            self.language_processor.get_base_form(kw2)
-            if self.language_processor
-            else kw2.lower()
-        )
-        if base_form == other_base:
-            return True
-
-        # Common substring (for compound words)
-        if len(kw1) > 3 and len(kw2) > 3:
-            if kw1.lower() in kw2.lower() or kw2.lower() in kw1.lower():
-                return True
-
-        # Check domain relationship
-        kw1_domain = self._detect_domain(kw1)
-        kw2_domain = self._detect_domain(kw2)
-        if kw1_domain and kw1_domain == kw2_domain:
-            if self._check_domain_relationship(kw1, kw2, kw1_domain):
-                return True
-
-        return False
-
-    def _check_domain_relationship(
-        self, kw1: str, kw2: str, domain: str
-    ) -> bool:
-        """Check if keywords are related within their domain."""
-        # Get domain-specific relationships
-        domain_pairs = {
-            "technical": [
-                ("ai", "artificial intelligence"),
-                ("ml", "machine learning"),
-                ("api", "interface"),
-            ],
-            "business": [
-                ("roi", "return on investment"),
-                ("kpi", "key performance indicator"),
-                ("b2b", "business to business"),
-            ],
-        }
-
-        pairs = domain_pairs.get(domain, [])
-        kw1_lower = kw1.lower()
-        kw2_lower = kw2.lower()
-
-        return any((kw1_lower in pair and kw2_lower in pair) for pair in pairs)
-
-    def _adjust_cluster_scores(
-        self, clusters: Dict[str, List[KeywordInfo]]
-    ) -> List[KeywordInfo]:
-        """Adjust scores based on cluster relationships."""
-        boost_factor = self.clustering_config.get("boost_factor", 1.2)
-        result = []
-
-        for base_form, cluster in clusters.items():
-            if not cluster:
-                continue
-
-            # Sort cluster by base score
-            cluster.sort(key=lambda x: x.score, reverse=True)
-
-            # Boost scores based on cluster size and position
-            for i, kw in enumerate(cluster):
-                # Primary term gets full boost
-                if i == 0:
-                    boost = boost_factor
-                # Related terms get diminishing boost
-                else:
-                    boost = 1.0 + (boost_factor - 1.0) * (
-                        1.0 - (i / len(cluster))
-                    )
-
-                # Create new keyword with adjusted score
-                result.append(
-                    KeywordInfo(
-                        keyword=kw.keyword,
-                        score=min(kw.score * boost, 1.0),
-                        domain=kw.domain,
-                    )  # Cap at 1.0
-                )
-
-        return sorted(result, key=lambda x: x.score, reverse=True)
-
-    def _calculate_confidence_score(
-        self,
-        word: str,
-        base_score: float,
-        position_score: float,
-        domain: Optional[str] = None,
-        compound_parts: Optional[List[str]] = None,
-        frequency: Optional[int] = None,
-    ) -> float:
-        """Calculate confidence score using all weight factors."""
-        logger.debug(
-            f"Calculating score for '{word}' with base score {base_score}"
-        )
-
-        score = base_score * position_score
-        word_lower = word.lower()
-
-        # Technical/business term handling
-        technical_terms = {
-            "api",
-            "cloud",
-            "deployment",
-            "pipeline",
-            "devops",
-            "kubernetes",
-            "docker",
-            "microservices",
-            "scalability",
-            "infrastructure",
-        }
-        business_terms = {
-            "revenue",
-            "cost",
-            "project",
-            "strategy",
-            "market",
-            "business",
-            "stakeholder",
-            "roi",
-            "optimization",
-            "efficiency",
-        }
-
-        # Domain-specific handling
-        is_domain_specific = False
-        if domain:
-            if domain == "technical" and word_lower in technical_terms:
-                is_domain_specific = True
-                score *= 1.2  # Higher boost for core technical terms
-            elif domain == "business" and word_lower in business_terms:
-                is_domain_specific = True
-                score *= 1.15  # Standard boost for business terms
-            else:
-                # Apply regular domain boost
-                score *= 1.0 + self.weights["domain_bonus"]
-            logger.debug(f"After domain boost: {score}")
-
-        # Generic term penalty if not domain-specific
-        if not is_domain_specific and word_lower in self.generic_terms:
-            penalty = 1.0 - self.weights["generic_penalty"]
-            score *= penalty
-            logger.debug(f"After generic penalty ({penalty}): {score}")
-
-        # Compound word handling with context
-        if compound_parts and len(compound_parts) > 1:
-            compound_score = 1.0
-            # Check if compound parts are technical/business terms
-            if any(part.lower() in technical_terms for part in compound_parts):
-                compound_score *= 1.15
-            if any(part.lower() in business_terms for part in compound_parts):
-                compound_score *= 1.1
-            # Apply compound bonus based on number of parts
-            compound_bonus = self.weights["compound_bonus"] * (
-                len(compound_parts) - 1
-            )
-            compound_score *= 1.0 + compound_bonus
-            score *= compound_score
-            logger.debug(f"After compound boost: {score}")
-
-        # Length bonus for multi-word terms
-        if (
-            " " in word
-            or "-" in word
-            or (compound_parts and len(compound_parts) > 1)
-        ):
-            length_boost = 1.0 + self.weights["length_factor"]
-            score *= length_boost
-            logger.debug(f"After length boost: {score}")
-
-        # Frequency impact if provided
-        if frequency is not None and frequency > 1:
-            freq_factor = 1.0 + (
-                self.weights["frequency_factor"]
-                * min(frequency / 10.0, 1.0)  # Cap frequency impact
-            )
-            score *= freq_factor
-            logger.debug(f"After frequency boost ({freq_factor}): {score}")
-
-        # Position boost from section weighting
-        position_boost = 1.0 + (
-            self.weights["position_boost"] * (position_score - 1.0)
-        )
-        score *= position_boost
-        logger.debug(f"After position boost: {score}")
-
-        # Normalize to 0-1 range
-        final_score = min(score, 1.0)
-        logger.debug(f"Final score for '{word}': {final_score}")
-
-        return final_score
-
-    # Internal async methods
-
-    async def _analyze_internal(self, text: str) -> KeywordOutput:
-        """Internal analysis method returning KeywordOutput."""
-        if error := self._validate_input(text):
-            return KeywordOutput(error=error, success=False, language="unknown")
-
-        try:
-            logger.debug("Starting internal analysis")
-
-            # Reset and initialize tracking
-            self._frequency_cache = {}
-            self._current_text = text
-
-            language = (
-                self.language_processor.language
-                if self.language_processor
-                else "unknown"
-            )
-
-            # Split text into weighted sections
-            sections = self._split_text_sections(text)
-
-            # Get keywords with both methods
-            statistical_keywords = self._analyze_statistically(text, sections)
-            llm_keywords = await self._analyze_with_llm(
-                text, statistical_keywords
-            )
-
-            # Process compound words
-            compound_words = []
-            if self.language_processor:
-                logger.debug("Processing compound words")
-                processed_compounds = set()  # Avoid duplicates
-
-                # Check both statistical and LLM keywords for compounds
-                for keyword in set(
-                    kw.keyword for kw in statistical_keywords + llm_keywords
-                ):
-                    if keyword.lower() in processed_compounds:
-                        continue
-
-                    if self.language_processor.is_compound_word(keyword):
-                        parts = self.language_processor.get_compound_parts(
-                            keyword
-                        )
-                        if parts and len(parts) > 1:
-                            logger.debug(
-                                f"Found compound word: {keyword} -> {parts}"
-                            )
-                            compound_words.append(keyword)
-                            processed_compounds.add(keyword.lower())
-
-            # Combine results with weight-based scoring
-            combined_keywords = {}
-
-            # Process statistical keywords
-            for kw in statistical_keywords:
-                base_score = kw.score * self.weights["statistical"]
-                if kw.keyword not in combined_keywords:
-                    combined_keywords[kw.keyword] = {
-                        "score": base_score,
-                        "domain": kw.domain,
-                        "compound_parts": None,
-                    }
-
-            # Process LLM keywords
-            for kw in llm_keywords:
-                base_score = kw.score * self.weights["llm"]
-                if kw.keyword in combined_keywords:
-                    # Take max score if keyword already exists
-                    combined_keywords[kw.keyword]["score"] = max(
-                        combined_keywords[kw.keyword]["score"], base_score
-                    )
-                else:
-                    combined_keywords[kw.keyword] = {
-                        "score": base_score,
-                        "domain": kw.domain,
-                        "compound_parts": None,
-                    }
-
-            # Apply compound word information and calculate final scores
-            final_keywords = []
-            for keyword, info in combined_keywords.items():
-                compound_parts = None
-                if keyword in compound_words:
-                    compound_parts = self.language_processor.get_compound_parts(
-                        keyword
-                    )
-
-                # Calculate final score with all weights
-                final_score = self._calculate_confidence_score(
-                    keyword,
-                    info["score"],
-                    1.0,  # default position score
-                    info["domain"],
-                    compound_parts,
-                    frequency=self._get_keyword_frequency(keyword),
-                )
-
-                final_keywords.append(
-                    KeywordInfo(
-                        keyword=keyword,
-                        score=final_score,
-                        domain=info["domain"],
-                        compound_parts=compound_parts,
-                    )
-                )
-
-            # Apply clustering to get final results
-            clustered_keywords = self._cluster_keywords(final_keywords)
-
-            # Sort by score and apply max keywords limit
-            final_keywords = sorted(
-                clustered_keywords, key=lambda x: x.score, reverse=True
-            )[: self.config.get("max_keywords", 10)]
-
-            # Group keywords by domain
-            domain_keywords = {}
-            for kw in final_keywords:
-                if kw.domain:
-                    if kw.domain not in domain_keywords:
-                        domain_keywords[kw.domain] = []
-                    domain_keywords[kw.domain].append(kw.keyword)
-
-            logger.debug(f"Found {len(compound_words)} compound words")
-            logger.debug(
-                f"Analysis complete. Found {len(final_keywords)} keywords"
-            )
-
-            return KeywordOutput(
-                keywords=final_keywords,
-                compound_words=compound_words,
-                domain_keywords=domain_keywords,
-                language=language,
-                success=True,
-            )
-
-        except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            self._frequency_cache = {}  # Reset cache on error
-            self._current_text = ""
-            return KeywordOutput(
-                error=str(e), success=False, language="unknown"
-            )
-
-    def _cluster_keywords(
-        self, keywords: List[KeywordInfo]
-    ) -> List[KeywordInfo]:
-        """Group similar keywords into clusters with improved handling."""
-        if not keywords:
-            return []
-
-        clusters: Dict[str, List[KeywordInfo]] = {}
-        processed_keywords = set()
-
-        # Sort keywords by initial score for better cluster seeds
+        # Sort by score for better clustering
         sorted_keywords = sorted(keywords, key=lambda x: x.score, reverse=True)
 
         for kw in sorted_keywords:
-            if kw.keyword in processed_keywords:
+            if kw.keyword in processed:
                 continue
 
             cluster = []
@@ -1061,22 +887,23 @@ class KeywordAnalyzer(TextAnalyzer):
 
             # Find related keywords
             for other in sorted_keywords:
-                if other.keyword in processed_keywords:
+                if other.keyword in processed:
                     continue
 
                 if self._are_keywords_related(
                     kw.keyword, other.keyword, base_form
                 ):
                     cluster.append(other)
-                    processed_keywords.add(other.keyword)
+                    processed.add(other.keyword)
 
             if cluster:
                 clusters[base_form] = cluster
 
+        # Adjust scores based on clustering
         return self._adjust_cluster_scores(clusters)
 
     def _are_keywords_related(self, kw1: str, kw2: str, base_form: str) -> bool:
-        """Check if keywords are related using multiple methods."""
+        """Check if keywords are related."""
         # Exact match after normalization
         if kw1.lower() == kw2.lower():
             return True
@@ -1092,20 +919,13 @@ class KeywordAnalyzer(TextAnalyzer):
 
         # Check for compound word relationships
         if self.language_processor:
-            kw1_parts = set(self.language_processor.get_compound_parts(kw1))
-            kw2_parts = set(self.language_processor.get_compound_parts(kw2))
-            if kw1_parts & kw2_parts:  # If they share any parts
+            kw1_parts = set(self._get_compound_parts(kw1) or [])
+            kw2_parts = set(self._get_compound_parts(kw2) or [])
+            if kw1_parts and kw2_parts and (kw1_parts & kw2_parts):
                 return True
 
         # Technical term variations
-        tech_variations = {
-            "api": ["apis", "rest-api", "api-driven"],
-            "cloud": ["cloud-based", "cloud-native", "multi-cloud"],
-            "devops": ["dev-ops", "devsecops", "devops-driven"],
-            # Add more variations as needed
-        }
-
-        for base_term, variations in tech_variations.items():
+        for base_term, variations in self.TERM_VARIATIONS.items():
             if (kw1.lower() in variations or kw1.lower() == base_term) and (
                 kw2.lower() in variations or kw2.lower() == base_term
             ):
@@ -1116,47 +936,39 @@ class KeywordAnalyzer(TextAnalyzer):
     def _adjust_cluster_scores(
         self, clusters: Dict[str, List[KeywordInfo]]
     ) -> List[KeywordInfo]:
-        """Adjust scores based on cluster relationships with improved domain handling."""
+        """Adjust scores based on cluster relationships."""
         result = []
-        boost_factor = self.clustering_config.get("boost_factor", 1.2)
-        domain_bonus = self.clustering_config.get("domain_bonus", 0.1)
+        boost_factor = self.clustering_config["boost_factor"]
+        domain_bonus = self.clustering_config["domain_bonus"]
 
         for base_form, cluster in clusters.items():
-            if not cluster:
-                continue
-
-            # Sort cluster by base score
+            # Sort cluster by score
             cluster.sort(key=lambda x: x.score, reverse=True)
 
             # Get primary domain from highest scoring keywords
-            primary_domain = Counter(k.domain for k in cluster[:3]).most_common(
-                1
-            )[0][0]
+            domains = Counter(k.domain for k in cluster[:3] if k.domain)
+            primary_domain = domains.most_common(1)[0][0] if domains else None
 
             # Process each keyword in cluster
             for i, kw in enumerate(cluster):
                 # Calculate position-based boost
-                if i == 0:  # Primary term
-                    position_boost = boost_factor
-                else:  # Related terms get diminishing boost
-                    position_boost = 1.0 + (boost_factor - 1.0) * (
-                        1.0 - (i / len(cluster))
-                    )
+                position_boost = (
+                    boost_factor
+                    if i == 0
+                    else 1.0 + (boost_factor - 1.0) * (1.0 - (i / len(cluster)))
+                )
 
                 # Calculate domain boost
-                domain_boost = 1.0
-                if kw.domain == primary_domain:
-                    domain_boost += domain_bonus
+                domain_boost = (
+                    1.0 + domain_bonus if kw.domain == primary_domain else 1.0
+                )
 
-                # Apply compound word bonus if applicable
-                compound_boost = 1.0
-                if (
-                    hasattr(kw, "compound_parts")
-                    and kw.compound_parts
-                    and len(kw.compound_parts) > 1
-                ):
-                    compound_bonus = 0.1 * (len(kw.compound_parts) - 1)
-                    compound_boost += compound_bonus
+                # Apply compound boost if applicable
+                compound_boost = (
+                    1.0 + 0.1 * len(kw.compound_parts)
+                    if getattr(kw, "compound_parts", None)
+                    else 1.0
+                )
 
                 # Calculate final score
                 final_score = min(
@@ -1164,192 +976,51 @@ class KeywordAnalyzer(TextAnalyzer):
                     1.0,
                 )
 
-                # Create new keyword with adjusted score
                 result.append(
                     KeywordInfo(
                         keyword=kw.keyword,
                         score=final_score,
                         domain=kw.domain,
-                        compound_parts=kw.compound_parts,
+                        compound_parts=getattr(kw, "compound_parts", None),
                     )
                 )
 
         return sorted(result, key=lambda x: x.score, reverse=True)
 
-    def _process_compound_word(self, word: str) -> Dict[str, Any]:
-        """Process compound word to get its parts and domain."""
-        if not self.language_processor:
-            return {"parts": None, "domain": None}
-
-        try:
-            if self.language_processor.is_compound_word(word):
-                logger.debug(f"Processing compound word: {word}")
-                parts = self.language_processor.get_compound_parts(word)
-                logger.debug(f"Found parts: {parts}")
-                # Check if any part indicates a domain
-                for part in parts:
-                    if domain := self._detect_domain(part):
-                        return {"parts": parts, "domain": domain}
-                return {"parts": parts, "domain": None}
-        except Exception as e:
-            logger.error(f"Error processing compound word {word}: {e}")
-
-        return {"parts": None, "domain": self._detect_domain(word)}
-
-    def _combine_results(
-        self,
-        statistical_keywords: List[KeywordInfo],
-        llm_keywords: List[KeywordInfo],
+    def _filter_keywords(
+        self, keywords: List[KeywordInfo]
     ) -> List[KeywordInfo]:
-        """Combine statistical and LLM results with clustering."""
-        combined = {}
+        """Apply final filtering to keywords."""
+        filtered = []
+        seen_bases = set()
 
-        # Process statistical keywords
-        for kw in statistical_keywords:
-            base_score = kw.score * self.weights["statistical"]
-            self._update_combined_keywords(combined, kw, base_score)
+        for kw in keywords:
+            # Get base form for deduplication
+            base = (
+                self.language_processor.get_base_form(kw.keyword.lower())
+                if self.language_processor
+                else kw.keyword.lower()
+            )
 
-        # Process LLM keywords
-        for kw in llm_keywords:
-            base_score = kw.score * self.weights["llm"]
-            self._update_combined_keywords(combined, kw, base_score)
+            if base in seen_bases:
+                continue
 
-        # Convert to list and apply clustering
-        initial_results = list(combined.values())
-        clustered_results = self._cluster_keywords(initial_results)
+            # Always keep compound terms with domain assignment
+            if kw.compound_parts and kw.domain:
+                filtered.append(kw)
+                seen_bases.add(base)
+                continue
 
-        # Sort by score and apply max keywords limit
-        return sorted(clustered_results, key=lambda x: x.score, reverse=True)[
-            : self.config.get("max_keywords", 10)
+            # Evaluate quality for single terms
+            quality = self._evaluate_quality(kw.keyword)
+            if quality >= 0.8:  # Quality threshold
+                # Adjust score based on quality
+                kw.score *= quality
+                filtered.append(kw)
+                seen_bases.add(base)
+
+        # Apply max keywords limit
+        max_keywords = self.config.get("max_keywords", 10)
+        return sorted(filtered, key=lambda x: x.score, reverse=True)[
+            :max_keywords
         ]
-
-    def _update_combined_keywords(
-        self,
-        combined: Dict[str, KeywordInfo],
-        keyword: KeywordInfo,
-        base_score: float,
-    ) -> None:
-        """Update combined keywords dictionary with proper weight handling."""
-        if keyword.keyword in combined:
-            # Take highest weighted score if keyword already exists
-            existing = combined[keyword.keyword]
-            score = max(existing.score, base_score)
-        else:
-            score = base_score
-
-        # Process compound words
-        compound_parts = None
-        if self.language_processor:
-            try:
-                if self.language_processor.is_compound_word(keyword.keyword):
-                    compound_parts = self.language_processor.get_compound_parts(
-                        keyword.keyword
-                    )
-                    logger.debug(
-                        f"Found compound word: {keyword.keyword} -> {compound_parts}"
-                    )
-            except Exception as e:
-                logger.debug(
-                    f"Error processing compound word {keyword.keyword}: {e}"
-                )
-
-        # Calculate final score with all weights
-        final_score = self._calculate_confidence_score(
-            keyword.keyword,
-            score,
-            1.0,  # default position score
-            keyword.domain,
-            compound_parts,
-            frequency=self._get_keyword_frequency(keyword.keyword),
-        )
-
-        combined[keyword.keyword] = KeywordInfo(
-            keyword=keyword.keyword,
-            score=final_score,
-            domain=keyword.domain,
-            compound_parts=compound_parts,
-        )
-
-    # Helper for batch processing
-    async def analyze_batch(
-        self, texts: List[str], batch_size: int = 3, timeout: float = 30.0
-    ) -> List[KeywordAnalysisResult]:
-        """Process multiple texts with controlled concurrency."""
-        results = []
-
-        async def process_batch(
-            batch: List[str],
-        ) -> List[KeywordAnalysisResult]:
-            tasks = [asyncio.create_task(self.analyze(text)) for text in batch]
-            batch_results = []
-
-            for task in tasks:
-                try:
-                    result = await asyncio.wait_for(task, timeout=timeout)
-                    batch_results.append(result)
-                except asyncio.TimeoutError:
-                    batch_results.append(
-                        KeywordAnalysisResult(
-                            keywords=[],
-                            compound_words=[],
-                            domain_keywords={},
-                            language="unknown",
-                            success=False,
-                            error="Analysis timed out",
-                        )
-                    )
-                except Exception as e:
-                    batch_results.append(
-                        KeywordAnalysisResult(
-                            keywords=[],
-                            compound_words=[],
-                            domain_keywords={},
-                            language="unknown",
-                            success=False,
-                            error=str(e),
-                        )
-                    )
-                finally:
-                    if not task.done():
-                        task.cancel()
-
-            return batch_results
-
-        # Process in smaller batches
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            try:
-                batch_results = await asyncio.wait_for(
-                    process_batch(batch), timeout=timeout * len(batch)
-                )
-                results.extend(batch_results)
-            except asyncio.TimeoutError:
-                results.extend(
-                    [
-                        KeywordAnalysisResult(
-                            keywords=[],
-                            compound_words=[],
-                            domain_keywords={},
-                            language="unknown",
-                            success=False,
-                            error="Batch processing timed out",
-                        )
-                        for _ in batch
-                    ]
-                )
-            except Exception as e:
-                results.extend(
-                    [
-                        KeywordAnalysisResult(
-                            keywords=[],
-                            compound_words=[],
-                            domain_keywords={},
-                            language="unknown",
-                            success=False,
-                            error=str(e),
-                        )
-                        for _ in batch
-                    ]
-                )
-
-        return results
