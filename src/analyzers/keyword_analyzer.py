@@ -533,7 +533,7 @@ class KeywordAnalyzer(TextAnalyzer):
         domain: Optional[str] = None,
         compound_parts: Optional[List[str]] = None,
     ) -> float:
-        """Calculate score with language-specific adjustments."""
+        """Calculate final keyword score with improved compound handling."""
         score = base_score
         is_finnish = (
             self.language_processor
@@ -552,43 +552,31 @@ class KeywordAnalyzer(TextAnalyzer):
                     f"Applied domain boost ({domain_terms.boost_factor}) to {keyword}"
                 )
 
-        # Compound word boost
+        # Compound word handling
         if compound_parts and len(compound_parts) > 1:
-            compound_bonus = self.weights["compound_bonus"] * (
-                len(compound_parts) - 1
-            )
-            score *= 1.0 + compound_bonus
-            logger.debug(f"Applied compound bonus to {keyword}")
+            # Check if it's a valid compound with proper parts
+            if (
+                self.language_processor
+                and self.language_processor.is_compound_word(keyword)
+            ):
+                # More conservative compound bonus for Finnish
+                if is_finnish:
+                    compound_bonus = self.weights["compound_bonus"] * 0.8
+                else:
+                    compound_bonus = self.weights["compound_bonus"]
+
+                score *= 1.0 + compound_bonus
+                logger.debug(f"Applied compound bonus to {keyword}")
+
+        # Technical term boost
+        if self.language_processor and hasattr(
+            self.language_processor, "is_technical_term"
+        ):
+            if self.language_processor.is_technical_term(keyword):
+                score *= 1.1
+                logger.debug(f"Applied technical term boost to {keyword}")
 
         return min(score, 1.0)
-
-    def _evaluate_quality(self, word: str) -> float:
-        """Simpler quality evaluation with flat penalty."""
-        if not self.language_processor:
-            return 1.0
-
-        word_lower = word.lower()
-        quality_score = 1.0
-        lang = self.language_processor.language
-
-        # Single flat penalty for generic terms
-        if word_lower in self.GENERIC_TERMS.get(lang, set()):
-            quality_score *= 0.5  # 50% penalty for generic terms
-            logger.debug(f"Applied generic penalty to {word}")
-
-        # POS-based scoring
-        pos_tag = self.language_processor.get_pos_tag(word)
-        if pos_tag:
-            pos_penalties = {
-                "JJ": 0.5,  # Adjective
-                "RB": 0.4,  # Adverb
-                "VB": 0.4,  # Verb
-            }
-            if pos_tag[:2] in pos_penalties:
-                quality_score *= pos_penalties[pos_tag[:2]]
-                logger.debug(f"Applied POS penalty to {word} ({pos_tag})")
-
-        return quality_score
 
     def _detect_domain(self, word: str) -> Optional[str]:
         """Detect domain for a keyword."""
@@ -987,39 +975,85 @@ class KeywordAnalyzer(TextAnalyzer):
 
         return sorted(result, key=lambda x: x.score, reverse=True)
 
+    def _evaluate_quality(self, word: str) -> float:
+        """Enhanced quality evaluation with better business term handling."""
+        if not self.language_processor:
+            return 1.0
+
+        word_lower = word.lower()
+        quality_score = 1.0
+
+        # Check if it's a business term
+        if hasattr(self.language_processor, "BUSINESS_TERMS"):
+            if word_lower in self.language_processor.BUSINESS_TERMS:
+                return 1.0  # Always give full score to business terms
+
+        # Get base form and check for None (filtered verbs)
+        base_form = self.language_processor.get_base_form(word)
+        if base_form is None:
+            return 0.0  # Filter out verbs completely
+
+        # Process other terms
+        pos_tag = self.language_processor.get_pos_tag(word)
+        if pos_tag:
+            if pos_tag.startswith("VB"):
+                return 0.0  # Filter out remaining verbs
+
+            pos_penalties = {
+                "JJ": 0.7,  # Adjective
+                "RB": 0.3,  # Adverb
+            }
+            if pos_tag[:2] in pos_penalties:
+                quality_score *= pos_penalties[pos_tag[:2]]
+
+        # Compound word handling
+        if self.language_processor.is_compound_word(word):
+            parts = self.language_processor.get_compound_parts(word)
+            if parts:
+                # Check if any part is a business term
+                if any(
+                    part in self.language_processor.BUSINESS_TERMS
+                    for part in parts
+                ):
+                    quality_score *= 1.2
+
+        return quality_score
+
     def _filter_keywords(
         self, keywords: List[KeywordInfo]
     ) -> List[KeywordInfo]:
-        """Apply final filtering to keywords."""
+        """Enhanced keyword filtering."""
         filtered = []
         seen_bases = set()
 
         for kw in keywords:
-            # Get base form for deduplication
-            base = (
-                self.language_processor.get_base_form(kw.keyword.lower())
-                if self.language_processor
-                else kw.keyword.lower()
-            )
+            # Get base form
+            base = self.language_processor.get_base_form(kw.keyword.lower())
+
+            # Skip filtered words (like verbs)
+            if base is None:
+                continue
 
             if base in seen_bases:
                 continue
 
-            # Always keep compound terms with domain assignment
-            if kw.compound_parts and kw.domain:
+            # Business terms get priority
+            if (
+                hasattr(self.language_processor, "BUSINESS_TERMS")
+                and kw.keyword.lower() in self.language_processor.BUSINESS_TERMS
+            ):
                 filtered.append(kw)
                 seen_bases.add(base)
                 continue
 
-            # Evaluate quality for single terms
+            # Quality evaluation for other terms
             quality = self._evaluate_quality(kw.keyword)
-            if quality >= 0.8:  # Quality threshold
-                # Adjust score based on quality
+            if quality > 0.0:  # Any word that wasn't filtered
                 kw.score *= quality
                 filtered.append(kw)
                 seen_bases.add(base)
 
-        # Apply max keywords limit
+        # Sort by score and apply limit
         max_keywords = self.config.get("max_keywords", 10)
         return sorted(filtered, key=lambda x: x.score, reverse=True)[
             :max_keywords

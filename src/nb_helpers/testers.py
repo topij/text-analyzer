@@ -1,12 +1,14 @@
 # src/nb_helpers/testers.py
 import logging
-from typing import Dict, Any, Optional
+
+from typing import Dict, Any, Optional, List
 from langchain_core.language_models import BaseChatModel
 
 from src.nb_helpers.base import AnalysisTester, DisplayMixin
 from src.analyzers import KeywordAnalyzer, ThemeAnalyzer, CategoryAnalyzer
 from src.core.language_processing import create_text_processor
 from src.core.language_processing.base import BaseTextProcessor
+from src.core.language_processing.finnish import FinnishTextProcessor
 from src.core.llm.factory import create_llm
 from src.loaders.models import CategoryConfig
 from src.schemas import KeywordInfo, ThemeInfo
@@ -43,14 +45,12 @@ class BaseTester(AnalysisTester, DisplayMixin):
 
 class KeywordTester(BaseTester):
     def __init__(self, *args, **kwargs):
-        # Extract language_processor before calling super
-        language_processor = kwargs.pop("language_processor", None)
         super().__init__(*args, **kwargs)
-
         self.analyzer = KeywordAnalyzer(
             llm=self.llm,
             config=self.config or {"weights": {"statistical": 0.4, "llm": 0.6}},
-            language_processor=language_processor or create_text_processor(),
+            language_processor=kwargs.get("language_processor")
+            or create_text_processor(),
         )
 
     async def analyze(self, text: str, **kwargs) -> Dict[str, Any]:
@@ -58,6 +58,14 @@ class KeywordTester(BaseTester):
         result = await self.analyzer.analyze(text)
         logger.debug("KeywordTester analysis complete")
         return result
+
+    def analyze_words(self, words: List[str]) -> None:
+        """Analyze specific words using the current language processor."""
+        if not isinstance(
+            self.analyzer.language_processor, FinnishTextProcessor
+        ):
+            print("Word analysis is only available for Finnish text processor")
+            return
 
     def _display_specific_results(
         self, results: Dict[str, Any], detailed: bool
@@ -149,3 +157,43 @@ class CategoryTester(BaseTester):
                 threshold=0.6,
             ),
         }
+
+
+def analyze_problematic_words(
+    processor: FinnishTextProcessor, words: List[str]
+) -> None:
+    """Analyze specific words in detail to debug processing decisions.
+
+    Args:
+        processor: FinnishTextProcessor instance
+        words: List of words to analyze
+
+    Example:
+        >>> processor = create_text_processor(language="fi")
+        >>> problematic_words = ["para", "parani", "parantua", "kasvu", "kasvaa"]
+        >>> analyze_problematic_words(processor, problematic_words)
+    """
+    for word in words:
+        print(f"\nAnalyzing word: '{word}'")
+        print("=" * 50)
+
+        # Get basic info
+        base_form = processor.get_base_form(word)
+        is_verb = processor.is_verb(word)
+        should_keep = processor.should_keep_word(word)
+
+        # Get full Voikko analysis
+        analyses = processor.voikko.analyze(word) if processor.voikko else []
+
+        print(f"Base form: {base_form}")
+        print(f"Is verb: {is_verb}")
+        print(f"Should keep: {should_keep}")
+
+        if analyses:
+            print("\nVoikko analysis:")
+            for key, value in analyses[0].items():
+                print(f"  {key}: {value}")
+        else:
+            print("No Voikko analysis available")
+
+        print("-" * 50)

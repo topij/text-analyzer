@@ -1,14 +1,15 @@
 # src/core/language_processing/base.py
 
-import logging
-import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+import logging
+import re
 
 from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
+
 
 class BaseTextProcessor(ABC):
     """Abstract base class for language-specific text processors."""
@@ -18,10 +19,10 @@ class BaseTextProcessor(ABC):
         language: str,
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None,
-        file_utils: Optional[FileUtils] = None
+        file_utils: Optional[FileUtils] = None,
     ):
         """Initialize text processor.
-        
+
         Args:
             language: Language code ('fi' or 'en')
             custom_stop_words: Optional set of additional stop words
@@ -31,13 +32,13 @@ class BaseTextProcessor(ABC):
         self.language = language.lower()
         self.config = config or {}
         self.file_utils = file_utils or FileUtils()
-        
+
         # Initialize empty stopwords set - will be populated by derived classes
         self._stop_words = set()
-        
+
         # Load stopwords
         self._stop_words = self._load_stop_words()
-        
+
         # Add custom stopwords if provided
         if custom_stop_words:
             self._stop_words.update(custom_stop_words)
@@ -46,7 +47,7 @@ class BaseTextProcessor(ABC):
     @abstractmethod
     def _load_stop_words(self) -> Set[str]:
         """Load stop words for the language.
-        
+
         Returns:
             Set[str]: Set of stopwords
         """
@@ -62,15 +63,50 @@ class BaseTextProcessor(ABC):
         """Tokenize text into words."""
         pass
 
-    def get_data_path(self, data_type: str = "configurations") -> Path:
-        """Get path for data files using FileUtils.
-        
+    @abstractmethod
+    def is_compound_word(self, word: str) -> bool:
+        """Check if word is a valid compound word.
+
+        Must be implemented by language-specific classes with appropriate
+        logic for compound word detection.
+
         Args:
-            data_type: Type of data path to get
-            
+            word: Word to check
+
         Returns:
-            Path: Path to the requested data directory
+            bool: True if word is a valid compound
         """
+        pass
+
+    @abstractmethod
+    def get_compound_parts(self, word: str) -> Optional[List[str]]:
+        """Get parts of compound word if applicable.
+
+        Must be implemented by language-specific classes to properly
+        decompose compound words according to language rules.
+
+        Args:
+            word: Word to analyze
+
+        Returns:
+            Optional[List[str]]: List of compound parts or None
+        """
+        pass
+
+    @abstractmethod
+    def get_pos_tag(self, word: str) -> Optional[str]:
+        """Get part-of-speech tag for a word.
+
+        Args:
+            word: Word to analyze
+
+        Returns:
+            Optional[str]: POS tag or None if not determinable
+        """
+        pass
+
+    def get_data_path(self, data_type: str = "configurations") -> Path:
+        """Get path for data files using FileUtils."""
         return self.file_utils.get_data_path(data_type)
 
     def is_stop_word(self, word: str) -> bool:
@@ -82,11 +118,15 @@ class BaseTextProcessor(ABC):
         return bool(re.match(r'^[.,!?;:"\'()[\]{}]+$', token))
 
     def should_keep_word(self, word: str) -> bool:
-        """Determine if word should be kept."""
+        """Determine if word should be kept.
+
+        Base implementation of common filtering logic.
+        Derived classes should extend this with language-specific rules.
+        """
         # Skip empty strings and punctuation
         if not word or not word.strip() or self.is_punctuation(word):
             return False
-            
+
         # Skip short words
         if len(word) < self.config.get("min_word_length", 3):
             return False
@@ -98,44 +138,42 @@ class BaseTextProcessor(ABC):
         return True
 
     def preprocess_text(self, text: str) -> str:
-        """Basic text preprocessing."""
+        """Basic text preprocessing with language-specific handling."""
         if not isinstance(text, str):
             text = str(text)
 
         # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
-        
+        text = re.sub(r"\s+", " ", text)
+
         # Remove standalone punctuation but keep within words
-        text = re.sub(r'\s+([.,!?;:])\s+', ' ', text)
-        
+        text = re.sub(r"\s+([.,!?;:])\s+", " ", text)
+
         # Handle language-specific characters
         if self.language == "fi":
             # Keep Finnish/Swedish letters
-            text = re.sub(r'[^a-zäöåA-ZÄÖÅ0-9\s\'-]', ' ', text)
+            text = re.sub(r"[^a-zäöåA-ZÄÖÅ0-9\s\'-]", " ", text)
         else:
             # Default English processing
-            text = re.sub(r'[^a-zA-Z0-9\s\'-]', ' ', text)
-        
+            text = re.sub(r"[^a-zA-Z0-9\s\'-]", " ", text)
+
         return text.strip()
 
     def load_config_file(self, filename: str) -> Dict[str, Any]:
         """Load configuration file using FileUtils.
-        
+
         Args:
             filename: Name of configuration file
-            
+
         Returns:
             Dict[str, Any]: Configuration dictionary
         """
         try:
             return self.file_utils.load_yaml(
-                filename, 
-                input_type="configurations"
+                filename, input_type="configurations"
             )
         except Exception as e:
             logger.error(f"Error loading config file {filename}: {e}")
             return {}
-
 
 
 # # src/core/language_processing/base.py
@@ -162,7 +200,7 @@ class BaseTextProcessor(ABC):
 #         file_utils: Optional[FileUtils] = None
 #     ):
 #         """Initialize text processor.
-        
+
 #         Args:
 #             language: Language code ('fi' or 'en')
 #             custom_stop_words: Optional set of additional stop words
@@ -172,13 +210,13 @@ class BaseTextProcessor(ABC):
 #         self.language = language.lower()
 #         self.config = config or {}
 #         self.file_utils = file_utils or FileUtils()
-        
+
 #         # Initialize empty stopwords set - will be populated by derived classes
 #         self._stop_words = set()
-        
+
 #         # Load stopwords
 #         self._stop_words = self._load_stop_words()
-        
+
 #         # Add custom stopwords if provided
 #         if custom_stop_words:
 #             self._stop_words.update(custom_stop_words)
