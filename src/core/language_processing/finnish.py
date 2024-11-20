@@ -281,69 +281,135 @@ class FinnishTextProcessor(BaseTextProcessor):
                 logger.error(f"Error adding DLL directory {path}: {str(e)}")
 
     def is_compound_word(self, word: str) -> bool:
-        """Enhanced compound word detection using Voikko analysis."""
+        """Enhanced compound word detection for Finnish."""
+        if not word:
+            return False
+
         try:
-            if not self.voikko:
-                return False
+            word_lower = word.lower()
 
-            analyses = self.voikko.analyze(word)
-            if not analyses:
-                return False
-
-            for analysis in analyses:
-                # Check WORDBASES - most reliable for compounds
-                wordbases = analysis.get("WORDBASES", "")
-                if "+" in wordbases[1:]:  # Skip first + which marks word start
-                    # Validate it's a real compound by checking base forms
-                    parts = [p for p in wordbases.split("+") if "(" in p]
-                    if len(parts) > 1:
+            # First try Voikko analysis
+            if self.voikko:
+                analyses = self.voikko.analyze(word)
+                if analyses:
+                    # Check WORDBASES for compound structure
+                    wordbases = analyses[0].get("WORDBASES", "")
+                    if (
+                        "+" in wordbases[1:]
+                    ):  # Skip first + which marks word start
                         return True
 
-                # Backup: Check STRUCTURE for multiple morphemes
-                structure = analysis.get("STRUCTURE", "")
-                if "=" in structure[1:]:  # Skip first = which marks word start
-                    # Verify not just a derivational form
-                    if wordbases and "+(" not in wordbases:
+            # Handle hyphenated words
+            if "-" in word:
+                return True
+
+            # Check against core terms that are known compounds
+            if word_lower in self.CORE_TERMS:
+                for prefix in self.COMPOUND_PREFIXES:
+                    if word_lower.startswith(prefix):
                         return True
 
             return False
 
         except Exception as e:
-            logger.error(f"Voikko analysis failed for {word}: {e}")
+            logger.error(f"Error checking compound word {word}: {e}")
             return False
 
     def get_compound_parts(self, word: str) -> Optional[List[str]]:
-        """Get compound word parts using Voikko analysis."""
+        """Get compound parts with Voikko analysis."""
+        if not word:
+            return None
+
         try:
-            if not self.voikko:
-                return None
-
-            analyses = self.voikko.analyze(word)
-            if not analyses:
-                return None
-
-            for analysis in analyses:
-                wordbases = analysis.get("WORDBASES", "")
-                if "+" in wordbases[1:]:
-                    # Extract base forms from parentheses
+            # First try Voikko
+            if self.voikko:
+                analyses = self.voikko.analyze(word)
+                if analyses and "+" in analyses[0].get("WORDBASES", ""):
                     parts = []
-                    for part in wordbases.split("+")[
-                        1:
-                    ]:  # Skip first empty part
+                    for part in analyses[0]["WORDBASES"].split("+"):
                         if "(" in part:
-                            base = part.split("(")[1].rstrip(")")
+                            base = part.split("(")[1].split(")")[0]
                             if len(base) > 2:  # Skip short connectors
                                 parts.append(base)
-
-                    # Only return if we found actual compound parts
                     if len(parts) > 1:
                         return parts
+
+            # Handle hyphenated words directly
+            if "-" in word:
+                return [
+                    p.strip() for p in word.split("-") if len(p.strip()) > 2
+                ]
 
             return None
 
         except Exception as e:
-            logger.error(f"Error getting compound parts: {e}")
+            logger.error(f"Error getting compound parts for {word}: {e}")
             return None
+
+    # def is_compound_word(self, word: str) -> bool:
+    #     """Enhanced compound word detection using Voikko analysis."""
+    #     try:
+    #         if not self.voikko:
+    #             return False
+
+    #         analyses = self.voikko.analyze(word)
+    #         if not analyses:
+    #             return False
+
+    #         for analysis in analyses:
+    #             # Check WORDBASES - most reliable for compounds
+    #             wordbases = analysis.get("WORDBASES", "")
+    #             if "+" in wordbases[1:]:  # Skip first + which marks word start
+    #                 # Validate it's a real compound by checking base forms
+    #                 parts = [p for p in wordbases.split("+") if "(" in p]
+    #                 if len(parts) > 1:
+    #                     return True
+
+    #             # Backup: Check STRUCTURE for multiple morphemes
+    #             structure = analysis.get("STRUCTURE", "")
+    #             if "=" in structure[1:]:  # Skip first = which marks word start
+    #                 # Verify not just a derivational form
+    #                 if wordbases and "+(" not in wordbases:
+    #                     return True
+
+    #         return False
+
+    #     except Exception as e:
+    #         logger.error(f"Voikko analysis failed for {word}: {e}")
+    #         return False
+
+    # def get_compound_parts(self, word: str) -> Optional[List[str]]:
+    #     """Get compound word parts using Voikko analysis."""
+    #     try:
+    #         if not self.voikko:
+    #             return None
+
+    #         analyses = self.voikko.analyze(word)
+    #         if not analyses:
+    #             return None
+
+    #         for analysis in analyses:
+    #             wordbases = analysis.get("WORDBASES", "")
+    #             if "+" in wordbases[1:]:
+    #                 # Extract base forms from parentheses
+    #                 parts = []
+    #                 for part in wordbases.split("+")[
+    #                     1:
+    #                 ]:  # Skip first empty part
+    #                     if "(" in part:
+    #                         base = part.split("(")[1].rstrip(")")
+    #                         if len(base) > 2:  # Skip short connectors
+    #                             parts.append(base)
+
+    #                 # Only return if we found actual compound parts
+    #                 if len(parts) > 1:
+    #                     return parts
+
+    #         return None
+
+    #     except Exception as e:
+    #         logger.error(f"Error getting compound parts: {e}")
+    #         return None
 
     def debug_voikko_analysis(self, word: str) -> None:
         """Debug helper to print detailed Voikko analysis."""
@@ -686,3 +752,16 @@ class FinnishTextProcessor(BaseTextProcessor):
             pass
 
         return False
+
+    def preprocess_text(self, text: str) -> str:
+        """Preprocess Finnish text with proper encoding."""
+        if not isinstance(text, str):
+            text = str(text)
+
+        # Keep Finnish/Swedish letters and basic punctuation
+        text = re.sub(r"[^a-zäöåA-ZÄÖÅ0-9\s\-.,]", " ", text, flags=re.UNICODE)
+
+        # Normalize whitespace
+        text = " ".join(text.split())
+
+        return text.strip()

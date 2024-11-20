@@ -12,6 +12,9 @@ from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
 
+# Initialize langdetect with a seed for consistent results
+DetectorFactory.seed = 0
+
 
 class TextProcessorFactory:
     """Factory for creating language-specific text processors."""
@@ -82,10 +85,12 @@ class TextProcessorFactory:
         Returns:
             BaseTextProcessor: Appropriate text processor instance
         """
-        # Ensure we have a valid language
-        if not language:
-            language = "en"  # Default to English if no language specified
-        language = language.lower()[:2]  # Normalize language code
+
+        # Normalize language code
+        if language:
+            language = language.lower()[
+                :2
+            ]  # Get first two chars: "fin" -> "fi"
 
         if language not in self.PROCESSORS:
             logger.warning(
@@ -180,48 +185,28 @@ class TextProcessorFactory:
 
 
 # Convenience function
-
-
 def create_text_processor(
-    language: Optional[str] = None, config: Optional[Dict[str, Any]] = None
+    language: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+    file_utils: Optional[FileUtils] = None,
 ) -> BaseTextProcessor:
-    """Create a text processor instance."""
+    """Create text processor instance."""
     factory = TextProcessorFactory()
+
+    # Load main config if not provided
+    if config is None and file_utils:
+        try:
+            main_config = file_utils.load_yaml(Path("config.yaml"))
+            lang_config = main_config.get("languages", {}).get(
+                language or "en", {}
+            )
+
+            if config:  # Merge if config was provided
+                lang_config.update(config)
+            config = lang_config
+        except Exception as e:
+            logger.debug(f"Could not load language config: {e}")
+            config = config or {}
+
+    logger.debug(f"Creating text processor for language: {language}")
     return factory.create_processor(language=language, config=config)
-
-
-# def create_text_processor(
-#     language: Optional[str] = None,
-#     config: Optional[Dict[str, Any]] = None,
-#     file_utils: Optional[FileUtils] = None,
-# ) -> BaseTextProcessor:
-#     """Create a text processor instance.
-
-#     Args:
-#         language: Language code
-#         config: Configuration parameters
-#         file_utils: Optional FileUtils instance for file operations
-
-#     Returns:
-#         BaseTextProcessor: Language processor instance
-#     """
-
-#     factory = TextProcessorFactory()
-
-#     # Load main config if not provided
-#     if config is None and file_utils:
-#         try:
-#             main_config = file_utils.load_yaml(Path("config.yaml"))
-#             lang_config = main_config.get("languages", {}).get(
-#                 language or "en", {}
-#             )
-
-#             if config:  # Merge if config was provided
-#                 lang_config.update(config)
-#             config = lang_config
-#         except Exception as e:
-#             logger.debug(f"Could not load language config: {e}")
-#             config = config or {}
-
-#     logger.debug(f"Creating text processor for language: {language}")
-#     return factory.create_processor(language=language, config=config)
