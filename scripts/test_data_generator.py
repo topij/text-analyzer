@@ -15,6 +15,7 @@ if project_root not in sys.path:
 
 # Update imports
 from src.loaders.parameter_config import ParameterSheets
+from src.loaders.parameter_handler import ParameterHandler
 from src.loaders.models import GeneralParameters, CategoryConfig
 
 from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
@@ -72,7 +73,7 @@ class TestDataGenerator:
         # Rest of implementation...
 
         """Generate parameter files in both languages."""
-        output_dir = self.file_utils.get_data_path("configurations")
+        output_dir = self.file_utils.get_data_path("parameters")
         files = {}
 
         # English parameters
@@ -86,8 +87,19 @@ class TestDataGenerator:
                         "min_keyword_length",
                         "include_compounds",
                         "column_name_to_analyze",
+                        "max_themes",
+                        "min_confidence",
                     ],
-                    "value": [8, "en", "business and technical content analysis", 3, True, "content"],
+                    "value": [
+                        8,
+                        "en",
+                        "business and technical content analysis",
+                        3,
+                        True,
+                        "content",
+                        3,
+                        0.3,
+                    ],
                     "description": [
                         "Maximum keywords to extract",
                         "Content language",
@@ -95,6 +107,8 @@ class TestDataGenerator:
                         "Minimum keyword length",
                         "Handle compound words",
                         "Content column name",
+                        "Maximum themes to identify",
+                        "Minimum confidence threshold",
                     ],
                 }
             ),
@@ -109,11 +123,21 @@ class TestDataGenerator:
                         "revenue growth",
                     ],
                     "importance": [1.0, 0.9, 0.8, 0.9, 0.8, 0.9],
-                    "domain": ["technical", "technical", "technical", "business", "business", "business"],
+                    "domain": [
+                        "technical",
+                        "technical",
+                        "technical",
+                        "business",
+                        "business",
+                        "business",
+                    ],
                 }
             ),
             ParameterSheets.EXCLUDED_EN.value: pd.DataFrame(
-                {"keyword": ["the", "and", "with", "for", "new", "using"], "reason": ["Common word"] * 6}
+                {
+                    "keyword": ["the", "and", "with", "for", "new", "using"],
+                    "reason": ["Common word"] * 6,
+                }
             ),
             # New: Categories sheet
             ParameterSheets.CATEGORIES_EN.value: pd.DataFrame(
@@ -143,7 +167,14 @@ class TestDataGenerator:
                         "skills,competence,career,professional,development",
                     ],
                     "threshold": [0.6, 0.6, 0.5, 0.5, 0.5, 0.5],
-                    "parent": [None, None, None, "educational_content", "educational_content", None],
+                    "parent": [
+                        None,
+                        None,
+                        None,
+                        "educational_content",
+                        "educational_content",
+                        None,
+                    ],
                 }
             ),
             ParameterSheets.DOMAINS_EN.value: pd.DataFrame(
@@ -171,6 +202,46 @@ class TestDataGenerator:
                     ],
                 }
             ),
+            ParameterSheets.SETTINGS_EN.value: pd.DataFrame(
+                {
+                    "setting": [
+                        # Theme analysis settings
+                        "theme_analysis.enabled",
+                        "theme_analysis.min_confidence",
+                        # Weights for different analysis components
+                        "weights.statistical",
+                        "weights.llm",
+                        "weights.compound_bonus",
+                        "weights.domain_bonus",
+                        # Analysis thresholds
+                        "thresholds.keyword_similarity",
+                        "thresholds.theme_relevance",
+                        "thresholds.category_match",
+                    ],
+                    "value": [
+                        True,  # theme_analysis.enabled
+                        0.5,  # theme_analysis.min_confidence
+                        0.4,  # weights.statistical
+                        0.6,  # weights.llm
+                        0.2,  # weights.compound_bonus
+                        0.15,  # weights.domain_bonus
+                        0.85,  # thresholds.keyword_similarity
+                        0.6,  # thresholds.theme_relevance
+                        0.5,  # thresholds.category_match
+                    ],
+                    "description": [
+                        "Enable theme analysis",
+                        "Minimum confidence for theme detection",
+                        "Weight for statistical analysis",
+                        "Weight for LLM analysis",
+                        "Bonus weight for compound words",
+                        "Bonus weight for domain matches",
+                        "Minimum similarity for keyword grouping",
+                        "Minimum relevance for theme evidence",
+                        "Minimum threshold for category matches",
+                    ],
+                }
+            ),
         }
 
         # Finnish parameters
@@ -184,8 +255,19 @@ class TestDataGenerator:
                         "min_sanan_pituus",
                         "sisällytä_yhdyssanat",
                         "analysoitava_sarake",
+                        "maksimi_teemat",
+                        "min_luottamus",
                     ],
-                    "arvo": [8, "fi", "tekninen ja liiketoiminta-analyysi", 3, True, "sisältö"],
+                    "arvo": [
+                        8,
+                        "fi",
+                        "tekninen ja liiketoiminta-analyysi",
+                        3,
+                        True,
+                        "sisältö",
+                        3,
+                        0.3,
+                    ],
                     "kuvaus": [
                         "Poimittavien avainsanojen maksimimäärä",
                         "Sisällön kieli",
@@ -193,6 +275,8 @@ class TestDataGenerator:
                         "Avainsanan minimipituus",
                         "Käsittele yhdyssanat",
                         "Analysoitavan sisällön sarake",
+                        "Maksimi teemojen määrä",
+                        "Minimivarmuustaso",
                     ],
                 }
             ),
@@ -218,7 +302,17 @@ class TestDataGenerator:
                 }
             ),
             ParameterSheets.EXCLUDED_FI.value: pd.DataFrame(
-                {"avainsana": ["ja", "tai", "sekä", "kanssa", "uusi", "käyttäen"], "syy": ["Yleinen sana"] * 6}
+                {
+                    "avainsana": [
+                        "ja",
+                        "tai",
+                        "sekä",
+                        "kanssa",
+                        "uusi",
+                        "käyttäen",
+                    ],
+                    "syy": ["Yleinen sana"] * 6,
+                }
             ),
             # New: Finnish Categories sheet
             ParameterSheets.CATEGORIES_FI.value: pd.DataFrame(
@@ -248,7 +342,14 @@ class TestDataGenerator:
                         "osaaminen,pätevyys,ura,ammatillinen,kehitys",
                     ],
                     "kynnysarvo": [0.6, 0.6, 0.5, 0.5, 0.5, 0.5],
-                    "yläkategoria": [None, None, None, "koulutussisältö", "koulutussisältö", None],
+                    "yläkategoria": [
+                        None,
+                        None,
+                        None,
+                        "koulutussisältö",
+                        "koulutussisältö",
+                        None,
+                    ],
                 }
             ),
             ParameterSheets.DOMAINS_FI.value: pd.DataFrame(
@@ -273,6 +374,46 @@ class TestDataGenerator:
                         "käyttäen,toteutus,perus,yksinkertainen",
                         "uusi,nykyinen,erilainen,yleinen",
                         "perus,yksinkertainen,vain,kuten",
+                    ],
+                }
+            ),
+            ParameterSheets.SETTINGS_FI.value: pd.DataFrame(
+                {
+                    "asetus": [
+                        # Theme analysis settings
+                        "teema_analyysi.käytössä",
+                        "teema_analyysi.min_luottamus",
+                        # Weights for different components
+                        "painot.tilastollinen",
+                        "painot.llm",
+                        "painot.yhdyssana_bonus",
+                        "painot.aihepiiri_bonus",
+                        # Analysis thresholds
+                        "kynnysarvot.avainsana_samankaltaisuus",
+                        "kynnysarvot.teema_relevanssi",
+                        "kynnysarvot.kategoria_osuma",
+                    ],
+                    "arvo": [
+                        True,  # teema_analyysi.käytössä
+                        0.5,  # teema_analyysi.min_luottamus
+                        0.4,  # painot.tilastollinen
+                        0.6,  # painot.llm
+                        0.2,  # painot.yhdyssana_bonus
+                        0.15,  # painot.aihepiiri_bonus
+                        0.85,  # kynnysarvot.avainsana_samankaltaisuus
+                        0.6,  # kynnysarvot.teema_relevanssi
+                        0.5,  # kynnysarvot.kategoria_osuma
+                    ],
+                    "kuvaus": [
+                        "Teema-analyysin käyttö",
+                        "Teeman tunnistuksen minimivarmuus",
+                        "Tilastollisen analyysin paino",
+                        "LLM-analyysin paino",
+                        "Yhdyssanojen bonuspaino",
+                        "Aihepiirivastaavuuden bonuspaino",
+                        "Avainsanojen samankaltaisuusraja",
+                        "Teemojen relevanssikynnys",
+                        "Kategoriaosuman minimikynnys",
                     ],
                 }
             ),
@@ -335,32 +476,76 @@ class TestDataGenerator:
 
         return files
 
-    def _save_parameters(self, language: str, sheets: Dict[str, pd.DataFrame], output_dir: Path, force: bool) -> Path:
+    def _validate_generated_parameters(self, file_path: Path) -> bool:
+        """Validate generated parameter file."""
+        try:
+            handler = ParameterHandler(file_path)
+            is_valid, warnings, errors = handler.validate()
+
+            if warnings:
+                logger.warning(f"Validation warnings for {file_path}:")
+                for warning in warnings:
+                    logger.warning(f"- {warning}")
+
+            if not is_valid:
+                logger.error(f"Validation failed for {file_path}:")
+                for error in errors:
+                    logger.error(f"- {error}")
+
+            return is_valid
+
+        except Exception as e:
+            logger.error(f"Validation error for {file_path}: {e}")
+            return False
+
+    def _save_parameters(
+        self,
+        language: str,
+        sheets: Dict[str, pd.DataFrame],
+        output_dir: Path,
+        force: bool,
+    ) -> Path:
         """Save parameter sheets to Excel file."""
         file_name = f"parameters_{language}"
         file_path = output_dir / f"{file_name}.xlsx"
 
         if not force and file_path.exists():
-            logger.warning(f"Parameter file {file_path} already exists, skipping...")
+            logger.warning(
+                f"Parameter file {file_path} already exists, skipping..."
+            )
             return file_path
 
         result = self.file_utils.save_data_to_disk(
             data=sheets,
-            output_type="configurations",
+            output_type="parameters",
             file_name=file_name,
             output_filetype=OutputFileType.XLSX,
             include_timestamp=False,
         )
 
+        # Validate generated file
+        if not self._validate_generated_parameters(file_path):
+            raise ValueError(
+                f"Generated parameter file {file_path} failed validation"
+            )
+
         return file_path
 
-    def _save_content(self, language: str, texts: Dict[str, List[str]], output_dir: Path, force: bool) -> Path:
+    def _save_content(
+        self,
+        language: str,
+        texts: Dict[str, List[str]],
+        output_dir: Path,
+        force: bool,
+    ) -> Path:
         """Save test content to Excel file."""
         file_name = f"test_content_{language}"
         file_path = output_dir / f"{file_name}.xlsx"
 
         if not force and file_path.exists():
-            logger.warning(f"Content file {file_path} already exists, skipping...")
+            logger.warning(
+                f"Content file {file_path} already exists, skipping..."
+            )
             return file_path
 
         # Create DataFrame with metadata
@@ -368,7 +553,12 @@ class TestDataGenerator:
         for content_type, content_texts in texts.items():
             for idx, text in enumerate(content_texts, 1):
                 rows.append(
-                    {"id": f"{content_type}_{idx}", "type": content_type, "language": language, "content": text}
+                    {
+                        "id": f"{content_type}_{idx}",
+                        "type": content_type,
+                        "language": language,
+                        "content": text,
+                    }
                 )
 
         df = pd.DataFrame(rows)
@@ -386,12 +576,18 @@ class TestDataGenerator:
     def _save_metadata(self, files: Dict[str, List[Path]]) -> Path:
         """Save metadata about generated files."""
         metadata = {
-            "files": {file_type: [str(p) for p in paths] for file_type, paths in files.items()},
+            "files": {
+                file_type: [str(p) for p in paths]
+                for file_type, paths in files.items()
+            },
             "generation_time": pd.Timestamp.now().isoformat(),
         }
 
         result = self.file_utils.save_yaml(
-            data=metadata, file_path="test_data_metadata", output_type="configurations", include_timestamp=False
+            data=metadata,
+            file_path="test_data_metadata",
+            output_type="parameters",
+            include_timestamp=False,
         )
 
         return result
@@ -401,12 +597,19 @@ def main():
     """Generate all test data."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Generate test data for semantic analyzer")
-    parser.add_argument("--force", action="store_true", help="Force overwrite existing files")
+    parser = argparse.ArgumentParser(
+        description="Generate test data for semantic analyzer"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Force overwrite existing files"
+    )
     args = parser.parse_args()
 
     # Set up logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
     generator = TestDataGenerator()
 

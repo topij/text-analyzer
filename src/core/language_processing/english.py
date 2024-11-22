@@ -15,25 +15,6 @@ from src.core.language_processing.base import BaseTextProcessor
 logger = logging.getLogger(__name__)
 
 
-def download_nltk_data():
-    """Download required NLTK data."""
-    required_packages = [
-        "punkt_tab",
-        "wordnet",
-        "averaged_perceptron_tagger",
-        "stopwords",
-    ]
-    for package in required_packages:
-        try:
-            nltk.download(package, quiet=True)
-        except Exception as e:
-            logger.warning(f"Failed to download NLTK package {package}: {e}")
-
-
-# Download resources when module is imported
-download_nltk_data()
-
-
 class EnglishTextProcessor(BaseTextProcessor):
     """English text processor using NLTK."""
 
@@ -52,6 +33,54 @@ class EnglishTextProcessor(BaseTextProcessor):
         "timeline": ["time", "line"],
         "framework": ["frame", "work"],
     }
+    # Common business terms
+    BUSINESS_TERMS = {
+        # Financial terms
+        "revenue",
+        "profit",
+        "margin",
+        "cost",
+        "growth",
+        "sales",
+        "market",
+        "financial",
+        "performance",
+        "quarterly",
+        "fiscal",
+        "budget",
+        "investment",
+        # Business metrics
+        "roi",
+        "kpi",
+        "metric",
+        "benchmark",
+        "target",
+        # Customer related
+        "customer",
+        "client",
+        "retention",
+        "acquisition",
+        "satisfaction",
+        "engagement",
+        "conversion",
+        # Strategy terms
+        "strategy",
+        "initiative",
+        "expansion",
+        "optimization",
+        "efficiency",
+        "productivity",
+        "implementation",
+        # Market terms
+        "market",
+        "segment",
+        "sector",
+        "industry",
+        "competitive",
+        "opportunity",
+        "penetration",
+        "share",
+    }
 
     def __init__(
         self,
@@ -59,16 +88,37 @@ class EnglishTextProcessor(BaseTextProcessor):
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None,
     ):
-        """Initialize English text processor."""
-        # Initialize NLTK components first
+        # Initialize NLTK first
+        self._ensure_nltk_data()
         self.lemmatizer = WordNetLemmatizer()
 
-        # Call parent init which will call _load_stop_words
+        # Call parent init
         super().__init__(language, custom_stop_words, config)
 
-        logger.debug(
-            f"Initialized English processor with {len(self._stop_words)} stopwords"
-        )  # Changed to DEBUG
+    def _ensure_nltk_data(self):
+        """Initialize NLTK with required data."""
+        try:
+            for resource in [
+                "punkt_tab",
+                "averaged_perceptron_tagger",
+                "wordnet",
+            ]:
+                try:
+                    nltk.data.find(
+                        f"corpora/{resource}"
+                        if resource == "wordnet"
+                        else f"tokenizers/{resource}"
+                    )
+                except LookupError:
+                    nltk.download(resource, quiet=True)
+
+            # Force WordNet to load
+            from nltk.corpus import wordnet as wn
+
+            wn.synsets("test")
+
+        except Exception as e:
+            logger.warning(f"NLTK initialization warning: {e}")
 
     def _load_stop_words(self) -> Set[str]:
         """Load English stopwords from multiple sources."""
@@ -203,31 +253,28 @@ class EnglishTextProcessor(BaseTextProcessor):
             return set()
 
     def get_base_form(self, word: str) -> str:
-        """Get base form (lemma) of an English word."""
-        try:
-            if not word:
-                return ""
+        """Get base form with proper initialization check."""
+        if not word:
+            return ""
 
+        try:
             word = self.handle_contractions(word)
 
             # Get POS tag
-            pos_tag = self._get_wordnet_pos(word)
+            pos = self._get_wordnet_pos(word)
+            if pos:
+                return self.lemmatizer.lemmatize(word.lower(), pos=pos)
 
-            # Lemmatize with POS tag if available
-            if pos_tag:
-                return self.lemmatizer.lemmatize(word.lower(), pos=pos_tag)
-
-            # Try different POS tags to get shortest lemma
+            # Try different POS tags
             lemmas = [
-                self.lemmatizer.lemmatize(word.lower(), pos=pos)
-                for pos in ["n", "v", "a", "r"]
+                self.lemmatizer.lemmatize(word.lower(), pos=p)
+                for p in ["n", "v", "a", "r"]
             ]
-
             return min(lemmas, key=len)
 
         except Exception as e:
-            logger.error(f"Error getting base form for '{word}': {str(e)}")
-            return word.lower() if word else ""
+            logger.debug(f"Error getting base form for '{word}': {e}")
+            return word.lower()
 
     def handle_contractions(self, word: str) -> str:
         """Handle contractions and possessives."""
@@ -446,3 +493,15 @@ class EnglishTextProcessor(BaseTextProcessor):
         except Exception as e:
             logger.error(f"Error getting POS tag for '{word}': {str(e)}")
             return None
+
+    def _evaluate_quality(self, word: str) -> float:
+        """Enhanced quality evaluation with better business term handling."""
+        if not self.language_processor:
+            return 1.0
+
+        word_lower = word.lower()
+        quality_score = 1.0
+
+        # Check if it's a business term
+        if word_lower in self.BUSINESS_TERMS:
+            return 1.0  # Always give full score to business terms

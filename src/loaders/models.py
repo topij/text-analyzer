@@ -6,13 +6,13 @@ from pydantic.config import ConfigDict
 
 
 class DomainContext(BaseModel):
-    """Domain-specific context for analysis."""
+    """Domain context configuration."""
 
-    name: str = Field(..., description="Domain name")
-    description: str = Field(default="", description="Domain description")
-    key_terms: List[str] = Field(default_factory=list, description="Domain-specific key terms")
-    context: str = Field(default="", description="Analysis context for this domain")
-    stopwords: List[str] = Field(default_factory=list, description="Domain-specific stopwords")
+    name: str
+    description: str
+    key_terms: List[str] = Field(default_factory=list)
+    context: str = ""
+    stopwords: List[str] = Field(default_factory=list)
 
 
 class GeneralParameters(BaseModel):
@@ -85,8 +85,23 @@ class AnalysisWeights(BaseModel):
 class AnalysisSettings(BaseModel):
     """Complete analysis settings."""
 
-    theme_analysis: ThemeAnalysisSettings = Field(default_factory=ThemeAnalysisSettings)
+    theme_analysis: ThemeAnalysisSettings = Field(
+        default_factory=ThemeAnalysisSettings
+    )
     weights: AnalysisWeights = Field(default_factory=AnalysisWeights)
+
+
+# class ParameterSet(BaseModel):
+#     """Complete parameter set with all sections."""
+
+#     general: GeneralParameters = Field(default_factory=GeneralParameters)
+#     categories: Dict[str, CategoryConfig] = Field(default_factory=dict)
+#     predefined_keywords: Dict[str, PredefinedKeyword] = Field(default_factory=dict)
+#     excluded_keywords: Set[str] = Field(default_factory=set)
+#     analysis_settings: AnalysisSettings = Field(default_factory=AnalysisSettings)
+#     domain_context: Dict[str, DomainContext] = Field(default_factory=dict)
+
+#     model_config = ConfigDict(validate_assignment=True, extra="allow")
 
 
 class ParameterSet(BaseModel):
@@ -94,12 +109,14 @@ class ParameterSet(BaseModel):
 
     general: GeneralParameters = Field(default_factory=GeneralParameters)
     categories: Dict[str, CategoryConfig] = Field(default_factory=dict)
-    predefined_keywords: Dict[str, PredefinedKeyword] = Field(default_factory=dict)
+    predefined_keywords: Dict[str, PredefinedKeyword] = Field(
+        default_factory=dict
+    )
     excluded_keywords: Set[str] = Field(default_factory=set)
-    analysis_settings: AnalysisSettings = Field(default_factory=AnalysisSettings)
+    analysis_settings: AnalysisSettings = Field(
+        default_factory=AnalysisSettings
+    )
     domain_context: Dict[str, DomainContext] = Field(default_factory=dict)
-
-    model_config = ConfigDict(validate_assignment=True, extra="allow")
 
     def print(self, indent: int = 2) -> None:
         """Print parameters in a readable format."""

@@ -1,54 +1,247 @@
 # src/loaders/parameter_config.py
 
 from enum import Enum
+import logging
 from typing import Dict, Any
 
+logger = logging.getLogger(__name__)
 
-class ParameterSheets(str, Enum):
-    """Excel sheet names with multilingual support."""
 
-    # English sheet names
-    GENERAL_EN = "General Parameters"
-    KEYWORDS_EN = "Predefined Keywords"
-    EXCLUDED_EN = "Excluded Keywords"
-    CATEGORIES_EN = "Categories"
-    PROMPTS_EN = "Custom Prompts"
-    DOMAINS_EN = "Domain Context"
-    SETTINGS_EN = "Analysis Settings"
+class ParameterSheets:
+    """Excel parameter configuration with language support."""
 
-    # Finnish sheet names
-    GENERAL_FI = "yleiset säännöt"
-    KEYWORDS_FI = "haettavat avainsanat"
-    EXCLUDED_FI = "älä käytä"
-    CATEGORIES_FI = "kategoriat"
-    PROMPTS_FI = "kehotteet"
-    DOMAINS_FI = "aihepiirin lisätietot"
-    SETTINGS_FI = "lisäasetukset"
+    SHEET_MAPPING = {
+        "general": {"en": "General Parameters", "fi": "yleiset säännöt"},
+        "keywords": {"en": "Predefined Keywords", "fi": "haettavat avainsanat"},
+        "excluded": {"en": "Excluded Keywords", "fi": "älä käytä"},
+        "categories": {"en": "Categories", "fi": "kategoriat"},
+        "domains": {"en": "Domain Context", "fi": "aihepiirin lisätietot"},
+        "settings": {"en": "Analysis Settings", "fi": "lisäasetukset"},
+    }
+    # Parameter name mapping to internal names
+    PARAMETER_MAPPING = {
+        "general": {
+            "columns": {
+                "en": {
+                    "parameter": "parameter",
+                    "value": "value",
+                    "description": "description",
+                },
+                "fi": {
+                    "parameter": "parametri",
+                    "value": "arvo",
+                    "description": "kuvaus",
+                },
+            },
+            "parameters": {
+                "en": {
+                    "max_keywords": "max_keywords",
+                    "language": "language",
+                    "focus_on": "focus_on",
+                    "min_keyword_length": "min_keyword_length",
+                    "include_compounds": "include_compounds",
+                    "column_name_to_analyze": "column_name_to_analyze",
+                    "max_themes": "max_themes",
+                    "min_confidence": "min_confidence",
+                },
+                "fi": {
+                    "maksimi_avainsanat": "max_keywords",
+                    "kieli": "language",
+                    "keskity_aihepiiriin": "focus_on",
+                    "min_sanan_pituus": "min_keyword_length",
+                    "sisällytä_yhdyssanat": "include_compounds",
+                    "analysoitava_sarake": "column_name_to_analyze",
+                    "maksimi_teemat": "max_themes",
+                    "min_luottamus": "min_confidence",
+                },
+            },
+        },
+        "keywords": {
+            "columns": {
+                "en": {
+                    "keyword": "keyword",
+                    "importance": "importance",
+                    "domain": "domain",
+                    "compound_parts": "compound_parts",
+                },
+                "fi": {
+                    "keyword": "avainsana",
+                    "importance": "tärkeys",
+                    "domain": "aihepiiri",
+                    "compound_parts": "yhdyssanan_osat",
+                },
+            },
+            "parameters": {
+                "en": {
+                    "keyword": "keyword",
+                    "importance": "importance",
+                    "domain": "domain",
+                    "compound_parts": "compound_parts",
+                },
+                "fi": {
+                    "avainsana": "keyword",
+                    "tärkeys": "importance",
+                    "aihepiiri": "domain",
+                    "yhdyssanan_osat": "compound_parts",
+                },
+            },
+        },
+        "excluded": {
+            "columns": {
+                "en": {"keyword": "keyword", "reason": "reason"},
+                "fi": {"keyword": "avainsana", "reason": "syy"},
+            },
+            "parameters": {
+                "en": {"keyword": "keyword", "reason": "reason"},
+                "fi": {"avainsana": "keyword", "syy": "reason"},
+            },
+        },
+        "categories": {
+            "columns": {
+                "en": {
+                    "category": "category",
+                    "description": "description",
+                    "keywords": "keywords",
+                    "threshold": "threshold",
+                    "parent": "parent",
+                },
+                "fi": {
+                    "category": "kategoria",
+                    "description": "kuvaus",
+                    "keywords": "avainsanat",
+                    "threshold": "kynnysarvo",
+                    "parent": "yläkategoria",
+                },
+            },
+            "parameters": {
+                "en": {
+                    "category": "category",
+                    "description": "description",
+                    "keywords": "keywords",
+                    "threshold": "threshold",
+                    "parent": "parent",
+                },
+                "fi": {
+                    "kategoria": "category",
+                    "kuvaus": "description",
+                    "avainsanat": "keywords",
+                    "kynnysarvo": "threshold",
+                    "yläkategoria": "parent",
+                },
+            },
+        },
+        "domains": {
+            "columns": {
+                "en": {
+                    "name": "name",
+                    "description": "description",
+                    "key_terms": "key_terms",
+                    "context": "context",
+                    "stopwords": "stopwords",
+                },
+                "fi": {
+                    "name": "nimi",
+                    "description": "kuvaus",
+                    "key_terms": "keskeiset_termit",
+                    "context": "konteksti",
+                    "stopwords": "ohitettavat_sanat",
+                },
+            },
+            "parameters": {
+                "en": {
+                    "name": "name",
+                    "description": "description",
+                    "key_terms": "key_terms",
+                    "context": "context",
+                    "stopwords": "stopwords",
+                },
+                "fi": {
+                    "nimi": "name",
+                    "kuvaus": "description",
+                    "keskeiset_termit": "key_terms",
+                    "konteksti": "context",
+                    "ohitettavat_sanat": "stopwords",
+                },
+            },
+        },
+        "settings": {
+            "columns": {
+                "en": {
+                    "setting": "setting",
+                    "value": "value",
+                    "description": "description",
+                },
+                "fi": {
+                    "setting": "asetus",
+                    "value": "arvo",
+                    "description": "kuvaus",
+                },
+            },
+            "parameters": {
+                "en": {
+                    "theme_analysis.min_confidence": "theme_analysis.min_confidence",
+                    "weights.statistical": "weights.statistical",
+                    "weights.llm": "weights.llm",
+                },
+                "fi": {
+                    "teema_analyysi.min_luottamus": "theme_analysis.min_confidence",
+                    "painot.tilastollinen": "weights.statistical",
+                    "painot.llm": "weights.llm",
+                },
+            },
+        },
+    }
 
     @classmethod
-    def get_sheet_name(cls, sheet_type: str, language: str = "en") -> str:
-        """Get sheet name for specified language."""
+    def get_sheet_name(cls, internal_name: str, language: str = "en") -> str:
+        """Get localized sheet name."""
+        lang = language.lower()[:2]
+        if lang not in ["en", "fi"]:
+            lang = "en"
+        return cls.SHEET_MAPPING.get(internal_name, {}).get(
+            lang, cls.SHEET_MAPPING[internal_name]["en"]
+        )
+
+    @classmethod
+    def get_column_names(
+        cls, sheet_type: str, language: str = "en"
+    ) -> Dict[str, str]:
+        """Get localized column names."""
+        lang = language.lower()[:2]
+        if lang not in ["en", "fi"]:
+            lang = "en"
+
         try:
-            return getattr(cls, f"{sheet_type}_{language.upper()}").value
-        except AttributeError:
-            # Fallback to English if language-specific name not found
-            return getattr(cls, f"{sheet_type}_EN").value
+            return cls.PARAMETER_MAPPING[sheet_type]["columns"][lang]
+        except KeyError:
+            logger.warning(
+                f"Falling back to English column names for {sheet_type}"
+            )
+            return cls.PARAMETER_MAPPING[sheet_type]["columns"]["en"]
+
+    @classmethod
+    def get_internal_name(
+        cls, sheet_type: str, param_name: str, language: str = "en"
+    ) -> str:
+        """Map parameter name to internal name."""
+        lang = language.lower()[:2]
+        if lang not in ["en", "fi"]:
+            lang = "en"
 
 
 class ParameterConfigurations:
-    """Configuration for parameter handling."""
+    """Default configurations and utilities."""
 
-    # Default configuration
     DEFAULT_CONFIG = {
         "general": {
             "max_keywords": 10,
             "min_keyword_length": 3,
             "language": "en",
-            "focus_on": "general content analysis",  # Added default
+            "focus_on": "general content analysis",
             "include_compounds": True,
             "max_themes": 3,
             "min_confidence": 0.3,
-            "column_name_to_analyze": "text",  # Added default
+            "column_name_to_analyze": "text",
         },
         "categories": {},
         "predefined_keywords": {},
@@ -60,91 +253,6 @@ class ParameterConfigurations:
         "domain_context": {},
     }
 
-    # Parameter name mappings
-    PARAM_NAMES = {
-        "general": {
-            "en": {
-                "parameter": "parameter",
-                "value": "value",
-                "description": "description",
-                "max_keywords": "max_keywords",
-                "language": "language",
-                "focus_on": "focus_on",
-                "min_keyword_length": "min_keyword_length",
-                "include_compounds": "include_compounds",
-                "column_name": "column_name_to_analyze",
-            },
-            "fi": {
-                "parameter": "parametri",
-                "value": "arvo",
-                "description": "kuvaus",
-                "max_keywords": "maksimi_avainsanat",
-                "language": "kieli",
-                "focus_on": "keskity_aihepiiriin",
-                "min_keyword_length": "min_sanan_pituus",
-                "include_compounds": "sisällytä_yhdyssanat",
-                "column_name": "analysoitava_sarake",
-            },
-        },
-        "categories": {
-            "en": {
-                "category": "category",
-                "description": "description",
-                "keywords": "keywords",
-                "threshold": "threshold",
-                "parent": "parent",
-            },
-            "fi": {
-                "category": "kategoria",
-                "description": "kuvaus",
-                "keywords": "avainsanat",
-                "threshold": "kynnysarvo",
-                "parent": "yläkategoria",
-            },
-        },
-        "domains": {
-            "en": {
-                "name": "name",
-                "description": "description",
-                "key_terms": "key_terms",
-                "context": "context",
-                "stopwords": "stopwords",
-            },
-            "fi": {
-                "name": "nimi",
-                "description": "kuvaus",
-                "key_terms": "keskeiset_termit",
-                "context": "konteksti",
-                "stopwords": "ohitettavat_sanat",
-            },
-        },
-        "keywords": {
-            "en": {
-                "keyword": "keyword",
-                "importance": "importance",
-                "domain": "domain",
-                "compound_parts": "compound_parts",
-            },
-            "fi": {
-                "keyword": "avainsana",
-                "importance": "tärkeys",
-                "domain": "aihepiiri",
-                "compound_parts": "yhdyssanan_osat",
-            },
-        },
-    }
-
-    @classmethod
-    def get_column_names(cls, sheet_type: str, language: str = "en") -> Dict[str, str]:
-        """Get column names for specified sheet type and language."""
-        return cls.PARAM_NAMES.get(sheet_type, {}).get(language, {})
-
-    @classmethod
-    def get_column_name(cls, sheet_type: str, column: str, language: str = "en") -> str:
-        """Get specific column name for language."""
-        columns = cls.get_column_names(sheet_type, language)
-        return columns.get(column, column)  # Fallback to original name
-
     @classmethod
     def get_default_config(cls) -> Dict[str, Any]:
         """Get copy of default configuration."""
@@ -154,6 +262,9 @@ class ParameterConfigurations:
     def detect_language(cls, file_path: str) -> str:
         """Detect language from file name."""
         file_path = file_path.lower()
-        if any(fi_indicator in file_path for fi_indicator in ["parametrit", "suomi", "finnish"]):
+        if any(
+            fi_indicator in file_path
+            for fi_indicator in ["fi", "fin", "finnish", "suomi"]
+        ):
             return "fi"
         return "en"

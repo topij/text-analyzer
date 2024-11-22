@@ -2,306 +2,557 @@
 
 import asyncio
 import logging
+import pandas as pd
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Awaitable
+
+from langchain_core.language_models import BaseChatModel
 
 from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
-from src.core.config import AnalyzerConfig
-from src.core.language_processing.factory import create_text_processor
+
+# from src.core.config import AnalyzerConfig
+from src.core.language_processing import create_text_processor
 from src.core.llm.factory import create_llm
-
-# from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
-# from src.loaders.parameter_adapter import ParameterAdapter
+from src.loaders.parameter_handler import (
+    ParameterHandler,
+    # get_parameter_file_path,
+)
+from src.schemas import (
+    CategoryAnalysisResult,
+    CompleteAnalysisResult,
+    KeywordAnalysisResult,
+    ThemeAnalysisResult,
+    ThemeOutput,
+    CategoryOutput,
+)
 from src.utils.FileUtils.file_utils import FileUtils
-
-from src.loaders.parameter_handler import ParameterHandler
-from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
-
 
 logger = logging.getLogger(__name__)
 
 
 class SemanticAnalyzer:
-    def __init__(
-        self,
-        config: Optional[AnalyzerConfig] = None,
-        file_utils: Optional[FileUtils] = None,
-        llm=None,
-        language: Optional[str] = None,
-        categories: Optional[Dict[str, CategoryConfig]] = None,
-        parameter_file: Optional[Union[str, Path]] = None,
-        **kwargs,
-    ):
-        # Replace parameter adapter initialization
-        self.parameter_handler = ParameterHandler(parameter_file)
-        self.parameters = self.parameter_handler.get_parameters()
-
-        # Update parameter handling
-        if categories:
-            self.parameters.categories.update(categories)
-
-
-class SemanticAnalyzer:
     """Main interface for semantic text analysis."""
 
-    # Class-level constants
-    VALID_ANALYSIS_TYPES = {"keywords", "themes", "categories"}
+    # Valid analysis types
+    VALID_TYPES = {"keywords", "themes", "categories"}
 
     def __init__(
         self,
-        config: Optional[AnalyzerConfig] = None,
-        file_utils: Optional[FileUtils] = None,
-        llm=None,
-        language: Optional[str] = None,
-        categories: Optional[Dict[str, CategoryConfig]] = None,
         parameter_file: Optional[Union[str, Path]] = None,
+        file_utils: Optional[FileUtils] = None,
+        llm: Optional[BaseChatModel] = None,
         **kwargs,
     ):
-        """Initialize semantic analyzer."""
-        # Load parameters
+        """Initialize analyzer with parameters and components.
+
+        Args:
+            parameter_file: Path to Excel parameter file (default: parameters_en.xlsx)
+            file_utils: Optional FileUtils instance
+            llm: Optional LLM instance
+            language: Optional language override
+            **kwargs: Additional configuration options
+        """
+        self.file_utils = file_utils or FileUtils()
         self.parameter_handler = ParameterHandler(parameter_file)
         self.parameters = self.parameter_handler.get_parameters()
+        self.llm = llm or create_llm()
+        self._init_analyzers()
+        logger.info("Semantic analyzer initialization complete")
 
-        # Update parameter handling
-        if categories:
-            self.parameters.categories.update(categories)
+    @classmethod
+    def from_excel(
+        cls,
+        excel_file: Union[str, Path],
+        language: Optional[str] = None,
+        **kwargs,
+    ) -> "SemanticAnalyzer":
+        """Create analyzer instance from Excel parameter file.
 
-        # Initialize core components
-        self.file_utils = file_utils or FileUtils()
-        self.config = config or AnalyzerConfig(self.file_utils)
+        Args:
+            excel_file: Path to Excel parameter file
+            language: Optional language override
+            **kwargs: Additional initialization parameters
 
-        # Set up language processing
-        self.language = language or self.parameters.general.language
-        self.text_processor = create_text_processor(
-            language=self.language,
-            config={
-                "predefined_keywords": self.parameters.predefined_keywords,
-                "excluded_keywords": self.parameters.excluded_keywords,
-            },
+        Returns:
+            SemanticAnalyzer: Configured analyzer instance
+        """
+        return cls(parameter_file=excel_file, language=language, **kwargs)
+
+    def _init_analyzers(self) -> None:
+        """Initialize analyzers with correct language."""
+        # Create language processor first
+        language = self.parameters.general.language
+
+        # Build config dict for language processor
+        config = {
+            "min_word_length": self.parameters.general.min_keyword_length,
+            "include_compounds": self.parameters.general.include_compounds,
+        }
+
+        # Add voikko_path for Finnish if available
+        if language == "fi":
+            # Access as model field or via dict conversion
+            general_dict = self.parameters.general.model_dump()
+            if "voikko_path" in general_dict:
+                config["voikko_path"] = general_dict["voikko_path"]
+
+        self.language_processor = create_text_processor(
+            language=language,
+            config=config,
         )
+        logger.debug(f"Created language processor for {language}")
 
-        # Initialize LLM if not provided
-        self.llm = llm if llm is not None else create_llm()
+        # Base config for all analyzers
+        base_config = {
+            "language": language,
+            "min_confidence": self.parameters.general.min_confidence,
+            "focus_on": self.parameters.general.focus_on,
+        }
 
-        # Initialize analyzers with parameters
-        # self._init_analyzers(categories)
-
-        self._init_analyzers(
-            {
-                "education_type": CategoryConfig(
-                    description="Type of education (online, remote, etc.)",
-                    keywords=["online", "remote", "classroom"],
-                    threshold=0.5,
-                )
-            }
-        )
-
-        logger.info(
-            f"Initialized SemanticAnalyzer with language: {self.language}, " f"using parameter file: {parameter_file}"
-        )
-
-        # Initialize LLM if not provided
-        self.llm = llm if llm is not None else create_llm()
-
-        logger.info(
-            f"Initialized SemanticAnalyzer with language: {self.language}, " f"using parameter file: {parameter_file}"
-        )
-
-    def _init_analyzers(self, categories: Optional[Dict[str, CategoryConfig]] = None) -> None:
-        """Initialize analysis components."""
-        general = self.parameters.general
-        settings = self.parameters.analysis_settings
-
+        # Initialize analyzers with proper config
         self.keyword_analyzer = KeywordAnalyzer(
             llm=self.llm,
             config={
-                "max_keywords": general.max_keywords,
-                "min_keyword_length": general.min_keyword_length,
-                "include_compounds": general.include_compounds,
-                "excluded_keywords": self.parameters.excluded_keywords,
-                "predefined_keywords": self.parameters.predefined_keywords,
-                "min_confidence": general.min_confidence,
-                "weights": settings.weights.model_dump(),
+                **base_config,
+                "max_keywords": self.parameters.general.max_keywords,
+                "min_keyword_length": self.parameters.general.min_keyword_length,
+                "include_compounds": self.parameters.general.include_compounds,
+                "weights": self.parameters.analysis_settings.weights.model_dump(),
             },
-            language_processor=self.text_processor,
+            language_processor=self.language_processor,
         )
+        logger.debug("Initialized keyword analyzer")
 
         self.theme_analyzer = ThemeAnalyzer(
             llm=self.llm,
             config={
-                "max_themes": general.max_themes,
-                "min_confidence": settings.theme_analysis.min_confidence,
-                "enabled": settings.theme_analysis.enabled,
-                "focus_on": general.focus_on,
+                **base_config,
+                "max_themes": self.parameters.general.max_themes,
             },
+            language_processor=self.language_processor,
         )
-
-        # Use either provided categories or loaded ones
-        # Initialize category analyzer with language processor
-        category_config = categories or self.parameters.categories
-        if not category_config:
-            category_config = {
-                "education_type": CategoryConfig(
-                    description="Type of education (online, remote, etc.)",
-                    keywords=["online", "remote", "classroom"],
-                    threshold=0.5,
-                )
-            }
+        logger.debug("Initialized theme analyzer")
 
         self.category_analyzer = CategoryAnalyzer(
-            categories=category_config,
+            categories=self.parameters.categories,
             llm=self.llm,
-            config={
-                "min_confidence": self.parameters.general.min_confidence,
-                "focus_on": self.parameters.general.focus_on,
-            },
-            language_processor=self.text_processor,  # Pass language processor
+            config=base_config,
+            language_processor=self.language_processor,
+        )
+        logger.debug("Initialized category analyzer")
+
+    async def _create_analysis_task(
+        self,
+        analysis_type: str,
+        text: str,
+        **kwargs,
+    ) -> Optional[Awaitable]:
+        """Create analysis coroutine for specified type."""
+        try:
+            if analysis_type == "keywords":
+                return self.keyword_analyzer.analyze(
+                    text, **kwargs.get("keyword_params", {})
+                )
+            elif analysis_type == "themes":
+                return self.theme_analyzer.analyze(
+                    text, **kwargs.get("theme_params", {})
+                )
+            elif analysis_type == "categories":
+                return self.category_analyzer.analyze(
+                    text, **kwargs.get("category_params", {})
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Error creating {analysis_type} task: {e}")
+            return None
+
+    def _convert_theme_output(self, output: ThemeOutput) -> ThemeAnalysisResult:
+        """Convert ThemeOutput to ThemeAnalysisResult."""
+        return ThemeAnalysisResult(
+            themes=output.themes,
+            theme_hierarchy=output.theme_hierarchy,
+            language=output.language,
+            success=output.success,
+            error=output.error,
         )
 
-    def _validate_analysis_types(self, types: Optional[List[str]] = None) -> List[str]:
-        """Validate requested analysis types."""
-        if not types:
-            return list(self.VALID_ANALYSIS_TYPES)
-
-        invalid = set(types) - self.VALID_ANALYSIS_TYPES
-        if invalid:
-            raise ValueError(f"Invalid analysis types: {invalid}")
-
-        return types
-
-    def _handle_analysis_error(self, error: Exception) -> Dict[str, Any]:
-        """Create error response."""
-        logger.error(f"Analysis failed: {str(error)}", exc_info=True)
-        return {"error": str(error), "success": False, "language": self.language}
+    def _convert_category_output(
+        self, output: CategoryOutput
+    ) -> CategoryAnalysisResult:
+        """Convert CategoryOutput to CategoryAnalysisResult."""
+        return CategoryAnalysisResult(
+            matches=output.categories,  # Note: CategoryOutput.categories maps to CategoryAnalysisResult.matches
+            language=output.language,
+            success=output.success,
+            error=output.error,
+        )
 
     async def analyze(
-        self, text: str, analysis_types: Optional[List[str]] = None, timeout: float = 60.0, **kwargs
-    ) -> Dict[str, Any]:
-        """Analyze text with proper timeout handling."""
-        if not text:
-            return self._create_error_response("Empty input text")
-
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+        timeout: float = 60.0,
+        **kwargs,
+    ) -> CompleteAnalysisResult:
+        """Run analysis pipeline."""
+        start_time = datetime.now()
         try:
-            analysis_types = analysis_types or ["keywords", "themes", "categories"]
-            analysis_types = self._validate_analysis_types(analysis_types)
-            combined_results = {}
+            types_to_run = self._validate_analysis_types(analysis_types)
+            tasks = []
 
-            for analysis_type in analysis_types:
-                try:
-                    if analysis_type == "keywords":
-                        analyzer = self.keyword_analyzer
-                        if keyword_params := kwargs.get("keyword_params"):
-                            analyzer.config.update(keyword_params)
-                    elif analysis_type == "themes":
-                        analyzer = self.theme_analyzer
-                        if theme_params := kwargs.get("theme_params"):
-                            analyzer.config.update(theme_params)
-                    elif analysis_type == "categories":
-                        analyzer = self.category_analyzer
-                        if category_params := kwargs.get("category_params"):
-                            analyzer.config.update(category_params)
-                    else:
-                        continue
+            for analysis_type in types_to_run:
+                coro = await self._create_analysis_task(
+                    analysis_type, text, **kwargs
+                )
+                if coro:
+                    tasks.append(asyncio.create_task(coro))
 
-                    # Execute with individual timeouts
-                    result = await asyncio.wait_for(
-                        analyzer.analyze(text), timeout=timeout / len(analysis_types)  # Split timeout among tasks
-                    )
-                    combined_results[analysis_type] = result.dict()[analysis_type]
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), timeout=timeout
+            )
 
-                except asyncio.TimeoutError:
-                    combined_results[analysis_type] = {
-                        "error": "Analysis timed out",
-                        "success": False,
-                        "language": self.language,
-                        "keywords": [],  # Add default values
-                        "keyword_scores": {},
-                        "compound_words": [],
-                        "domain_keywords": {},
-                    }
-                except Exception as e:
-                    combined_results[analysis_type] = {
-                        "error": str(e),
-                        "success": False,
-                        "language": self.language,
-                        "keywords": [],  # Add default values
-                        "keyword_scores": {},
-                        "compound_words": [],
-                        "domain_keywords": {},
-                    }
+            processed_results = self._process_analysis_results(
+                results, types_to_run
+            )
 
-            return combined_results
+            return CompleteAnalysisResult(
+                keywords=processed_results.get(
+                    "keywords", self._create_error_result_by_type("keywords")
+                ),
+                themes=processed_results.get(
+                    "themes", self._create_error_result_by_type("themes")
+                ),
+                categories=processed_results.get(
+                    "categories",
+                    self._create_error_result_by_type("categories"),
+                ),
+                language=self.parameters.general.language,
+                success=all(r.success for r in processed_results.values()),
+                processing_time=(datetime.now() - start_time).total_seconds(),
+            )
 
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            return self._create_error_response(str(e))
+            return self._create_error_result(str(e), start_time)
+
+    def save_results(
+        self,
+        results: CompleteAnalysisResult,
+        output_file: str,
+        output_type: str = "processed",
+    ) -> Path:
+        """Save analysis results to Excel file.
+
+        Args:
+            results: Analysis results to save
+            output_file: Output file name
+            output_type: Output directory type
+
+        Returns:
+            Path: Path to saved file
+        """
+        # Convert results to DataFrames
+        dfs = {
+            "Keywords": self._format_keyword_results(results.keywords),
+            "Themes": self._format_theme_results(results.themes),
+            "Categories": self._format_category_results(results.categories),
+            "Summary": self._create_summary(results),
+        }
+
+        # Save using FileUtils
+        saved_files, _ = self.file_utils.save_data_to_disk(
+            data=dfs,
+            output_filetype="xlsx",
+            file_name=output_file,
+            output_type=output_type,
+        )
+
+        # Return path to saved file
+        return Path(next(iter(saved_files.values())))
+
+    def _format_keyword_results(
+        self, results: KeywordAnalysisResult
+    ) -> pd.DataFrame:
+        """Format keyword results for Excel."""
+        rows = []
+        for kw in results.keywords:
+            rows.append(
+                {
+                    "Keyword": kw.keyword,
+                    "Score": f"{kw.score:.2f}",
+                    "Domain": kw.domain or "",
+                    "Compound Parts": (
+                        ", ".join(kw.compound_parts)
+                        if kw.compound_parts
+                        else ""
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def _format_theme_results(
+        self, results: ThemeAnalysisResult
+    ) -> pd.DataFrame:
+        """Format theme results for Excel."""
+        rows = []
+        for theme in results.themes:
+            rows.append(
+                {
+                    "Theme": theme.name,
+                    "Description": theme.description,
+                    "Confidence": f"{theme.confidence:.2f}",
+                    "Keywords": ", ".join(theme.keywords),
+                    "Parent Theme": theme.parent_theme or "",
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def _format_category_results(
+        self, results: CategoryAnalysisResult
+    ) -> pd.DataFrame:
+        """Format category results for Excel."""
+        rows = []
+        for cat in results.matches:
+            rows.append(
+                {
+                    "Category": cat.name,
+                    "Confidence": f"{cat.confidence:.2f}",
+                    "Description": cat.description,
+                    "Evidence": "\n".join(e.text for e in cat.evidence),
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def _create_summary(self, results: CompleteAnalysisResult) -> pd.DataFrame:
+        """Create summary sheet for Excel output."""
+        return pd.DataFrame(
+            [
+                {
+                    "Language": results.language,
+                    "Success": results.success,
+                    "Error": results.error or "",
+                    "Processing Time": f"{results.processing_time:.2f}s",
+                    "Keywords Found": len(results.keywords.keywords),
+                    "Themes Found": len(results.themes.themes),
+                    "Categories Found": len(results.categories.matches),
+                }
+            ]
+        )
 
     async def analyze_batch(
-        self, texts: List[str], batch_size: int = 3, timeout: float = 30.0, **kwargs
-    ) -> List[Dict[str, Any]]:
-        """Analyze multiple texts with controlled concurrency."""
+        self,
+        texts: List[str],
+        batch_size: int = 3,
+        timeout: float = 30.0,
+        **kwargs,
+    ) -> List[CompleteAnalysisResult]:
+        """Process multiple texts with controlled concurrency.
+
+        Args:
+            texts: List of texts to analyze
+            batch_size: Maximum number of concurrent analyses
+            timeout: Timeout per batch in seconds
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            List[CompleteAnalysisResult]: Results for each text
+        """
         results = []
 
-        async def process_batch(batch_texts: List[str]) -> List[Dict[str, Any]]:
-            tasks = [asyncio.create_task(self.analyze(text, **kwargs)) for text in batch_texts]
+        try:
+            # Process in batches
+            for i in range(0, len(texts), batch_size):
+                batch = texts[i : i + batch_size]
+                batch_tasks = [
+                    self.analyze(text, timeout=timeout, **kwargs)
+                    for text in batch
+                ]
 
-            batch_results = []
-            for task in tasks:
+                # Run batch with timeout
                 try:
-                    result = await asyncio.wait_for(task, timeout=timeout)
-                    batch_results.append(result)
+                    batch_results = await asyncio.wait_for(
+                        asyncio.gather(*batch_tasks, return_exceptions=True),
+                        timeout=timeout * len(batch),
+                    )
+                    results.extend(self._process_batch_results(batch_results))
                 except asyncio.TimeoutError:
-                    batch_results.append(self._create_error_response("Analysis timed out"))
-                except Exception as e:
-                    batch_results.append(self._create_error_response(str(e)))
-                finally:
-                    if not task.done():
-                        task.cancel()
+                    logger.error(f"Batch {i//batch_size + 1} timed out")
+                    results.extend(
+                        [
+                            self._create_error_result(
+                                "Batch processing timed out", datetime.now()
+                            )
+                            for _ in batch
+                        ]
+                    )
 
-            return batch_results
+            return results
 
-        # Process in smaller batches
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            try:
-                batch_results = await asyncio.wait_for(process_batch(batch), timeout=timeout * len(batch))
-                results.extend(batch_results)
-            except asyncio.TimeoutError:
-                results.extend([self._create_error_response("Batch processing timed out") for _ in batch])
-            except Exception as e:
-                results.extend([self._create_error_response(str(e)) for _ in batch])
+        except Exception as e:
+            logger.error(f"Batch processing failed: {str(e)}")
+            return [
+                self._create_error_result(str(e), datetime.now()) for _ in texts
+            ]
 
-        return results
+    def _validate_analysis_types(
+        self, types: Optional[List[str]] = None
+    ) -> List[str]:
+        """Validate and return analysis types to run."""
+        if not types:
+            return list(self.VALID_TYPES)
 
-    def _create_error_response(self, error: str) -> Dict[str, Any]:
-        """Create consistent error response with proper structure."""
-        error_data = {
-            "error": str(error),
+        invalid_types = set(types) - self.VALID_TYPES
+        if invalid_types:
+            raise ValueError(f"Invalid analysis types: {invalid_types}")
+
+        return types
+
+    def _create_error_result_by_type(self, analysis_type: str) -> Any:
+        """Create appropriate error result for each type."""
+        if analysis_type == "keywords":
+            return KeywordAnalysisResult(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language=self.parameters.general.language,
+                success=False,
+                error="Analysis failed",
+            )
+        elif analysis_type == "themes":
+            return ThemeAnalysisResult(
+                themes=[],
+                theme_hierarchy={},
+                language=self.parameters.general.language,
+                success=False,
+                error="Analysis failed",
+            )
+        elif analysis_type == "categories":
+            return CategoryAnalysisResult(
+                matches=[],
+                language=self.parameters.general.language,
+                success=False,
+                error="Analysis failed",
+            )
+
+    def _process_analysis_results(
+        self,
+        results: List[Any],
+        types: List[str],
+    ) -> Dict[str, Any]:
+        """Process and convert analysis results to correct types."""
+        processed = {}
+
+        for analysis_type, result in zip(types, results):
+            if isinstance(result, Exception):
+                processed[analysis_type] = self._create_error_result_by_type(
+                    analysis_type
+                )
+            else:
+                if analysis_type == "keywords":
+                    processed[analysis_type] = KeywordAnalysisResult(
+                        keywords=result.keywords,
+                        compound_words=result.compound_words,  # Now available
+                        domain_keywords=result.domain_keywords,
+                        language=result.language
+                        or self.parameters.general.language,
+                        success=result.success,
+                        error=result.error,
+                    )
+                elif analysis_type == "themes":
+                    processed[analysis_type] = ThemeAnalysisResult(
+                        themes=result.themes,
+                        theme_hierarchy=result.theme_hierarchy,
+                        language=result.language
+                        or self.parameters.general.language,
+                        success=result.success,
+                        error=result.error,
+                    )
+                elif analysis_type == "categories":
+                    processed[analysis_type] = CategoryAnalysisResult(
+                        matches=result.categories,  # Map categories to matches
+                        language=result.language
+                        or self.parameters.general.language,
+                        success=result.success,
+                        error=result.error,
+                    )
+        return processed
+
+    def _process_batch_results(
+        self,
+        results: List[Any],
+    ) -> List[CompleteAnalysisResult]:
+        """Process batch analysis results."""
+        processed = []
+        for result in results:
+            if isinstance(result, Exception):
+                processed.append(
+                    self._create_error_result(str(result), datetime.now())
+                )
+            else:
+                processed.append(result)
+        return processed
+
+    def _create_error_result(
+        self,
+        error: str,
+        start_time: datetime,
+    ) -> CompleteAnalysisResult:
+        """Create error result with proper structure."""
+        processing_time = (datetime.now() - start_time).total_seconds()
+
+        return CompleteAnalysisResult(
+            keywords=KeywordAnalysisResult(
+                success=False,
+                error=error,
+                language=self.parameters.general.language,
+            ),
+            themes=ThemeAnalysisResult(
+                success=False,
+                error=error,
+                language=self.parameters.general.language,
+            ),
+            categories=CategoryAnalysisResult(
+                success=False,
+                error=error,
+                language=self.parameters.general.language,
+            ),
+            language=self.parameters.general.language,
+            success=False,
+            error=error,
+            processing_time=processing_time,
+        )
+
+    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
+        """Create error result for specific analysis type."""
+        base_error = {
             "success": False,
-            "language": self.language,
+            "error": error,
+            "language": self.parameters.general.language,
             "keywords": [],
-            "keyword_scores": {},
             "compound_words": [],
             "domain_keywords": {},
         }
-        return {"keywords": error_data, "themes": error_data.copy(), "categories": error_data.copy()}
 
-    def update_parameters(self, **kwargs) -> GeneralParameters:
-        """Update analysis parameters."""
-        return self.parameter_adapter.update_parameters(**kwargs)
+        if analysis_type == "keywords":
+            return KeywordAnalysisResult(**base_error)
+        elif analysis_type == "themes":
+            return ThemeAnalysisResult(
+                themes=[], theme_hierarchy={}, **base_error
+            )
+        elif analysis_type == "categories":
+            return CategoryAnalysisResult(matches=[], **base_error)
 
-    def save_results(self, results: Dict[str, Any], filename: str, output_type: str = "processed") -> str:
-        """Save analysis results."""
-        return self.config.save_results(results, filename, output_type=output_type)
+        return base_error
 
     async def __aenter__(self):
         """Async context manager entry."""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
+        """Async context manager exit with cleanup."""
         # Clean up resources
         if hasattr(self, "llm") and hasattr(self.llm, "aclose"):
             await self.llm.aclose()

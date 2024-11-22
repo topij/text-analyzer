@@ -5,7 +5,7 @@ environment: "development"
 
 # Enhanced logging for development
 logging:
-  level: "WARNING" # "DEBUG"
+  level: "DEBUG" # "WARNING" # 
   format: "%(asctime)s - %(name)s - %(levelname)s [%(filename)s:%(lineno)d] - %(message)s"
   file_path: "logs/dev.log"
 

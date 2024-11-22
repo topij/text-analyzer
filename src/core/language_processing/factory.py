@@ -76,30 +76,29 @@ class TextProcessorFactory:
         language: Optional[str] = None,
         config: Optional[Dict[str, Any]] = None,
     ) -> BaseTextProcessor:
-        """Create a text processor for the specified language.
-
-        Args:
-            language: Language code
-            config: Configuration parameters
-
-        Returns:
-            BaseTextProcessor: Appropriate text processor instance
-        """
-
+        """Create a text processor with proper language handling."""
         # Normalize language code
         if language:
             language = language.lower()[
                 :2
             ]  # Get first two chars: "fin" -> "fi"
+        else:
+            language = "en"
 
-        if language not in self.PROCESSORS:
+        logger.debug(f"Creating text processor for language: {language}")
+
+        # Map languages to processors
+        processor_map = {"en": EnglishTextProcessor, "fi": FinnishTextProcessor}
+
+        processor_class = processor_map.get(language)
+        if not processor_class:
             logger.warning(
                 f"Unsupported language: {language}, defaulting to English"
             )
+            processor_class = EnglishTextProcessor
             language = "en"
 
         try:
-            processor_class = self.PROCESSORS[language]
             logger.debug(f"Creating {language} processor")
             return processor_class(language=language, config=config or {})
         except Exception as e:

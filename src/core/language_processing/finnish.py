@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+import threading
+
 from libvoikko import Voikko
 
 from src.core.language_processing.base import BaseTextProcessor
@@ -164,121 +166,140 @@ class FinnishTextProcessor(BaseTextProcessor):
     }
 
     # Platform-specific Voikko paths
-    VOIKKO_PATHS = {
-        "win32": [
-            r"C:\scripts\Voikko",
-            r"C:\Program Files\Voikko",
-            r"C:\Voikko",
-            "~/Voikko",
-        ],
-        "linux": [
-            "/usr/lib/voikko",
-            "/usr/local/lib/voikko",
-            "/usr/share/voikko",
-            "~/voikko",
-        ],
-        "darwin": [
-            "/usr/local/lib/voikko",
-            "/opt/voikko",
-            "~/voikko",
-        ],
-    }
+    # VOIKKO_PATHS = {
+    #     "win32": [
+    #         r"C:\scripts\Voikko",
+    #         r"C:\Program Files\Voikko",
+    #         r"C:\Voikko",
+    #         "~/Voikko",
+    #     ],
+    #     "linux": [
+    #         "/usr/lib/voikko",
+    #         "/usr/local/lib/voikko",
+    #         "/usr/share/voikko",
+    #         "~/voikko",
+    #     ],
+    #     "darwin": [
+    #         "/usr/local/lib/voikko",
+    #         "/opt/voikko",
+    #         "~/voikko",
+    #     ],
+    # }
+
+    # def __init__(
+    #     self,
+    #     language: str = "fi",
+    #     custom_stop_words: Optional[Set[str]] = None,
+    #     config: Optional[Dict[str, Any]] = None,
+    #     file_utils: Optional[FileUtils] = None,
+    # ):
+    #     """Initialize Finnish text processor."""
+    #     super().__init__(language, custom_stop_words, config, file_utils)
+
+    #     # Get Voikko path from config
+    #     self.voikko_path = None
+    #     if config and "voikko_path" in config:
+    #         self.voikko_path = config["voikko_path"]
+
+    #     # Initialize Voikko
+    #     self.voikko = self._initialize_voikko(self.voikko_path)
+
+    #     if not self.voikko:
+    #         logger.warning(
+    #             "Voikko initialization failed, using fallback tokenization"
+    #         )
 
     def __init__(
         self,
         language: str = "fi",
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None,
-        file_utils: Optional[FileUtils] = None,
     ):
-        """Initialize Finnish text processor."""
-        super().__init__(language, custom_stop_words, config, file_utils)
+        super().__init__(language, custom_stop_words, config)
+        self._analysis_cache = {}
+        self._failed_words = set()  # Track words that fail analysis
 
-        # Get Voikko path from config
-        self.voikko_path = None
-        if config and "voikko_path" in config:
-            self.voikko_path = config["voikko_path"]
-
-        # Initialize Voikko
-        self.voikko = self._initialize_voikko(self.voikko_path)
+        self.voikko_handler = VoikkoHandler()
+        voikko_path = config.get("voikko_path") if config else None
+        self.voikko = self.voikko_handler.initialize(voikko_path)
 
         if not self.voikko:
             logger.warning(
-                "Voikko initialization failed, using fallback tokenization"
+                "Voikko initialization failed. Some Finnish-specific features will be limited."
             )
 
-    def _initialize_voikko(
-        self, voikko_path: Optional[str] = None
-    ) -> Optional[Voikko]:
-        """Initialize Voikko with proper path handling."""
-        try:
-            # Determine platform
-            platform = sys.platform
-            logger.info(f"Detected platform: {platform}")
+    # def _initialize_voikko(
+    #     self, voikko_path: Optional[str] = None
+    # ) -> Optional[Voikko]:
+    #     """Initialize Voikko with proper path handling."""
+    #     try:
+    #         # Determine platform
+    #         platform = sys.platform
+    #         logger.info(f"Detected platform: {platform}")
 
-            # Get platform-specific search paths
-            default_paths = self.VOIKKO_PATHS.get(
-                platform, self.VOIKKO_PATHS["linux"]
-            )
-            search_paths = [os.path.expanduser(p) for p in default_paths]
+    #         # Get platform-specific search paths
+    #         default_paths = self.VOIKKO_PATHS.get(
+    #             platform, self.VOIKKO_PATHS["linux"]
+    #         )
+    #         search_paths = [os.path.expanduser(p) for p in default_paths]
 
-            # Add config path if provided
-            if voikko_path:
-                search_paths.insert(0, os.path.expanduser(voikko_path))
+    #         # Add config path if provided
+    #         if voikko_path:
+    #             search_paths.insert(0, os.path.expanduser(voikko_path))
 
-            # Try direct initialization first
-            try:
-                voikko = Voikko("fi")
-                if voikko.analyze("testi"):
-                    logger.info(
-                        "Successfully initialized Voikko using system libraries"
-                    )
-                    return voikko
-            except Exception as e:
-                logger.debug(f"System library initialization failed: {e}")
+    #         # Try direct initialization first
+    #         try:
+    #             voikko = Voikko("fi")
+    #             if voikko.analyze("testi"):
+    #                 logger.info(
+    #                     "Successfully initialized Voikko using system libraries"
+    #                 )
+    #                 return voikko
+    #         except Exception as e:
+    #             logger.debug(f"System library initialization failed: {e}")
 
-            # Try with explicit paths
-            for path in search_paths:
-                if not os.path.exists(path):
-                    continue
+    #         # Try with explicit paths
+    #         for path in search_paths:
+    #             if not os.path.exists(path):
+    #                 continue
 
-                try:
-                    # Windows-specific handling
-                    if platform == "win32":
-                        self._add_dll_directory(path)
+    #             try:
+    #                 # Windows-specific handling
+    #                 if platform == "win32":
+    #                     self._add_dll_directory(path)
 
-                    voikko = Voikko("fi", str(path))
-                    if voikko.analyze("testi"):
-                        logger.info(
-                            f"Successfully initialized Voikko with path: {path}"
-                        )
-                        return voikko
-                except Exception as e:
-                    logger.debug(f"Failed initialization with {path}: {e}")
+    #                 voikko = Voikko("fi", str(path))
+    #                 if voikko.analyze("testi"):
+    #                     logger.info(
+    #                         f"Successfully initialized Voikko with path: {path}"
+    #                     )
+    #                     return voikko
+    #             except Exception as e:
+    #                 logger.debug(f"Failed initialization with {path}: {e}")
 
-            logger.warning(
-                "Could not initialize Voikko. Using fallback methods."
-            )
-            return None
+    #         logger.warning(
+    #             "Could not initialize Voikko. Using fallback methods."
+    #         )
+    #         return None
 
-        except Exception as e:
-            logger.error(f"Voikko initialization failed: {str(e)}")
-            return None
+    #     except Exception as e:
+    #         logger.error(f"Voikko initialization failed: {str(e)}")
+    #         return None
 
-    def _add_dll_directory(self, path: str) -> None:
-        """Add directory to DLL search path on Windows."""
-        if sys.platform == "win32":
-            try:
-                if hasattr(os, "add_dll_directory"):
-                    os.add_dll_directory(path)
-                else:
-                    if path not in os.environ["PATH"]:
-                        os.environ["PATH"] = (
-                            path + os.pathsep + os.environ["PATH"]
-                        )
-                logger.info(f"Added {path} to DLL search path")
-            except Exception as e:
-                logger.error(f"Error adding DLL directory {path}: {str(e)}")
+    # def _add_dll_directory(self, path: str) -> None:
+    #     """Add directory to DLL search path on Windows."""
+    #     if sys.platform == "win32":
+    #         try:
+    #             if hasattr(os, "add_dll_directory"):
+    #                 os.add_dll_directory(path)
+    #             else:
+    #                 if path not in os.environ["PATH"]:
+    #                     os.environ["PATH"] = (
+    #                         path + os.pathsep + os.environ["PATH"]
+    #                     )
+    #             logger.info(f"Added {path} to DLL search path")
+    #         except Exception as e:
+    #             logger.error(f"Error adding DLL directory {path}: {str(e)}")
 
     def is_compound_word(self, word: str) -> bool:
         """Enhanced compound word detection for Finnish."""
@@ -346,71 +367,6 @@ class FinnishTextProcessor(BaseTextProcessor):
             logger.error(f"Error getting compound parts for {word}: {e}")
             return None
 
-    # def is_compound_word(self, word: str) -> bool:
-    #     """Enhanced compound word detection using Voikko analysis."""
-    #     try:
-    #         if not self.voikko:
-    #             return False
-
-    #         analyses = self.voikko.analyze(word)
-    #         if not analyses:
-    #             return False
-
-    #         for analysis in analyses:
-    #             # Check WORDBASES - most reliable for compounds
-    #             wordbases = analysis.get("WORDBASES", "")
-    #             if "+" in wordbases[1:]:  # Skip first + which marks word start
-    #                 # Validate it's a real compound by checking base forms
-    #                 parts = [p for p in wordbases.split("+") if "(" in p]
-    #                 if len(parts) > 1:
-    #                     return True
-
-    #             # Backup: Check STRUCTURE for multiple morphemes
-    #             structure = analysis.get("STRUCTURE", "")
-    #             if "=" in structure[1:]:  # Skip first = which marks word start
-    #                 # Verify not just a derivational form
-    #                 if wordbases and "+(" not in wordbases:
-    #                     return True
-
-    #         return False
-
-    #     except Exception as e:
-    #         logger.error(f"Voikko analysis failed for {word}: {e}")
-    #         return False
-
-    # def get_compound_parts(self, word: str) -> Optional[List[str]]:
-    #     """Get compound word parts using Voikko analysis."""
-    #     try:
-    #         if not self.voikko:
-    #             return None
-
-    #         analyses = self.voikko.analyze(word)
-    #         if not analyses:
-    #             return None
-
-    #         for analysis in analyses:
-    #             wordbases = analysis.get("WORDBASES", "")
-    #             if "+" in wordbases[1:]:
-    #                 # Extract base forms from parentheses
-    #                 parts = []
-    #                 for part in wordbases.split("+")[
-    #                     1:
-    #                 ]:  # Skip first empty part
-    #                     if "(" in part:
-    #                         base = part.split("(")[1].rstrip(")")
-    #                         if len(base) > 2:  # Skip short connectors
-    #                             parts.append(base)
-
-    #                 # Only return if we found actual compound parts
-    #                 if len(parts) > 1:
-    #                     return parts
-
-    #         return None
-
-    #     except Exception as e:
-    #         logger.error(f"Error getting compound parts: {e}")
-    #         return None
-
     def debug_voikko_analysis(self, word: str) -> None:
         """Debug helper to print detailed Voikko analysis."""
         try:
@@ -430,94 +386,110 @@ class FinnishTextProcessor(BaseTextProcessor):
         except Exception as e:
             logger.error(f"Error in debug analysis for {word}: {e}")
 
-    def get_base_form(self, word: str) -> Optional[str]:
-        """Get base form with enhanced verb detection."""
+    def get_base_form(self, word: str) -> str:
+        """Get base form with error handling."""
+        if not word:
+            return ""
+
+        analysis = self._analyze_word_safe(word)
+        if analysis and "BASEFORM" in analysis:
+            base = analysis["BASEFORM"]
+            logger.debug(f"Base form for {word}: {base}")
+            return base.lower()
+        return word.lower()
+
+    def _analyze_word_safe(self, word: str) -> Optional[Dict[str, Any]]:
+        """Thread-safe word analysis with failure tracking."""
+        if not self.voikko or word in self._failed_words:
+            return None
+
         try:
-            if not self.voikko:
-                return word.lower()
+            if word in self._analysis_cache:
+                return self._analysis_cache[word]
 
-            analyses = self.voikko.analyze(word)
-            if not analyses:
-                return word.lower()
+            with threading.Lock():  # Thread-safe Voikko access
+                analysis = self.voikko.analyze(word)
+                if not analysis:
+                    self._failed_words.add(word)
+                    return None
 
-            # Try all analyses to find verb forms
-            for analysis in analyses:
-                # Check FSTOUTPUT for verb indicators
-                fst_output = analysis.get("FSTOUTPUT", "").lower()
-                wordbases = analysis.get("WORDBASES", "").lower()
-
-                # Look for verb indicators in FSTOUTPUT
-                if "[lt]" in fst_output:  # [Lt] indicates verb
-                    # Extract true base form from WORDBASES if available
-                    if "(" in wordbases:
-                        base = wordbases.split("(")[1].split(")")[0]
-                        if base in self.COMMON_VERBS:
-                            return None
-                        return base
-
-            # If no verb found, use first analysis
-            analysis = analyses[0]
-            word_class = analysis.get("CLASS")
-            base_form = analysis.get("BASEFORM", "").lower()
-
-            # Additional verb form detection
-            known_verb_parts = {
-                "para",
-                "parane",
-                "parantu",
-            }  # Add more as needed
-            if word_class == "nimisana" and any(
-                base_form.startswith(part) for part in known_verb_parts
-            ):
-                # This is likely a misclassified verb form
-                return "parantua"  # Map to correct verb base
-
-            return base_form
+                result = analysis[0]
+                self._analysis_cache[word] = result
+                return result
 
         except Exception as e:
-            logger.error(f"Error getting base form for {word}: {e}")
-            return word.lower()
+            logger.debug(f"Error analyzing word {word}: {str(e)}")
+            self._failed_words.add(word)
+            return None
+
+    def _analyze_word(self, word: str) -> Optional[Dict[str, Any]]:
+        """Cached word analysis."""
+        if not self.voikko:
+            return None
+
+        try:
+            # Check cache first
+            if word in self._analysis_cache:
+                return self._analysis_cache[word]
+
+            analysis = self.voikko.analyze(word)
+            if not analysis:
+                return None
+
+            # Cache and return first analysis
+            result = analysis[0]
+            self._analysis_cache[word] = result
+            return result
+
+        except Exception as e:
+            logger.debug(f"Error analyzing word {word}: {str(e)}")
+            return None
+
+    def get_compound_parts(self, word: str) -> Optional[List[str]]:
+        """Get compound parts safely."""
+        analysis = self._analyze_word_safe(word)
+        if not analysis:
+            return None
+
+        try:
+            wordbases = analysis.get("WORDBASES", "")
+            if not wordbases or "+" not in wordbases[1:]:
+                return None
+
+            parts = []
+            for part in wordbases.split("+"):
+                if "(" in part:
+                    base = part.split("(")[1].split(")")[0]
+                    if base and len(base) > 2:
+                        parts.append(base)
+
+            return parts if len(parts) > 1 else None
+
+        except Exception as e:
+            logger.debug(f"Error getting compound parts for {word}: {str(e)}")
+            return None
 
     def should_keep_word(self, word: str) -> bool:
-        """Enhanced word filtering with better verb detection."""
-        if not super().should_keep_word(word):
-            return False
-
+        """Word filtering with cached analysis."""
         try:
-            if not self.voikko:
-                return True
-
-            analyses = self.voikko.analyze(word)
-            if not analyses:
+            if not super().should_keep_word(word):
                 return False
 
-            # Check all analyses
-            for analysis in analyses:
-                fst_output = analysis.get("FSTOUTPUT", "").lower()
-                wordbases = analysis.get("WORDBASES", "").lower()
+            analysis = self._analyze_word(word)
+            if not analysis:
+                return False
 
-                # Detect verbs from FSTOUTPUT
-                if "[lt]" in fst_output:  # Verb indicator
-                    # Get true base from WORDBASES
-                    if "(" in wordbases:
-                        base = wordbases.split("(")[1].split(")")[0]
-                        if base in self.COMMON_VERBS:
-                            return False
+            word_class = analysis.get("CLASS")
+            if word_class == "teonsana":
+                return False
 
-                # Additional verb form detection
-                word_lower = word.lower()
-                base_form = analysis.get("BASEFORM", "").lower()
-                known_verb_starts = {"para", "parane", "parantu", "kasva"}
-                if any(
-                    word_lower.startswith(part) or base_form.startswith(part)
-                    for part in known_verb_starts
-                ):
-                    return False
-
-            return True
-
+            base_form = analysis.get("BASEFORM", "").lower()
+            return not (
+                base_form in self._stop_words
+                or len(base_form) < self.config.get("min_word_length", 3)
+            )
         except Exception as e:
-            logger.error(f"Error in should_keep_word for {word}: {e}")
+            logger.debug(f"Error in should_keep_word for {word}: {str(e)}")
             return super().should_keep_word(word)
 
     def is_verb(self, word: str) -> bool:
@@ -753,6 +725,48 @@ class FinnishTextProcessor(BaseTextProcessor):
 
         return False
 
+    # In FinnishTextProcessor class
+
+    def process_compound_word(self, word: str) -> Optional[List[str]]:
+        """Process compound word with Voikko analysis."""
+        logger.debug(f"Processing compound: {word}")
+
+        if not self.voikko:
+            return None
+
+        try:
+            analyses = self.voikko.analyze(word)
+            if not analyses:
+                return None
+
+            # Get both BASEFORM and WORDBASES
+            analysis = analyses[0]
+            base_form = analysis.get("BASEFORM", "")
+            wordbases = analysis.get("WORDBASES", "")
+
+            logger.debug(f"Base form: {base_form}")
+            logger.debug(f"Word bases: {wordbases}")
+
+            # Extract compound parts from WORDBASES
+            if "+" in wordbases:
+                parts = []
+                for part in wordbases.split("+"):
+                    if "(" in part:  # Format: "kone(kone)"
+                        base = part.split("(")[1].rstrip(")")
+                        if len(base) > 2:  # Skip short connecting parts
+                            parts.append(base)
+                            logger.debug(f"Found part: {base}")
+
+                if len(parts) > 1:
+                    logger.debug(f"Final compound parts: {parts}")
+                    return parts
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error processing compound: {e}")
+            return None
+
     def preprocess_text(self, text: str) -> str:
         """Preprocess Finnish text with proper encoding."""
         if not isinstance(text, str):
@@ -765,3 +779,120 @@ class FinnishTextProcessor(BaseTextProcessor):
         text = " ".join(text.split())
 
         return text.strip()
+
+
+class VoikkoHandler:
+    """Handler for Voikko initialization with proper cleanup."""
+
+    def __init__(self):
+        self.voikko = None
+        self._handle = None
+
+    def initialize(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
+        """Initialize Voikko safely."""
+        self._cleanup_existing()  # Clean up any existing instance
+
+        platform = sys.platform
+        logger.info(f"Detected platform: {platform}")
+
+        try:
+            # Try explicit paths first
+            paths = self._get_search_paths(platform, voikko_path)
+            for path in paths:
+                if not os.path.exists(path):
+                    continue
+
+                try:
+                    if platform == "win32":
+                        self._add_dll_directory(path)
+
+                    self.voikko = Voikko("fi", str(path))
+                    self.voikko.analyze("testi")  # Test
+                    self._handle = True  # Mark as initialized
+                    logger.info(
+                        f"Successfully initialized Voikko with path: {path}"
+                    )
+                    return self.voikko
+                except Exception as e:
+                    self._cleanup_existing()
+                    continue
+
+            # Try system libraries as fallback
+            self.voikko = Voikko("fi")
+            self.voikko.analyze("testi")
+            self._handle = True
+            logger.info(
+                "Successfully initialized Voikko using system libraries"
+            )
+            return self.voikko
+
+        except Exception as e:
+            self._cleanup_existing()
+            logger.debug(f"System library initialization failed: {e}")
+            return None
+
+    def _cleanup_existing(self):
+        """Clean up existing Voikko instance."""
+        if self.voikko and self._handle:
+            try:
+                self.voikko.terminate()
+            except:
+                pass
+        self.voikko = None
+        self._handle = None
+
+    def _get_search_paths(
+        self, platform: str, custom_path: Optional[str] = None
+    ) -> List[str]:
+        """Get platform-specific Voikko search paths."""
+        base_paths = {
+            "win32": [
+                r"C:\scripts\Voikko",
+                r"C:\Program Files\Voikko",
+                r"C:\Voikko",
+                "~/Voikko",
+            ],
+            "linux": [
+                "/usr/lib/voikko",
+                "/usr/local/lib/voikko",
+                "/usr/share/voikko",
+                "~/voikko",
+            ],
+            "darwin": [
+                "/usr/local/lib/voikko",
+                "/opt/voikko",
+                "~/voikko",
+            ],
+        }
+
+        # Get default paths for platform
+        paths = base_paths.get(platform, base_paths["linux"])
+
+        # Add custom path at the start if provided
+        if custom_path:
+            paths.insert(0, os.path.expanduser(custom_path))
+
+        return [os.path.expanduser(p) for p in paths]
+
+    def _add_dll_directory(self, path: str) -> None:
+        """Add directory to DLL search path on Windows."""
+        if sys.platform == "win32":
+            try:
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(path)
+                else:
+                    if path not in os.environ["PATH"]:
+                        os.environ["PATH"] = (
+                            path + os.pathsep + os.environ["PATH"]
+                        )
+                logger.info(f"Added {path} to DLL search path")
+            except Exception as e:
+                logger.error(f"Error adding DLL directory {path}: {str(e)}")
+
+    def __del__(self):
+        """Clean up Voikko instance."""
+        if self.initialized and self.voikko:
+            try:
+                self.voikko.terminate()
+            except:
+                pass  # Suppress any cleanup errors

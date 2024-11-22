@@ -10,6 +10,8 @@ import re
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 
+from pydantic import Field
+
 from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection
 from src.schemas import KeywordAnalysisResult, KeywordInfo
 
@@ -30,8 +32,13 @@ class DomainTerms:
 class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
 
-    keywords: List[KeywordInfo]
-    domain_keywords: Dict[str, List[str]]
+    keywords: List[KeywordInfo] = Field(default_factory=list)
+    compound_words: List[str] = Field(default_factory=list)  # Add this field
+    domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"  # Allow extra fields for flexibility
 
 
 class KeywordAnalyzer(TextAnalyzer):
@@ -306,28 +313,98 @@ class KeywordAnalyzer(TextAnalyzer):
             language=self._get_language(),
         )
 
-    async def analyze(self, text: str) -> KeywordAnalysisResult:
+    async def analyze(self, text: str) -> KeywordOutput:
         """Analyze text to extract keywords."""
-        logger.debug("Starting keyword analysis")
+        logger.debug(
+            f"Starting keyword analysis for language: {self.language_processor.language if self.language_processor else 'unknown'}"
+        )
+        logger.debug(f"Text: {text[:100]}...")
+
         try:
-            self._current_text = text  # Store for frequency calculations
-            output = await self._analyze_internal(text)
-            result = KeywordAnalysisResult(
-                keywords=output.keywords,
-                compound_words=[
-                    k.keyword for k in output.keywords if k.compound_parts
-                ],
-                domain_keywords=output.domain_keywords,
-                language=self._get_language(),
+            # Get LLM analysis
+            llm_response = await self.chain.ainvoke(text)
+
+            # Process keywords
+            keywords = []
+            compound_words = []
+            domain_keywords = defaultdict(list)
+
+            # Process each keyword
+            for kw in llm_response.get("keywords", []):
+                if isinstance(kw, dict) and "keyword" in kw:
+                    # Get base form
+                    keyword = kw["keyword"]
+                    if self.language_processor:
+                        base_form = self.language_processor.get_base_form(
+                            keyword
+                        )
+                        keyword = base_form if base_form else keyword
+
+                    keyword_info = KeywordInfo(
+                        keyword=keyword,
+                        score=float(kw.get("score", 0.5)),
+                        domain=kw.get("domain"),
+                        compound_parts=self._get_compound_parts(keyword),
+                    )
+
+                    keywords.append(keyword_info)
+
+                    # Track compound words
+                    if keyword_info.compound_parts:
+                        compound_words.append(keyword_info.keyword)
+                        logger.debug(
+                            f"Added compound word: {keyword_info.keyword}"
+                        )
+
+                    # Group by domain
+                    if keyword_info.domain:
+                        domain_keywords[keyword_info.domain].append(
+                            keyword_info.keyword
+                        )
+                        logger.debug(
+                            f"Added {keyword_info.keyword} to domain {keyword_info.domain}"
+                        )
+
+            return KeywordOutput(
+                keywords=keywords,
+                compound_words=compound_words,
+                domain_keywords=dict(domain_keywords),
+                language=(
+                    self.language_processor.language
+                    if self.language_processor
+                    else "unknown"
+                ),
                 success=True,
             )
-            logger.debug(
-                f"Analysis complete. Found {len(result.keywords)} keywords"
-            )
-            return result
+
         except Exception as e:
-            logger.error(f"Analysis failed: {e}", exc_info=True)
-            return self._create_error_result()
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            return KeywordOutput(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language=(
+                    self.language_processor.language
+                    if self.language_processor
+                    else "unknown"
+                ),
+                success=False,
+                error=str(e),
+            )
+
+    def _get_compound_parts(self, word: str) -> Optional[List[str]]:
+        """Get compound parts safely."""
+        try:
+            if not self.language_processor:
+                return None
+
+            parts = self.language_processor.get_compound_parts(word)
+            if parts:
+                logger.debug(f"Identified compound parts for {word}: {parts}")
+            return parts
+        except Exception as e:
+            logger.debug(f"Error getting compound parts for {word}: {e}")
+            return None
 
     async def _analyze_with_llm(
         self, text: str, statistical_keywords: List[KeywordInfo]
@@ -443,6 +520,36 @@ class KeywordAnalyzer(TextAnalyzer):
             keyword=keyword.keyword,
             score=final_score,
             domain=keyword.domain,
+            compound_parts=compound_parts,
+        )
+
+    def _process_word(self, word: str) -> Optional[KeywordInfo]:
+        """Process word with compound handling."""
+        if not self.language_processor:
+            return None
+
+        # Get base form
+        base_form = self.language_processor.get_base_form(word)
+        if not base_form:
+            return None
+
+        # Process as potential compound word
+        compound_parts = None
+        if self.config.get("include_compounds", True):
+            if hasattr(self.language_processor, "process_compound_word"):
+                compound_parts = self.language_processor.process_compound_word(
+                    base_form
+                )
+                if compound_parts:
+                    logger.debug(f"Compound word {base_form}: {compound_parts}")
+
+        # Detect domain
+        domain = self._detect_domain(base_form)
+
+        return KeywordInfo(
+            keyword=base_form,
+            score=0.0,  # Initial score, will be updated
+            domain=domain,
             compound_parts=compound_parts,
         )
 
@@ -596,85 +703,85 @@ class KeywordAnalyzer(TextAnalyzer):
 
         return None
 
-    def _get_compound_parts(self, word: str) -> Optional[List[str]]:
-        """Get compound word parts with strict Finnish compound rules."""
-        if not self.language_processor:
-            return None
+    # def _get_compound_parts(self, word: str) -> Optional[List[str]]:
+    #     """Get compound word parts with strict Finnish compound rules."""
+    #     if not self.language_processor:
+    #         return None
 
-        if "-" in word:
-            parts = [p.strip() for p in word.split("-") if p.strip()]
-            return parts if len(parts) > 1 else None
+    #     if "-" in word:
+    #         parts = [p.strip() for p in word.split("-") if p.strip()]
+    #         return parts if len(parts) > 1 else None
 
-        if self.language_processor.language == "fi" and hasattr(
-            self.language_processor, "voikko"
-        ):
-            # Check if it's just a generic term
-            if word.lower() in self.GENERIC_TERMS.get(
-                self.language_processor.language, set()
-            ):
-                return None
+    #     if self.language_processor.language == "fi" and hasattr(
+    #         self.language_processor, "voikko"
+    #     ):
+    #         # Check if it's just a generic term
+    #         if word.lower() in self.GENERIC_TERMS.get(
+    #             self.language_processor.language, set()
+    #         ):
+    #             return None
 
-            try:
-                analyses = self.language_processor.voikko.analyze(word)
-                if not analyses:
-                    return None
+    #         try:
+    #             analyses = self.language_processor.voikko.analyze(word)
+    #             if not analyses:
+    #                 return None
 
-                for analysis in analyses:
-                    structure = analysis.get("STRUCTURE", "")
-                    wordbases = analysis.get("WORDBASES", "")
+    #             for analysis in analyses:
+    #                 structure = analysis.get("STRUCTURE", "")
+    #                 wordbases = analysis.get("WORDBASES", "")
 
-                    # Skip if not a compound structure
-                    if "=" not in structure[1:]:
-                        continue
+    #                 # Skip if not a compound structure
+    #                 if "=" not in structure[1:]:
+    #                     continue
 
-                    # Skip derivational forms
-                    if "+" not in wordbases or "+(" in wordbases:
-                        continue
+    #                 # Skip derivational forms
+    #                 if "+" not in wordbases or "+(" in wordbases:
+    #                     continue
 
-                    parts = []
-                    for part in wordbases.split("+"):
-                        if "(" in part and not part.startswith("+"):
-                            base = part.split("(")[0].strip()
-                            if len(base) > 2:
-                                parts.append(base)
+    #                 parts = []
+    #                 for part in wordbases.split("+"):
+    #                     if "(" in part and not part.startswith("+"):
+    #                         base = part.split("(")[0].strip()
+    #                         if len(base) > 2:
+    #                             parts.append(base)
 
-                    if len(parts) > 1:
-                        return parts
+    #                 if len(parts) > 1:
+    #                     return parts
 
-                return None
+    #             return None
 
-            except Exception as e:
-                logger.debug(f"Voikko analysis failed for {word}: {e}")
-                return None
+    #         except Exception as e:
+    #             logger.debug(f"Voikko analysis failed for {word}: {e}")
+    #             return None
 
-        elif self.language_processor.language == "en":
-            # English handling remains the same
-            patterns = {
-                "base": ["cloud", "data", "web", "api", "micro", "dev"],
-                "suffix": [
-                    "based",
-                    "driven",
-                    "oriented",
-                    "aware",
-                    "ready",
-                    "ops",
-                ],
-            }
-            word_lower = word.lower()
+    #     elif self.language_processor.language == "en":
+    #         # English handling remains the same
+    #         patterns = {
+    #             "base": ["cloud", "data", "web", "api", "micro", "dev"],
+    #             "suffix": [
+    #                 "based",
+    #                 "driven",
+    #                 "oriented",
+    #                 "aware",
+    #                 "ready",
+    #                 "ops",
+    #             ],
+    #         }
+    #         word_lower = word.lower()
 
-            for base in patterns["base"]:
-                for suffix in patterns["suffix"]:
-                    if (
-                        word_lower == f"{base}{suffix}"
-                        or word_lower == f"{base}-{suffix}"
-                    ):
-                        return [base, suffix]
+    #         for base in patterns["base"]:
+    #             for suffix in patterns["suffix"]:
+    #                 if (
+    #                     word_lower == f"{base}{suffix}"
+    #                     or word_lower == f"{base}-{suffix}"
+    #                 ):
+    #                     return [base, suffix]
 
-            if " " in word:
-                parts = word.split()
-                return parts if len(parts) > 1 else None
+    #         if " " in word:
+    #             parts = word.split()
+    #             return parts if len(parts) > 1 else None
 
-        return None
+    #     return None
 
     def _combine_keywords(
         self, statistical: List[KeywordInfo], llm: List[KeywordInfo]

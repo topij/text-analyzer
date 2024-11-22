@@ -1,6 +1,7 @@
 # src/schemas.py
 
 from typing import Dict, List, Optional, Any
+from src.analyzers.base import AnalyzerOutput
 from pydantic import BaseModel, Field, confloat
 
 
@@ -13,6 +14,14 @@ class KeywordInfo(BaseModel):
     compound_parts: Optional[List[str]] = Field(
         None, description="Parts if compound word"
     )
+
+
+class KeywordOutput(AnalyzerOutput):
+    """Output model for keyword analysis."""
+
+    keywords: List[KeywordInfo]
+    compound_words: List[str] = Field(default_factory=list)  # Add this field
+    domain_keywords: Dict[str, List[str]]
 
 
 class KeywordAnalysisResult(BaseModel):
@@ -105,6 +114,16 @@ class ThemeInfo(BaseModel):
     parent_theme: Optional[str] = Field(
         None, description="Parent theme if hierarchical"
     )
+
+
+class ThemeOutput(BaseModel):
+    """Complete output for theme analysis."""
+
+    themes: List[ThemeInfo] = Field(default_factory=list)
+    theme_hierarchy: Dict[str, List[str]] = Field(default_factory=dict)
+    language: str = Field(default="unknown")
+    success: bool = Field(default=True)
+    error: Optional[str] = None
 
 
 class ThemeAnalysisResult(BaseModel):
