@@ -17,12 +17,38 @@ authors = [
 package-dir = {"" = "src"}
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-python_files = "test_*.py"
-markers = [
-    "asyncio: mark test as async",
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
 ]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-mock",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "**/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::UserWarning",

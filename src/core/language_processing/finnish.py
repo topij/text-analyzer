@@ -781,46 +781,48 @@ class FinnishTextProcessor(BaseTextProcessor):
         return text.strip()
 
 
+# src/core/language_processing/finnish.py
+
+
 class VoikkoHandler:
     """Handler for Voikko initialization with proper cleanup."""
 
     def __init__(self):
+        """Initialize handler."""
         self.voikko = None
-        self._handle = None
+        self.initialized = False  # Add explicit initialization
 
     def initialize(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
         """Initialize Voikko safely."""
         self._cleanup_existing()  # Clean up any existing instance
 
-        platform = sys.platform
-        logger.info(f"Detected platform: {platform}")
-
         try:
             # Try explicit paths first
-            paths = self._get_search_paths(platform, voikko_path)
+            paths = self._get_search_paths(sys.platform, voikko_path)
             for path in paths:
                 if not os.path.exists(path):
                     continue
 
                 try:
-                    if platform == "win32":
+                    if sys.platform == "win32":
                         self._add_dll_directory(path)
 
                     self.voikko = Voikko("fi", str(path))
                     self.voikko.analyze("testi")  # Test
-                    self._handle = True  # Mark as initialized
+                    self.initialized = True  # Mark as successfully initialized
                     logger.info(
                         f"Successfully initialized Voikko with path: {path}"
                     )
                     return self.voikko
                 except Exception as e:
+                    logger.debug(f"Failed to initialize with {path}: {e}")
                     self._cleanup_existing()
                     continue
 
             # Try system libraries as fallback
             self.voikko = Voikko("fi")
             self.voikko.analyze("testi")
-            self._handle = True
+            self.initialized = True  # Mark as successfully initialized
             logger.info(
                 "Successfully initialized Voikko using system libraries"
             )
@@ -833,46 +835,47 @@ class VoikkoHandler:
 
     def _cleanup_existing(self):
         """Clean up existing Voikko instance."""
-        if self.voikko and self._handle:
+        if self.initialized and self.voikko:
             try:
                 self.voikko.terminate()
-            except:
-                pass
+            except Exception as e:
+                logger.debug(f"Error during Voikko cleanup: {e}")
         self.voikko = None
-        self._handle = None
+        self.initialized = False
 
     def _get_search_paths(
         self, platform: str, custom_path: Optional[str] = None
     ) -> List[str]:
         """Get platform-specific Voikko search paths."""
-        base_paths = {
-            "win32": [
+        # Only return platform-specific paths
+        if platform == "win32":
+            base_paths = [
                 r"C:\scripts\Voikko",
                 r"C:\Program Files\Voikko",
                 r"C:\Voikko",
                 "~/Voikko",
-            ],
-            "linux": [
+            ]
+        elif platform == "linux":
+            base_paths = [
                 "/usr/lib/voikko",
                 "/usr/local/lib/voikko",
                 "/usr/share/voikko",
                 "~/voikko",
-            ],
-            "darwin": [
+            ]
+        elif platform == "darwin":
+            base_paths = [
                 "/usr/local/lib/voikko",
                 "/opt/voikko",
                 "~/voikko",
-            ],
-        }
-
-        # Get default paths for platform
-        paths = base_paths.get(platform, base_paths["linux"])
+            ]
+        else:
+            base_paths = []  # Unsupported platform
 
         # Add custom path at the start if provided
         if custom_path:
-            paths.insert(0, os.path.expanduser(custom_path))
+            base_paths.insert(0, os.path.expanduser(custom_path))
 
-        return [os.path.expanduser(p) for p in paths]
+        return [os.path.expanduser(p) for p in base_paths]
 
     def _add_dll_directory(self, path: str) -> None:
         """Add directory to DLL search path on Windows."""
@@ -890,9 +893,10 @@ class VoikkoHandler:
                 logger.error(f"Error adding DLL directory {path}: {str(e)}")
 
     def __del__(self):
-        """Clean up Voikko instance."""
-        if self.initialized and self.voikko:
-            try:
-                self.voikko.terminate()
-            except:
-                pass  # Suppress any cleanup errors
+        """Clean up Voikko instance on deletion."""
+        if hasattr(self, "initialized") and hasattr(self, "voikko"):
+            if self.initialized and self.voikko:
+                try:
+                    self.voikko.terminate()
+                except Exception as e:
+                    logger.debug(f"Error during Voikko cleanup in __del__: {e}")
