@@ -3,10 +3,11 @@
 import pytest
 from typing import Dict, List, Optional, Union
 from pydantic import BaseModel
+
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
+from src.schemas import KeywordAnalysisResult, KeywordInfo
 from src.core.language_processing import create_text_processor
-from src.schemas import KeywordOutput, KeywordInfo
-from tests.helpers.mock_llm import MockLLM
+from tests.helpers.mock_llms import KeywordMockLLM  # Updated import
 
 
 # Test fixtures at module level
@@ -34,11 +35,11 @@ def test_content() -> Dict[str, Dict[str, str]]:
 
 
 class TestKeywordAnalyzer:
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def keyword_analyzer_en(self) -> KeywordAnalyzer:
         """Create English keyword analyzer with mock LLM."""
         return KeywordAnalyzer(
-            llm=MockLLM(),
+            llm=KeywordMockLLM(),  # Updated to use specific mock
             config={
                 "max_keywords": 10,
                 "min_keyword_length": 3,
@@ -48,11 +49,11 @@ class TestKeywordAnalyzer:
             language_processor=create_text_processor(language="en"),
         )
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture
     def keyword_analyzer_fi(self) -> KeywordAnalyzer:
         """Create Finnish keyword analyzer with mock LLM."""
         return KeywordAnalyzer(
-            llm=MockLLM(),
+            llm=KeywordMockLLM(),  # Updated to use specific mock
             config={
                 "max_keywords": 10,
                 "min_keyword_length": 3,
@@ -65,50 +66,66 @@ class TestKeywordAnalyzer:
     def _validate_keyword_output(self, result: Union[Dict, BaseModel]) -> None:
         """Validate keyword analysis output."""
         print("\nDebug: Validating output:", result)
-        # Handle both dict and model cases
+
+        # Check required fields
         if isinstance(result, dict):
-            # Validate required fields exist
             assert "keywords" in result
             assert "success" in result
+
             if not result.get("success", True):
+                assert "error" in result
+                assert (
+                    result["keywords"] == []
+                )  # Empty keywords list for errors
                 return
 
             keywords = result["keywords"]
         else:
-            # Already a model instance
             assert hasattr(result, "keywords")
-            if not getattr(result, "success", True):
+            assert hasattr(result, "success")
+
+            if not result.success:
+                assert result.error is not None
+                assert (
+                    len(result.keywords) == 0
+                )  # Empty keywords list for errors
                 return
 
             keywords = (
                 result.keywords if isinstance(result.keywords, list) else []
             )
 
-        # Validate keywords
-        assert len(keywords) > 0
-        for kw in keywords:
-            if isinstance(kw, dict):
-                assert "keyword" in kw
-                assert "score" in kw
-                assert len(kw["keyword"]) >= 3
-                assert 0 <= kw["score"] <= 1.0
-            else:
-                assert isinstance(kw, KeywordInfo)
-                assert len(kw.keyword) >= 3
-                assert 0 <= kw.score <= 1.0
+        # Only validate keywords for successful results
+        if result.success:
+            assert len(keywords) > 0
+            for kw in keywords:
+                if isinstance(kw, dict):
+                    assert "keyword" in kw
+                    assert "score" in kw
+                    assert len(kw["keyword"]) >= 3
+                    assert 0 <= kw["score"] <= 1.0
+                else:
+                    assert len(kw.keyword) >= 3
+                    assert 0 <= kw.score <= 1.0
 
     @pytest.mark.asyncio
     async def test_error_handling(
         self, keyword_analyzer_en: KeywordAnalyzer
     ) -> None:
         """Test error handling for invalid inputs."""
-        # Empty input should still produce a valid output structure
-        result = await keyword_analyzer_en.analyze("")
-        self._validate_keyword_output(result)
+        # Empty input should show error
+        empty_result = await keyword_analyzer_en.analyze("")
+        assert empty_result.success is False
+        assert empty_result.error is not None
+        assert "Empty input" in empty_result.error
+        assert len(empty_result.keywords) == 0
 
-        # None input should raise TypeError
-        with pytest.raises(TypeError):
-            await keyword_analyzer_en.analyze(None)  # type: ignore
+        # None input should raise ValueError
+        with pytest.raises(ValueError) as exc_info:
+            await keyword_analyzer_en.analyze(None)
+        assert "cannot be None" in str(
+            exc_info.value
+        ) or "Input text cannot be None" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_english_technical(

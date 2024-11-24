@@ -314,83 +314,85 @@ class KeywordAnalyzer(TextAnalyzer):
         )
 
     async def analyze(self, text: str) -> KeywordOutput:
-        """Analyze text to extract keywords."""
-        logger.debug(
-            f"Starting keyword analysis for language: {self.language_processor.language if self.language_processor else 'unknown'}"
-        )
-        logger.debug(f"Text: {text[:100]}...")
-
+        """Analyze text to extract keywords with proper error handling."""
         try:
+            # Validate input first
+            if text is None:
+                raise ValueError("Input text cannot be None")
+
+            # Validate other input conditions
+            if error := self._validate_input(text):
+                return KeywordOutput(
+                    keywords=[],
+                    compound_words=[],
+                    domain_keywords={},
+                    error=error,
+                    success=False,
+                    language=self._get_language(),
+                )
+
             # Get LLM analysis
-            llm_response = await self.chain.ainvoke(text)
+            logger.debug(f"Starting keyword analysis for text: {text[:100]}...")
+            response = await self.chain.ainvoke(text)
 
-            # Process keywords
-            keywords = []
-            compound_words = []
-            domain_keywords = defaultdict(list)
+            # Process response
+            if response is None:
+                return KeywordOutput(
+                    keywords=[],
+                    compound_words=[],
+                    domain_keywords={},
+                    error="No response from LLM",
+                    success=False,
+                    language=self._get_language(),
+                )
 
-            # Process each keyword
-            for kw in llm_response.get("keywords", []):
-                if isinstance(kw, dict) and "keyword" in kw:
-                    # Get base form
-                    keyword = kw["keyword"]
-                    if self.language_processor:
-                        base_form = self.language_processor.get_base_form(
-                            keyword
-                        )
-                        keyword = base_form if base_form else keyword
+            # Extract compound words from keywords with compound parts
+            compound_words = [
+                kw.get("keyword")
+                for kw in response.get("keywords", [])
+                if kw.get("compound_parts")
+            ] or response.get(
+                "compound_words", []
+            )  # Fallback to explicit compound_words if provided
 
-                    keyword_info = KeywordInfo(
-                        keyword=keyword,
-                        score=float(kw.get("score", 0.5)),
-                        domain=kw.get("domain"),
-                        compound_parts=self._get_compound_parts(keyword),
-                    )
-
-                    keywords.append(keyword_info)
-
-                    # Track compound words
-                    if keyword_info.compound_parts:
-                        compound_words.append(keyword_info.keyword)
-                        logger.debug(
-                            f"Added compound word: {keyword_info.keyword}"
-                        )
-
-                    # Group by domain
-                    if keyword_info.domain:
-                        domain_keywords[keyword_info.domain].append(
-                            keyword_info.keyword
-                        )
-                        logger.debug(
-                            f"Added {keyword_info.keyword} to domain {keyword_info.domain}"
-                        )
-
+            # Create output
             return KeywordOutput(
-                keywords=keywords,
-                compound_words=compound_words,
-                domain_keywords=dict(domain_keywords),
-                language=(
-                    self.language_processor.language
-                    if self.language_processor
-                    else "unknown"
-                ),
+                keywords=response.get("keywords", []),
+                compound_words=compound_words,  # Use extracted compound words
+                domain_keywords=response.get("domain_keywords", {}),
+                language=response.get("language", self._get_language()),
                 success=True,
             )
 
+        except ValueError as e:
+            # Re-raise ValueError for input validation
+            raise
         except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            logger.error(f"Analysis failed: {e}", exc_info=True)
             return KeywordOutput(
                 keywords=[],
                 compound_words=[],
                 domain_keywords={},
-                language=(
-                    self.language_processor.language
-                    if self.language_processor
-                    else "unknown"
-                ),
-                success=False,
                 error=str(e),
+                success=False,
+                language=self._get_language(),
             )
+
+    def _validate_input(self, text: str) -> Optional[str]:
+        """Validate input text."""
+        if not isinstance(text, str):
+            raise ValueError(
+                f"Invalid input type: expected str, got {type(text)}"
+            )
+
+        text = text.strip()
+        if not text:
+            return "Empty input text"
+
+        if len(text) < self.config.get("min_keyword_length", 3):
+            return "Input text too short for meaningful analysis"
+
+        return None
 
     def _get_compound_parts(self, word: str) -> Optional[List[str]]:
         """Get compound parts safely."""

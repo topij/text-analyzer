@@ -306,16 +306,13 @@ class CategoryAnalyzer(TextAnalyzer):
         )
 
     def _process_llm_response(self, response: Dict) -> List[CategoryMatch]:
-        """Process LLM response into CategoryMatch objects."""
+        """Process LLM response into CategoryMatch objects with debug output."""
+        print(f"\nProcessing response: {response}")
         categories = []
 
         for cat in response.get("categories", []):
             try:
-                # Map category field to name
-                name = cat.pop("category", None)
-                if not name:
-                    continue
-
+                print(f"\nProcessing category: {cat}")
                 # Convert evidence list
                 evidence_list = []
                 raw_evidence = cat.pop("evidence", [])
@@ -331,24 +328,28 @@ class CategoryAnalyzer(TextAnalyzer):
                         evidence_list.append(Evidence(text=ev, relevance=0.8))
 
                 # Create CategoryMatch with mapped fields
-                categories.append(
-                    CategoryMatch(
-                        name=name,
-                        confidence=float(cat.get("confidence", 0.0)),
-                        description=cat.get("description", ""),
-                        evidence=evidence_list,
-                        themes=cat.get("themes", []),
-                    )
+                category = CategoryMatch(
+                    name=cat.get("name", ""),
+                    confidence=float(cat.get("confidence", 0.0)),
+                    description=cat.get("description", ""),
+                    evidence=evidence_list,
+                    themes=cat.get("themes", []),
                 )
+                print(f"Created category: {category}")
+                categories.append(category)
 
             except Exception as e:
-                logger.error(f"Error processing category: {str(e)}")
+                print(f"Error processing category: {str(e)}")
                 continue
 
+        print(f"\nFinal categories: {categories}")
         return categories
 
     async def analyze(self, text: str) -> CategoryOutput:
         """Analyze text and categorize it."""
+        if text is None:
+            raise ValueError("Input text cannot be None")
+
         if not text:
             return CategoryOutput(
                 error="Empty input text",

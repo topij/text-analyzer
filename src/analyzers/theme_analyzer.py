@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 
+from src.core.llm.factory import create_llm
+
 from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection
 from src.core.language_processing.base import BaseTextProcessor
 from src.schemas import ThemeInfo
@@ -103,10 +105,9 @@ class ThemeAnalyzer(TextAnalyzer):
         config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize theme analyzer with language support."""
         super().__init__(llm, config)
         self.language_processor = language_processor
-        self.patterns = self._initialize_patterns()
+        self.llm = llm or create_llm()
         self.chain = self._create_chain()
 
     def _initialize_patterns(self) -> Dict[str, List[ThemePattern]]:
@@ -232,24 +233,81 @@ class ThemeAnalyzer(TextAnalyzer):
             logger.error(f"Error getting key terms: {e}")
             return ""
 
-    async def analyze(self, text: str) -> ThemeOutput:
-        """Analyze text to identify themes."""
-        if error := self._validate_input(text):
-            return ThemeOutput(
-                error=error, success=False, language=self._get_language()
+    def _validate_input(self, text: Any) -> Optional[str]:
+        """Validate input text with proper type checking."""
+        if text is None:
+            raise ValueError("Input text cannot be None")
+
+        if not isinstance(text, str):
+            raise TypeError(
+                f"Invalid input type: expected str, got {type(text)}"
             )
 
+        text = text.strip()
+        if not text:
+            return "Empty input text"
+
+        if len(text) < self.config.get("min_text_length", 10):
+            return "Input text too short for meaningful analysis"
+
+        return None
+
+    async def analyze(self, text: Any) -> ThemeOutput:
+        """Analyze text to identify themes with robust error handling."""
         try:
+            # Validate input - this will raise TypeError or ValueError if needed
+            if error := self._validate_input(text):
+                return ThemeOutput(
+                    error=error, success=False, language=self._get_language()
+                )
+
             # Get LLM analysis
-            results = await self.chain.ainvoke(text)
+            response = await self.chain.ainvoke(text)
+            print(f"\nRaw LLM response: {response}")  # Debug print
 
-            # Process themes
+            # Process response
+            if response is None:
+                return ThemeOutput(
+                    error="No response from LLM",
+                    success=False,
+                    language=self._get_language(),
+                )
+
+            # Parse JSON if needed
+            if isinstance(response, str):
+                data = json.loads(response)
+            elif hasattr(response, "content"):
+                data = json.loads(response.content)
+            else:
+                data = response
+
+            if not data:
+                return ThemeOutput(
+                    error="Empty response from LLM",
+                    success=False,
+                    language=self._get_language(),
+                )
+
+            print(f"\nProcessed LLM response: {data}")
+            return self._process_llm_response(data)
+
+        except (TypeError, ValueError) as e:
+            # Re-raise these specific exceptions
+            raise
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}", exc_info=True)
+            return ThemeOutput(
+                error=str(e), success=False, language=self._get_language()
+            )
+
+    def _process_llm_response(self, response: Dict[str, Any]) -> ThemeOutput:
+        """Process LLM response into ThemeOutput with enhanced error handling."""
+        try:
+            if not response or not isinstance(response, dict):
+                raise ValueError(f"Invalid response format: {response}")
+
             themes = []
-            evidence = {}
-            hierarchy = {}
-
-            for theme_data in results.get("themes", []):
-                # Create theme
+            for theme_data in response.get("themes", []):
                 theme = ThemeInfo(
                     name=theme_data["name"],
                     description=theme_data["description"],
@@ -257,40 +315,26 @@ class ThemeAnalyzer(TextAnalyzer):
                     keywords=theme_data.get("keywords", []),
                     parent_theme=theme_data.get("parent_theme"),
                 )
-
-                # Apply domain-specific adjustments
-                if domain := theme_data.get("domain"):
-                    theme.confidence = self._adjust_confidence(
-                        theme.confidence, domain, theme.keywords
-                    )
-
                 themes.append(theme)
 
-                # Store evidence
-                if theme.name in results.get("evidence", {}):
-                    evidence[theme.name] = [
-                        ThemeEvidence(**e)
-                        for e in results["evidence"][theme.name]
-                    ]
-
-                # Build hierarchy
-                if theme.parent_theme:
-                    hierarchy.setdefault(theme.parent_theme, []).append(
-                        theme.name
-                    )
+            # Get hierarchy
+            hierarchy = response.get("theme_hierarchy", {})
 
             return ThemeOutput(
                 themes=themes,
                 theme_hierarchy=hierarchy,
-                evidence=evidence,
-                language=self._get_language(),
+                language=response.get("language", self._get_language()),
                 success=True,
             )
 
         except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            logger.error(f"Error processing themes: {e}")
             return ThemeOutput(
-                error=str(e), success=False, language=self._get_language()
+                themes=[],
+                theme_hierarchy={},
+                language=self._get_language(),
+                error=str(e),
+                success=False,
             )
 
     def _adjust_confidence(
