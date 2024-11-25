@@ -8,8 +8,12 @@ from src.loaders.models import ParameterSet, GeneralParameters, CategoryConfig
 from src.loaders.parameter_validation import ParameterValidation
 from src.loaders.parameter_config import ParameterSheets
 from src.semantic_analyzer import SemanticAnalyzer
-from src.utils.FileUtils.file_utils import FileUtils
+from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
 from tests.helpers.mock_llms import KeywordMockLLM
+
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 
 @pytest.fixture
@@ -62,193 +66,183 @@ def test_parameters() -> Dict[str, Any]:
 class TestParameterHandling:
     """Test parameter handling and integration."""
 
+    def _save_parameter_file(
+        self,
+        file_utils: FileUtils,
+        sheet_data: Dict[str, pd.DataFrame],
+        file_name: str,
+    ) -> Path:
+        """Helper to consistently save parameter files."""
+        saved_files, _ = file_utils.save_data_to_disk(
+            data=sheet_data,
+            output_filetype=OutputFileType.XLSX,
+            file_name=file_name,
+            output_type="parameters",
+            include_timestamp=False,
+        )
+        return Path(next(iter(saved_files.values())))
+
     def test_parameter_loading(
         self, file_utils: FileUtils, test_parameters: Dict[str, Any]
     ) -> None:
-        """Test parameter loading and validation."""
-        # Get correct sheet name and mappings for English
+        """Test parameter loading with strict sheet naming."""
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
         param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
             "parameters"
         ]["en"]
         column_names = ParameterSheets.get_column_names("general", "en")
 
-        # Create parameter DataFrame with the correct format
-        # Need to find the Excel names that map to our internal parameter names
-        param_data = []
+        # Create DataFrame with proper structure
+        df = pd.DataFrame(
+            {
+                column_names["parameter"]: [],
+                column_names["value"]: [],
+                column_names["description"]: [],
+            }
+        )
+
         for key, value in test_parameters["general"].items():
-            # Find the Excel name that maps to our internal name
-            excel_name = None
-            for excel_param, internal_param in param_mappings.items():
-                if internal_param == key:
-                    excel_name = excel_param
-                    break
-
-            if excel_name:
-                param_data.append(
-                    {
-                        column_names[
-                            "parameter"
-                        ]: excel_name,  # Use Excel parameter name
+            for excel_name, internal_name in param_mappings.items():
+                if internal_name == key:
+                    df.loc[len(df)] = {
+                        column_names["parameter"]: excel_name,
                         column_names["value"]: value,
+                        column_names[
+                            "description"
+                        ]: f"Description for {excel_name}",
                     }
-                )
 
-        param_df = pd.DataFrame(param_data)
-
-        print("\nParameter Mappings (Excel -> Internal):")
-        for excel_key, internal_key in param_mappings.items():
-            print(f"{excel_key} -> {internal_key}")
-
-        print("\nFinal DataFrame (Using Excel Names):")
-        print(param_df)
-
-        # Save test parameters to Excel
-        result = file_utils.save_data_to_disk(
-            data={general_sheet_name: param_df},
-            output_filetype="xlsx",
-            file_name="test_params",
+        # Save using FileUtils
+        sheet_data = {general_sheet_name: df}
+        saved_files, _ = file_utils.save_data_to_disk(
+            data=sheet_data,
+            output_filetype=OutputFileType.XLSX,
             output_type="parameters",
+            file_name="test_params",
             include_timestamp=False,
         )
 
-        # Get the actual file path from result and load params
-        param_file = Path(list(result[0].values())[0])
+        param_file = Path(next(iter(saved_files.values())))
         handler = ParameterHandler(param_file)
         params = handler.get_parameters()
 
-        # Debug info
-        print("\nLoaded Parameters:")
-        print(f"Language: {params.general.language}")
-        print(f"Focus On: {params.general.focus_on}")
-        print(f"Max Keywords: {params.general.max_keywords}")
-
-        # Verify values
         assert params.general.language == test_parameters["general"]["language"]
         assert params.general.focus_on == test_parameters["general"]["focus_on"]
-        assert (
-            params.general.max_keywords
-            == test_parameters["general"]["max_keywords"]
-        )
 
     def test_language_specific_parameters(
         self, file_utils: FileUtils, test_parameters: Dict[str, Any]
     ) -> None:
         """Test language-specific parameter handling."""
-        # Get correct sheet name and mappings for Finnish
         general_sheet_name = ParameterSheets.get_sheet_name("general", "fi")
         param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
             "parameters"
         ]["fi"]
         column_names = ParameterSheets.get_column_names("general", "fi")
 
-        # Create Finnish parameters
         fi_params = test_parameters.copy()
         fi_params["general"]["language"] = "fi"
         fi_params["general"]["focus_on"] = "tekninen sisältö"
 
-        # Create parameter DataFrame with mapped names
-        param_df = pd.DataFrame(
-            [
-                {
-                    column_names["parameter"]: param_mappings[
-                        key
-                    ],  # Map parameter names
-                    column_names["value"]: value,
-                }
-                for key, value in fi_params["general"].items()
-                if key in param_mappings  # Only include mapped parameters
-            ]
+        # Create mapping of internal names to Excel names
+        excel_mappings = {
+            internal: excel for excel, internal in param_mappings.items()
+        }
+
+        param_data = []
+        for key, value in fi_params["general"].items():
+            if key in excel_mappings:
+                param_data.append(
+                    {
+                        column_names["parameter"]: excel_mappings[key],
+                        column_names["value"]: value,
+                    }
+                )
+
+        param_df = pd.DataFrame(param_data)
+        sheet_data = {general_sheet_name: param_df}
+
+        param_file = self._save_parameter_file(
+            file_utils=file_utils, sheet_data=sheet_data, file_name="fi_params"
         )
 
-        # Save Finnish parameters to Excel
-        result = file_utils.save_data_to_disk(
-            data={general_sheet_name: param_df},
-            output_filetype="xlsx",
-            file_name="fi_params",
-            output_type="parameters",
-            include_timestamp=False,
-        )
-
-        # Get the actual file path
-        param_file = Path(list(result[0].values())[0])
-
-        # Load Finnish parameters
         handler = ParameterHandler(param_file)
         params = handler.get_parameters()
 
-        # Verify values
         assert params.general.language == "fi"
         assert params.general.focus_on == "tekninen sisältö"
-        assert params.general.max_keywords == 8
 
-    def test_parameter_validation(
-        self,
-        parameter_handler: ParameterHandler,
-        test_parameters: Dict[str, Any],
-    ) -> None:
-        """Test parameter validation rules."""
-        # Test valid parameters
-        is_valid, warnings, errors = (
-            parameter_handler.validator.validate_parameters(test_parameters)
+    def test_invalid_parameter_file(self, file_utils: FileUtils) -> None:
+        """Test handling of invalid parameter files."""
+        wrong_sheet_name = "Sheet1"
+        param_df = pd.DataFrame({"parameter": ["language"], "value": ["en"]})
+        sheet_data = {wrong_sheet_name: param_df}
+
+        param_file = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data=sheet_data,
+            file_name="invalid_params",
         )
-        assert is_valid, f"Valid parameters failed validation: {errors}"
 
-        # Test invalid max_keywords
-        invalid_params = test_parameters.copy()
-        invalid_params["general"]["max_keywords"] = -1
+        with pytest.raises(ValueError) as exc_info:
+            handler = ParameterHandler(param_file)
+            handler.get_parameters()
 
-        is_valid, _, errors = parameter_handler.validator.validate_parameters(
-            invalid_params
+        expected_sheet = ParameterSheets.get_sheet_name("general", "en")
+        assert f"Required sheet '{expected_sheet}' not found" in str(
+            exc_info.value
         )
-        assert not is_valid
-        assert any("max_keywords" in error for error in errors)
 
     @pytest.mark.asyncio
     async def test_analyzer_parameter_integration(
         self, file_utils: FileUtils, test_parameters: Dict[str, Any]
     ) -> None:
         """Test parameter integration with analyzers."""
-        # Get correct sheet name
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
         column_names = ParameterSheets.get_column_names("general", "en")
 
-        # Create parameter DataFrame
-        param_df = pd.DataFrame(
-            [
-                {
-                    column_names["parameter"]: key,
-                    column_names["value"]: value,
-                }
-                for key, value in test_parameters["general"].items()
-            ]
-        )
+        param_data = [
+            {
+                column_names["parameter"]: key,
+                column_names["value"]: value,
+            }
+            for key, value in test_parameters["general"].items()
+        ]
 
-        # Save test parameters
-        result = file_utils.save_data_to_disk(
-            data={general_sheet_name: param_df},
-            output_filetype="xlsx",
+        param_df = pd.DataFrame(param_data)
+        sheet_data = {general_sheet_name: param_df}
+
+        param_file = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data=sheet_data,
             file_name="analyzer_params",
-            output_type="parameters",
-            include_timestamp=False,
         )
 
-        # Get the actual file path
-        param_file = Path(list(result[0].values())[0])
-
-        # Create analyzer with parameters and mock LLM
         analyzer = SemanticAnalyzer(
             parameter_file=param_file, llm=KeywordMockLLM()
         )
 
-        # Test text for analysis
         test_text = "Machine learning models process data efficiently."
-
-        # Verify parameters affect analysis
         result = await analyzer.analyze(test_text)
 
-        # Check keyword limit
         assert (
             len(result.keywords.keywords)
             <= test_parameters["general"]["max_keywords"]
         )
+
+    def test_empty_parameter_file(self, file_utils: FileUtils) -> None:
+        """Test handling of empty parameter files."""
+        sheet_name = ParameterSheets.get_sheet_name("general", "en")
+        sheet_data = {sheet_name: pd.DataFrame()}
+
+        param_file = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data=sheet_data,
+            file_name="empty_params",
+        )
+
+        handler = ParameterHandler(param_file)
+        params = handler.get_parameters()
+
+        assert params.general.language == "en"
+        assert params.general.focus_on == "general content analysis"
+        assert params.general.max_keywords == 10

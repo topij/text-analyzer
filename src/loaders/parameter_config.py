@@ -194,19 +194,36 @@ class ParameterSheets:
 
     @classmethod
     def get_sheet_name(cls, internal_name: str, language: str = "en") -> str:
-        """Get localized sheet name."""
+        """Get the official sheet name for a given language."""
         lang = language.lower()[:2]
         if lang not in ["en", "fi"]:
             lang = "en"
-        return cls.SHEET_MAPPING.get(internal_name, {}).get(
-            lang, cls.SHEET_MAPPING[internal_name]["en"]
-        )
+
+        try:
+            sheet_name = cls.SHEET_MAPPING[internal_name][lang]
+            logger.debug(
+                f"Sheet name for {internal_name} ({lang}): {sheet_name}"
+            )
+            return sheet_name
+        except KeyError:
+            logger.warning(
+                f"Sheet name not found for {internal_name}, using English"
+            )
+            return cls.SHEET_MAPPING[internal_name]["en"]
+
+    @classmethod
+    def validate_sheet_name(
+        cls, sheet_name: str, internal_name: str, language: str = "en"
+    ) -> bool:
+        """Validate that a sheet name exactly matches the expected name."""
+        expected_name = cls.get_sheet_name(internal_name, language)
+        return sheet_name == expected_name  # Strict equality check
 
     @classmethod
     def get_column_names(
         cls, sheet_type: str, language: str = "en"
     ) -> Dict[str, str]:
-        """Get localized column names."""
+        """Get column names for a specific sheet type and language."""
         lang = language.lower()[:2]
         if lang not in ["en", "fi"]:
             lang = "en"
@@ -215,18 +232,26 @@ class ParameterSheets:
             return cls.PARAMETER_MAPPING[sheet_type]["columns"][lang]
         except KeyError:
             logger.warning(
-                f"Falling back to English column names for {sheet_type}"
+                f"Column names not found for {sheet_type}, using English"
             )
             return cls.PARAMETER_MAPPING[sheet_type]["columns"]["en"]
 
     @classmethod
-    def get_internal_name(
-        cls, sheet_type: str, param_name: str, language: str = "en"
-    ) -> str:
-        """Map parameter name to internal name."""
+    def get_parameter_mapping(
+        cls, sheet_type: str, language: str = "en"
+    ) -> Dict[str, str]:
+        """Get parameter mapping for a specific sheet type and language."""
         lang = language.lower()[:2]
         if lang not in ["en", "fi"]:
             lang = "en"
+
+        try:
+            return cls.PARAMETER_MAPPING[sheet_type]["parameters"][lang]
+        except KeyError:
+            logger.warning(
+                f"Parameter mapping not found for {sheet_type}, using English"
+            )
+            return cls.PARAMETER_MAPPING[sheet_type]["parameters"]["en"]
 
 
 class ParameterConfigurations:

@@ -15,19 +15,41 @@ class DomainContext(BaseModel):
     stopwords: List[str] = Field(default_factory=list)
 
 
-class GeneralParameters(BaseModel):
-    """Base parameters shared across analysis types."""
+# class GeneralParameters(BaseModel):
+#     """Base parameters shared across analysis types."""
 
-    max_keywords: int = Field(default=10, le=20, ge=1)
-    min_keyword_length: int = Field(default=3, le=10, ge=2)
+#     max_keywords: int = Field(default=10, le=20, ge=1)
+#     min_keyword_length: int = Field(default=3, le=10, ge=2)
+#     language: str = Field(default="en")
+#     focus_on: Optional[str] = None
+#     include_compounds: bool = Field(default=True)
+#     max_themes: int = Field(default=3, le=10, ge=1)
+#     min_confidence: float = Field(default=0.3, le=1.0, ge=0.0)
+#     column_name_to_analyze: str = Field(default="text")
+
+#     model_config = ConfigDict(validate_assignment=True, extra="allow")
+
+
+class GeneralParameters(BaseModel):
+    """General extraction parameters."""
+
+    max_keywords: int = Field(default=10, ge=1, le=20)
+    min_keyword_length: int = Field(default=3, ge=2)
     language: str = Field(default="en")
-    focus_on: Optional[str] = None
+    focus_on: Optional[str] = Field(
+        default=None
+    )  # Changed to explicitly handle optionality
     include_compounds: bool = Field(default=True)
-    max_themes: int = Field(default=3, le=10, ge=1)
-    min_confidence: float = Field(default=0.3, le=1.0, ge=0.0)
+    max_themes: int = Field(default=3, ge=1)
+    min_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
     column_name_to_analyze: str = Field(default="text")
 
-    model_config = ConfigDict(validate_assignment=True, extra="allow")
+    model_config = ConfigDict(
+        validate_assignment=True,
+        extra="allow",
+        str_strip_whitespace=True,  # Strip whitespace from strings
+        str_to_lower=False,  # Preserve string case
+    )
 
     @field_validator("language")
     @classmethod
@@ -35,6 +57,14 @@ class GeneralParameters(BaseModel):
         if v not in ["en", "fi"]:
             raise ValueError("Language must be 'en' or 'fi'")
         return v.lower()
+
+    @field_validator("focus_on")
+    def validate_focus_on(cls, v: Optional[str]) -> Optional[str]:
+        """Validate and clean focus_on value."""
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v if v else None
 
 
 class CategoryConfig(BaseModel):

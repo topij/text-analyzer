@@ -58,10 +58,69 @@ class ParameterHandler:
         return ParameterConfigurations.detect_language(str(self.file_path))
 
     def get_parameters(self) -> ParameterSet:
-        """Get loaded and validated parameters."""
+        """Get loaded and validated parameters with debug logging."""
         if not hasattr(self, "parameters"):
             self._load_and_validate_parameters()
+
+        logger.debug(f"Loaded parameters: {self.parameters.model_dump()}")
         return self.parameters
+
+    def _create_parameter_set(self, config: Dict[str, Any]) -> ParameterSet:
+        """Create ParameterSet with validation."""
+        try:
+            # Ensure general parameters
+            if "general" not in config:
+                config["general"] = {}
+
+            # Ensure language is set
+            config["general"]["language"] = self.language
+
+            # Create parameter set
+            params = ParameterSet(**config)
+
+            # Validate parameters
+            is_valid, warnings, errors = self.validate_parameters(params)
+            if not is_valid:
+                logger.error(f"Parameter validation failed: {errors}")
+
+            logger.debug(f"Created parameter set: {params.model_dump()}")
+            return params
+
+        except Exception as e:
+            logger.error(f"Error creating parameter set: {e}")
+            # Return minimal valid parameter set
+            return ParameterSet(general={"language": self.language})
+
+    def _validate_mandatory_fields(
+        self, df: pd.DataFrame, column_names: Dict[str, str]
+    ) -> None:
+        """Validate presence of mandatory parameters."""
+        param_col = column_names["parameter"]
+        value_col = column_names["value"]
+
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+            "parameters"
+        ][self.language]
+        mandatory_fields = {
+            "max_keywords",
+            "focus_on",
+            "column_name_to_analyze",
+        }
+
+        # Map internal names to Excel names
+        excel_names = {
+            excel_name
+            for excel_name, internal_name in param_mappings.items()
+            if internal_name in mandatory_fields
+        }
+
+        found_params = set(df[param_col].values)
+        missing = excel_names - found_params
+
+        if missing:
+            raise ValueError(
+                f"Missing mandatory parameters: {', '.join(missing)}"
+            )
 
     def _load_and_validate_parameters(self) -> None:
         """Load and validate parameters from file."""
@@ -70,120 +129,89 @@ class ParameterHandler:
                 logger.debug("No parameter file specified, using defaults")
                 default_config = self.config.DEFAULT_CONFIG.copy()
                 default_config["general"]["language"] = self.language
+                default_config["general"][
+                    "focus_on"
+                ] = "general content analysis"
                 self.parameters = ParameterSet(**default_config)
                 return
 
+            expected_sheet = ParameterSheets.get_sheet_name(
+                "general", self.language
+            )
             sheets = self.file_utils.load_excel_sheets(self.file_path)
-            logger.debug(f"Found sheets: {list(sheets.keys())}")
 
-            # Create config with properly mapped parameters
+            if expected_sheet not in sheets:
+                raise ValueError(
+                    f"Invalid parameter file: Required sheet '{expected_sheet}' not found. "
+                    f"Available sheets: {', '.join(sheets.keys())}"
+                )
+
+            df = sheets[expected_sheet]
+            if df.empty:
+                logger.debug("Empty parameter sheet, using defaults")
+                default_config = self.config.DEFAULT_CONFIG.copy()
+                default_config["general"]["language"] = self.language
+                default_config["general"][
+                    "focus_on"
+                ] = "general content analysis"
+                self.parameters = ParameterSet(**default_config)
+                return
+
+            column_names = ParameterSheets.get_column_names(
+                "general", self.language
+            )
+            self._validate_mandatory_fields(df, column_names)
+
+            general_params = self._parse_general_parameters(df)
             config = {
-                "general": self._parse_general_parameters(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name("general", self.language)
-                    )
-                ),
-                "categories": self._parse_categories(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name(
-                            "categories", self.language
-                        )
-                    )
-                ),
-                "predefined_keywords": self._parse_keywords(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name(
-                            "keywords", self.language
-                        )
-                    )
-                ),
-                "excluded_keywords": self._parse_excluded_keywords(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name(
-                            "excluded", self.language
-                        )
-                    )
-                ),
-                "analysis_settings": self._parse_settings(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name(
-                            "settings", self.language
-                        )
-                    )
-                ),
-                "domain_context": self._parse_domains(
-                    sheets.get(
-                        ParameterSheets.get_sheet_name("domains", self.language)
-                    )
-                ),
+                "general": general_params,
+                "categories": {},
+                "predefined_keywords": {},
+                "excluded_keywords": set(),
+                "analysis_settings": self.config.DEFAULT_CONFIG[
+                    "analysis_settings"
+                ],
+                "domain_context": {},
             }
 
-            # Ensure general section exists with language
-            if "general" not in config:
-                config["general"] = {}
-            config["general"]["language"] = self.language
+            # Don't override explicit values with defaults
+            if "language" not in general_params:
+                general_params["language"] = self.language
+            if "min_keyword_length" not in general_params:
+                general_params["min_keyword_length"] = 3
+            if "include_compounds" not in general_params:
+                general_params["include_compounds"] = True
 
-            # Create and validate ParameterSet
             self.parameters = ParameterSet(**config)
 
         except Exception as e:
             logger.error(f"Error loading parameters: {e}")
-            logger.debug("Using default configuration")
-            default_config = self.config.DEFAULT_CONFIG.copy()
-            default_config["general"]["language"] = self.language
-            self.parameters = ParameterSet(**default_config)
+            raise ValueError(str(e))
 
-    def _parse_general_parameters(
-        self, df: Optional[pd.DataFrame]
-    ) -> Dict[str, Any]:
-        """Parse general parameters using existing mappings from ParameterSheets."""
+    def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Parse general parameters with defaults for non-mandatory fields."""
         params = {}
+        column_names = ParameterSheets.get_column_names(
+            "general", self.language
+        )
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+            "parameters"
+        ][self.language]
 
-        if df is None or df.empty:
-            return params
+        param_col = column_names["parameter"]
+        value_col = column_names["value"]
 
-        try:
-            # Get column names and parameter mappings for the current language
-            column_names = ParameterSheets.get_column_names(
-                "general", self.language
-            )
-            param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-                "parameters"
-            ][self.language]
+        excel_mappings = {
+            excel: internal for excel, internal in param_mappings.items()
+        }
 
-            param_col = column_names["parameter"]
-            value_col = column_names["value"]
+        for _, row in df.iterrows():
+            excel_name = row[param_col]
+            if excel_name in excel_mappings:
+                internal_name = excel_mappings[excel_name]
+                params[internal_name] = self._convert_value(row[value_col])
 
-            if param_col in df.columns and value_col in df.columns:
-                for _, row in df.iterrows():
-                    if pd.notna(row[param_col]) and pd.notna(row[value_col]):
-                        param_name = str(row[param_col]).strip()
-
-                        # Map parameter name to internal name using existing mappings
-                        internal_name = param_mappings.get(param_name)
-                        if internal_name is None:
-                            logger.warning(
-                                f"Unknown parameter name: {param_name}"
-                            )
-                            continue
-
-                        value = self._convert_value(row[value_col])
-                        params[internal_name] = value
-                        logger.debug(
-                            f"Mapped '{param_name}' to '{internal_name}': {value}"
-                        )
-
-            # Ensure language is set
-            if "language" not in params:
-                params["language"] = self.language
-
-            return params
-
-        except Exception as e:
-            logger.error(f"Error parsing general parameters: {e}")
-            return {
-                "language": self.language
-            }  # At minimum, preserve language setting
+        return params
 
     def _parse_keywords(
         self, df: Optional[pd.DataFrame]
@@ -440,19 +468,29 @@ class ParameterHandler:
 
         return settings
 
-    @staticmethod
-    def _convert_value(value: Any) -> Any:
-        """Convert parameter values to appropriate types."""
+    # @staticmethod
+    def _convert_value(self, value: Any) -> Any:
+        """Enhanced value conversion with type preservation."""
+        if pd.isna(value):
+            return None
+
         if isinstance(value, str):
+            # Handle boolean strings
             value_lower = value.lower()
             if value_lower == "true":
                 return True
             if value_lower == "false":
                 return False
+
+            # Try number conversion
             try:
-                return float(value) if "." in value else int(value)
+                if "." in value:
+                    return float(value)
+                return int(value)
             except ValueError:
+                # Keep string values as-is
                 return value
+
         return value
 
     @staticmethod

@@ -1,9 +1,0 @@
-files:
-  parameters:
-  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\parameters\parameters_en.xlsx
-  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\parameters\parameters_fi.xlsx
-  content:
-  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\raw\test_content_en.xlsx
-  - C:\Users\tja\OneDrive - Rastor-instituutti ry\Tiedostot\Rastor-instituutti\kehittäminen\analytiikka\repos\semantic-text-analyzer\data\raw\test_content_fi.xlsx
-  metadata: []
-generation_time: '2024-11-21T17:48:26.063438'
