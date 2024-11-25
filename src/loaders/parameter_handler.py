@@ -42,6 +42,7 @@ class ParameterHandler:
         """Initialize parameter handler."""
         self.file_utils = file_utils or FileUtils()
         self.config = ParameterConfigurations()  # Initialize config
+        self.validator = ParameterValidation()  # Initialize validator
         self.file_path = (
             get_parameter_file_path(file_path, self.file_utils)
             if file_path

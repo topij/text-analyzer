@@ -1,0 +1,30 @@
+general:
+  max_keywords: 8
+  min_keyword_length: 3
+  language: en
+  focus_on: technical content
+  include_compounds: true
+  max_themes: 3
+  min_confidence: 0.3
+categories:
+  technical:
+    description: Technical content
+    keywords:
+    - software
+    - api
+    - data
+    threshold: 0.6
+  business:
+    description: Business content
+    keywords:
+    - revenue
+    - growth
+    - market
+    threshold: 0.6
+analysis_settings:
+  theme_analysis:
+    enabled: true
+    min_confidence: 0.5
+  weights:
+    statistical: 0.4
+    llm: 0.6
