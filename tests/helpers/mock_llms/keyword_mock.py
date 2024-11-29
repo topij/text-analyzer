@@ -3,6 +3,9 @@
 from typing import List
 from .base import BaseMockLLM, BaseMessage
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class KeywordMockLLM(BaseMockLLM):
@@ -47,7 +50,6 @@ class KeywordMockLLM(BaseMockLLM):
                             "keyword": "neural network",
                             "score": 0.85,
                             "domain": "technical",
-                            "compound_parts": ["neural", "network"],
                         },
                         {
                             "keyword": "data",
@@ -82,20 +84,10 @@ class KeywordMockLLM(BaseMockLLM):
                             "score": 0.85,
                             "domain": "business",
                         },
-                        {
-                            "keyword": "profit margins",
-                            "score": 0.8,
-                            "domain": "business",
-                            "compound_parts": ["profit", "margins"],
-                        },
                     ],
-                    "compound_words": ["revenue growth", "profit margins"],
+                    "compound_words": ["revenue growth"],
                     "domain_keywords": {
-                        "business": [
-                            "revenue growth",
-                            "market",
-                            "profit margins",
-                        ]
+                        "business": ["revenue growth", "market"]
                     },
                     "success": True,
                     "language": "en",
@@ -118,12 +110,11 @@ class KeywordMockLLM(BaseMockLLM):
                             "keyword": "neuroverkko",
                             "score": 0.85,
                             "domain": "technical",
-                            "compound_parts": ["neuro", "verkko"],
                         },
                     ],
                     "compound_words": ["koneoppimismalli", "neuroverkko"],
                     "domain_keywords": {
-                        "technical": ["koneoppimismalli", "neuroverkko", "data"]
+                        "technical": ["koneoppimismalli", "neuroverkko"]
                     },
                     "success": True,
                     "language": "fi",
@@ -140,25 +131,14 @@ class KeywordMockLLM(BaseMockLLM):
                             "compound_parts": ["liikevaihto", "kasvu"],
                         },
                         {
-                            "keyword": "markkinalaajennusstrategia",
+                            "keyword": "markkinaosuus",
                             "score": 0.85,
                             "domain": "business",
-                            "compound_parts": [
-                                "markkina",
-                                "laajennus",
-                                "strategia",
-                            ],
                         },
                     ],
-                    "compound_words": [
-                        "liikevaihdon kasvu",
-                        "markkinalaajennusstrategia",
-                    ],
+                    "compound_words": ["liikevaihdon kasvu"],
                     "domain_keywords": {
-                        "business": [
-                            "liikevaihdon kasvu",
-                            "markkinalaajennusstrategia",
-                        ]
+                        "business": ["liikevaihdon kasvu", "markkinaosuus"]
                     },
                     "success": True,
                     "language": "fi",

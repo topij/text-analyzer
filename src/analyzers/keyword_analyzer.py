@@ -220,8 +220,31 @@ class KeywordAnalyzer(TextAnalyzer):
 
         return weights
 
+    # def _initialize_clustering_config(self, config: Optional[Dict]) -> Dict:
+    #     """Initialize clustering configuration."""
+    #     return config.get(
+    #         "clustering",
+    #         {
+    #             "similarity_threshold": 0.85,
+    #             "max_cluster_size": 3,
+    #             "boost_factor": 1.2,
+    #             "domain_bonus": 0.1,
+    #             "min_cluster_size": 2,
+    #             "max_relation_distance": 2,
+    #         },
+    #     )
+
     def _initialize_clustering_config(self, config: Optional[Dict]) -> Dict:
         """Initialize clustering configuration."""
+        if not config:  # Handle None or empty config
+            return {
+                "similarity_threshold": 0.85,
+                "max_cluster_size": 3,
+                "boost_factor": 1.2,
+                "domain_bonus": 0.1,
+                "min_cluster_size": 2,
+                "max_relation_distance": 2,
+            }
         return config.get(
             "clustering",
             {
@@ -604,10 +627,16 @@ class KeywordAnalyzer(TextAnalyzer):
 
     def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
         """Process LLM output into standardized format."""
+        logger.debug(f"Processing LLM output type {type(output)}: {output}")
+
         try:
             if hasattr(output, "content"):
                 content = output.content
+                logger.debug(f"Extracted content: {content}")
+
                 data = json.loads(content)
+                logger.debug(f"Parsed JSON result: {data}")
+
             elif isinstance(output, dict):
                 data = output
             else:
@@ -634,6 +663,19 @@ class KeywordAnalyzer(TextAnalyzer):
         except Exception as e:
             logger.error(f"Error processing LLM output: {e}")
             return {"keywords": [], "compound_phrases": []}
+
+    # def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
+    #     """Process LLM output with logging."""
+    #     logger.debug(f"Processing LLM output type {type(output)}: {output}")
+    #     try:
+    #         content = output.content if hasattr(output, "content") else output
+    #         logger.debug(f"Extracted content: {content}")
+    #         result = json.loads(content)
+    #         logger.debug(f"Parsed JSON result: {result}")
+    #         return result
+    #     except Exception as e:
+    #         logger.error(f"Error processing output: {e}")
+    #         raise
 
     def _calculate_score(
         self,

@@ -4,13 +4,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import logging
 from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models.fake_chat_models import FakeChatModel
+
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 logger = logging.getLogger(__name__)
 
 
-class BaseMockLLM(BaseChatModel):
+class BaseMockLLM(FakeChatModel):
     """Base class for all mock LLMs."""
 
     def _generate(
