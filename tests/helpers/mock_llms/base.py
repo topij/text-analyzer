@@ -3,17 +3,15 @@
 from typing import Any, Dict, List, Optional, Tuple
 import json
 import logging
-from langchain_core.language_models import BaseChatModel
-from langchain_core.language_models.fake_chat_models import FakeChatModel
-
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.language_models import BaseChatModel
 
 logger = logging.getLogger(__name__)
 
 
-class BaseMockLLM(FakeChatModel):
-    """Base class for all mock LLMs."""
+class BaseMockLLM(BaseChatModel):
+    """Base class for all mock LLMs with simplified implementation."""
 
     def _generate(
         self,
@@ -24,14 +22,14 @@ class BaseMockLLM(FakeChatModel):
     ) -> ChatResult:
         """Generate mock response."""
         try:
-            print(
-                f"\nMockLLM received message: {messages[-1].content[:100]}..."
+            logger.debug(
+                f"MockLLM received message: {messages[-1].content[:100]}..."
             )
             content = self._get_mock_response(messages)
-            print(
-                "\nMockLLM returning content:",
-                content[:100] if len(content) > 100 else content,
+            logger.debug(
+                f"MockLLM returning content: {content[:100] if len(content) > 100 else content}"
             )
+
             message = AIMessage(content=content)
             generation = ChatGeneration(message=message)
             return ChatResult(generations=[generation])
@@ -95,6 +93,10 @@ class BaseMockLLM(FakeChatModel):
 
         return language, content_type
 
+    def _get_mock_response(self, messages: List[BaseMessage]) -> str:
+        """Abstract method to be implemented by specific mock LLMs."""
+        raise NotImplementedError
+
     @property
     def _llm_type(self) -> str:
         """Return identifier for this LLM."""
@@ -103,8 +105,4 @@ class BaseMockLLM(FakeChatModel):
     @property
     def _identifying_params(self) -> Dict[str, Any]:
         """Get identifying parameters."""
-        return {"mock_param": True}
-
-    def _get_mock_response(self, messages: List[BaseMessage]) -> str:
-        """Abstract method to be implemented by specific mock LLMs."""
-        raise NotImplementedError
+        return {"mock_type": self.__class__.__name__}
