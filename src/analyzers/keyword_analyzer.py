@@ -1,18 +1,17 @@
 # src/analyzers/keyword_analyzer.py
+import json
+import logging
+import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Set, Any, Tuple
-from collections import Counter, defaultdict
-import logging
-import json
-import re
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
-
 from pydantic import Field
 
-from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection
+from src.analyzers.base import AnalyzerOutput, TextAnalyzer, TextSection
 from src.schemas import KeywordAnalysisResult, KeywordInfo
 
 logger = logging.getLogger(__name__)

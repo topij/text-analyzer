@@ -1,26 +1,24 @@
 # src/nb_helpers/analyzers.py
 
 import logging
-from typing import Any, Dict, Optional, Union
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
 import pandas as pd
 
-from src.nb_helpers.base import DebugMixin
-from src.nb_helpers.testers import KeywordTester, ThemeTester, CategoryTester
-from src.nb_helpers.visualizers import (
-    create_analysis_summary,
-)  # , format_confidence_bar,
+from src.analyzers.base import AnalyzerOutput, BaseAnalyzer
 from src.core.language_parameters import LanguageParameterManager
-
-
-from src.analyzers.base import BaseAnalyzer, AnalyzerOutput
-from src.loaders.parameter_handler import ParameterHandler  # Updated import
-from src.utils.FileUtils.file_utils import FileUtils
-from src.loaders.models import GeneralParameters, ParameterSet
-
 from src.core.language_processing import create_text_processor
 from src.core.llm.factory import create_llm
+from src.loaders.models import GeneralParameters, ParameterSet
+from src.loaders.parameter_handler import ParameterHandler  # Updated import
+from src.nb_helpers.base import DebugMixin
+from src.nb_helpers.testers import CategoryTester, KeywordTester, ThemeTester
+from src.nb_helpers.visualizers import (  # , format_confidence_bar,
+    create_analysis_summary,
+)
+from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
 

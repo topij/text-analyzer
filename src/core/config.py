@@ -19,9 +19,21 @@ class AnalyzerConfig:
         "default_language": "en",
         "content_column": "content",
         "analysis": {
-            "keywords": {"max_keywords": 5, "min_keyword_length": 3, "include_compounds": True},
-            "themes": {"max_themes": 3, "min_confidence": 0.5, "include_hierarchy": True},
-            "categories": {"max_categories": 3, "min_confidence": 0.3, "require_evidence": True},
+            "keywords": {
+                "max_keywords": 5,
+                "min_keyword_length": 3,
+                "include_compounds": True,
+            },
+            "themes": {
+                "max_themes": 3,
+                "min_confidence": 0.5,
+                "include_hierarchy": True,
+            },
+            "categories": {
+                "max_categories": 3,
+                "min_confidence": 0.3,
+                "require_evidence": True,
+            },
         },
         "models": {
             "default_provider": "openai",
@@ -34,11 +46,15 @@ class AnalyzerConfig:
                 "presence_penalty": 0.0,
             },
         },
-        "features": {"use_caching": True, "use_async": True, "use_batching": True, "enable_finnish_support": True},
+        "features": {
+            "use_caching": True,
+            "use_async": True,
+            "use_batching": True,
+            "enable_finnish_support": True,
+        },
     }
 
     def __init__(self, file_utils: Optional[FileUtils] = None):
-
         """Initialize configuration handler.
 
         Args:
@@ -91,7 +107,11 @@ class AnalyzerConfig:
         result = dict1.copy()
 
         for key, value in dict2.items():
-            if isinstance(value, dict) and key in result and isinstance(result[key], dict):
+            if (
+                isinstance(value, dict)
+                and key in result
+                and isinstance(result[key], dict)
+            ):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = value
@@ -120,21 +140,23 @@ class AnalyzerConfig:
         required_vars = ["OPENAI_API_KEY"]
         missing = [var for var in required_vars if not os.getenv(var)]
         if missing:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+            raise ValueError(
+                f"Missing required environment variables: {', '.join(missing)}"
+            )
 
     def _setup_logging(self) -> None:
         """Set up logging only if not already configured."""
         root_logger = logging.getLogger()
-        
+
         # If handlers exist and level is set, respect existing configuration
         if root_logger.handlers and root_logger.level != logging.NOTSET:
             return
-            
+
         # Get logging config from loaded configuration
         log_config = self.config.get("logging", {})
         level = getattr(logging, log_config.get("level", "INFO"))
         format_str = log_config.get("format", "%(levelname)s: %(message)s")
-        
+
         # Configure handler
         handler = logging.StreamHandler()
         formatter = logging.Formatter(format_str)
@@ -150,7 +172,8 @@ class AnalyzerConfig:
     def get_analyzer_config(self, analyzer_type: str) -> Dict[str, Any]:
         """Get configuration for specific analyzer type."""
         return self.config.get("analysis", {}).get(
-            analyzer_type, self.DEFAULT_CONFIG["analysis"].get(analyzer_type, {})
+            analyzer_type,
+            self.DEFAULT_CONFIG["analysis"].get(analyzer_type, {}),
         )
 
     def get_features(self) -> Dict[str, bool]:
@@ -160,18 +183,29 @@ class AnalyzerConfig:
     @property
     def default_language(self) -> str:
         """Get default language."""
-        return self.config.get("default_language", self.DEFAULT_CONFIG["default_language"])
+        return self.config.get(
+            "default_language", self.DEFAULT_CONFIG["default_language"]
+        )
 
     @property
     def content_column(self) -> str:
         """Get content column name."""
-        return self.config.get("content_column", self.DEFAULT_CONFIG["content_column"])
+        return self.config.get(
+            "content_column", self.DEFAULT_CONFIG["content_column"]
+        )
 
-    def save_results(self, data: Dict[str, Any], filename: str, output_type: str = "processed") -> Path:
+    def save_results(
+        self,
+        data: Dict[str, Any],
+        filename: str,
+        output_type: str = "processed",
+    ) -> Path:
         """Save results using FileUtils."""
         return self.file_utils.save_yaml(
             data=data,
             file_path=filename,
             output_type=output_type,
-            include_timestamp=self.file_utils.config.get("include_timestamp", True),
+            include_timestamp=self.file_utils.config.get(
+                "include_timestamp", True
+            ),
         )

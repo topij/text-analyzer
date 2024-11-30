@@ -11,21 +11,21 @@ A comprehensive toolkit for semantic text analysis, including:
 - Multi-language support
 """
 
+from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
-from src.analyzers.category_analyzer import CategoryAnalyzer
+from src.core.language_processing import (
+    BaseTextProcessor,
+    EnglishTextProcessor,
+    FinnishTextProcessor,
+    create_text_processor,
+)
 from src.schemas import (
+    AnalysisParameters,
+    CategoryAnalysisResult,
     KeywordAnalysisResult,
     KeywordInfo,
     ThemeAnalysisResult,
-    CategoryAnalysisResult,
-    AnalysisParameters
-)
-from src.core.language_processing import (
-    create_text_processor,
-    BaseTextProcessor,
-    EnglishTextProcessor,
-    FinnishTextProcessor
 )
 
 # Version information
@@ -37,20 +37,17 @@ __all__ = [
     "KeywordAnalyzer",
     "ThemeAnalyzer",
     "CategoryAnalyzer",
-    
     # Schema types
     "KeywordAnalysisResult",
     "KeywordInfo",
     "ThemeAnalysisResult",
     "CategoryAnalysisResult",
     "AnalysisParameters",
-    
     # Language processing
     "create_text_processor",
     "BaseTextProcessor",
     "EnglishTextProcessor",
     "FinnishTextProcessor",
-    
     # Version
     "__version__",
 ]

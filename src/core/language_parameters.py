@@ -7,9 +7,9 @@ from typing import Any, Dict, Optional, Union
 from langdetect import detect
 from pydantic import BaseModel, Field
 
-from src.utils.FileUtils.file_utils import FileUtils
-from src.loaders.parameter_handler import ParameterHandler
 from src.loaders.models import ParameterSet
+from src.loaders.parameter_handler import ParameterHandler
+from src.utils.FileUtils.file_utils import FileUtils
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,9 @@ class LanguageConfig(BaseModel):
 
     # Language-specific processing options
     class Config:
-        extra = "allow"  # Allow additional fields for language-specific settings
+        extra = (
+            "allow"  # Allow additional fields for language-specific settings
+        )
 
 
 class LanguageParameterManager:
@@ -48,7 +50,11 @@ class LanguageParameterManager:
         },
     }
 
-    def __init__(self, file_utils: Optional[FileUtils] = None, config_path: Optional[Union[str, Path]] = None):
+    def __init__(
+        self,
+        file_utils: Optional[FileUtils] = None,
+        config_path: Optional[Union[str, Path]] = None,
+    ):
         """Initialize the manager.
 
         Args:
@@ -74,7 +80,9 @@ class LanguageParameterManager:
                             if lang in self.configs:
                                 self.configs[lang].update(config)
 
-            logger.debug(f"Loaded configurations for languages: {list(self.configs.keys())}")
+            logger.debug(
+                f"Loaded configurations for languages: {list(self.configs.keys())}"
+            )
 
         except Exception as e:
             logger.warning(f"Error loading language configurations: {e}")
@@ -95,7 +103,11 @@ class LanguageParameterManager:
             return "en"  # Default to English
 
     def get_parameters(
-        self, text: str, parameter_file: Optional[Union[str, Path]] = None, language: Optional[str] = None, **overrides
+        self,
+        text: str,
+        parameter_file: Optional[Union[str, Path]] = None,
+        language: Optional[str] = None,
+        **overrides,
     ) -> ParameterSet:
         """Get parameters for text analysis.
 
@@ -112,7 +124,9 @@ class LanguageParameterManager:
         logger.debug(f"Using language: {detected_lang}")
 
         # Start with language defaults
-        params = self.configs.get(detected_lang, self.DEFAULT_CONFIGS["en"]).copy()
+        params = self.configs.get(
+            detected_lang, self.DEFAULT_CONFIGS["en"]
+        ).copy()
 
         # Load parameters from file if provided
         if parameter_file:
@@ -158,7 +172,9 @@ class LanguageParameterManager:
 
                 lang = row["language"]
                 # Start with language defaults
-                lang_params = self.configs.get(lang, self.DEFAULT_CONFIGS["en"]).copy()
+                lang_params = self.configs.get(
+                    lang, self.DEFAULT_CONFIGS["en"]
+                ).copy()
 
                 # Update with Excel parameters
                 for col in df.columns:

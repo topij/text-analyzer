@@ -3,7 +3,8 @@
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Type
-from langdetect import detect, DetectorFactory
+
+from langdetect import DetectorFactory, detect
 
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.language_processing.english import EnglishTextProcessor

@@ -1,8 +1,9 @@
 # tests/test_pipeline/test_pipeline.py
 
 import pytest
-from src.semantic_analyzer import SemanticAnalyzer
+
 from src.schemas import CompleteAnalysisResult
+from src.semantic_analyzer import SemanticAnalyzer
 
 
 class TestPipeline:

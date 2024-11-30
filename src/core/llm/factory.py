@@ -18,8 +18,16 @@ class LLMConfig:
         "default_provider": "openai",
         "default_model": "gpt-4o-mini",  # Updated default model
         "providers": {
-            "openai": {"model": "gpt-4o-mini", "temperature": 0.0, "max_tokens": 1000},  # Updated default model
-            "anthropic": {"model": "claude-3-sonnet-20240229", "temperature": 0.0, "max_tokens": 1000},
+            "openai": {
+                "model": "gpt-4o-mini",
+                "temperature": 0.0,
+                "max_tokens": 1000,
+            },  # Updated default model
+            "anthropic": {
+                "model": "claude-3-sonnet-20240229",
+                "temperature": 0.0,
+                "max_tokens": 1000,
+            },
         },
     }
 
@@ -44,14 +52,20 @@ class LLMConfig:
         result = default.copy()
 
         for key, value in user.items():
-            if isinstance(value, dict) and key in result and isinstance(result[key], dict):
+            if (
+                isinstance(value, dict)
+                and key in result
+                and isinstance(result[key], dict)
+            ):
                 result[key] = self._merge_config(result[key], value)
             else:
                 result[key] = value
 
         return result
 
-    def get_model_config(self, provider: Optional[str] = None, model: Optional[str] = None) -> Dict[str, Any]:
+    def get_model_config(
+        self, provider: Optional[str] = None, model: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Get configuration for specific provider and model."""
         provider = provider or self.config["default_provider"]
         if provider not in self.config["providers"]:
@@ -64,7 +78,9 @@ class LLMConfig:
         return provider_config
 
 
-def create_llm(provider: Optional[str] = None, model: Optional[str] = None, **kwargs) -> BaseChatModel:
+def create_llm(
+    provider: Optional[str] = None, model: Optional[str] = None, **kwargs
+) -> BaseChatModel:
     """Create an LLM instance with specified configuration."""
     config = LLMConfig()
     model_config = config.get_model_config(provider, model)

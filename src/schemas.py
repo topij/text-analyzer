@@ -1,8 +1,10 @@
 # src/schemas.py
 
-from typing import Dict, List, Optional, Any
-from src.analyzers.base import AnalyzerOutput
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, confloat
+
+from src.analyzers.base import AnalyzerOutput
 
 
 class KeywordInfo(BaseModel):

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class ParameterSheets(str, Enum):
     """Excel sheet names for parameter loading."""
+
     GENERAL = "General Parameters"
     KEYWORDS = "Predefined Keywords"
     EXCLUDED = "Excluded Keywords"
@@ -15,17 +16,36 @@ class ParameterSheets(str, Enum):
     PROMPTS = "Custom Prompts"
     DOMAINS = "Domain Context"
 
+
 class GeneralParameters(BaseModel):
     """General extraction parameters."""
 
     model_config = ConfigDict(extra="allow")
 
-    max_keywords: int = Field(default=8, ge=1, le=20, description="Maximum number of keywords to extract")
-    max_themes: int = Field(default=3, ge=1, le=10, description="Maximum number of themes to identify")
-    language: str = Field(default="en", description="Default language code (e.g., 'en', 'fi')")
-    focus_on: str = Field(default="general topics", description="Analysis focus area")
-    min_keyword_length: int = Field(default=3, ge=2, description="Minimum keyword length")
-    include_compounds: bool = Field(default=True, description="Include compound words")
+    max_keywords: int = Field(
+        default=8,
+        ge=1,
+        le=20,
+        description="Maximum number of keywords to extract",
+    )
+    max_themes: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum number of themes to identify",
+    )
+    language: str = Field(
+        default="en", description="Default language code (e.g., 'en', 'fi')"
+    )
+    focus_on: str = Field(
+        default="general topics", description="Analysis focus area"
+    )
+    min_keyword_length: int = Field(
+        default=3, ge=2, description="Minimum keyword length"
+    )
+    include_compounds: bool = Field(
+        default=True, description="Include compound words"
+    )
 
     @field_validator("language")
     def validate_language(cls, v: str) -> str:
@@ -80,10 +100,16 @@ class ExtractionParameters(BaseModel):
         """Clean and validate excluded keywords."""
         return [k.strip().lower() for k in v if k.strip()]
 
-    def get_keywords_for_domain(self, domain: Optional[str] = None) -> List[str]:
+    def get_keywords_for_domain(
+        self, domain: Optional[str] = None
+    ) -> List[str]:
         """Get predefined keywords filtered by domain."""
         if domain:
-            return [entry.keyword for entry in self.predefined_keywords if entry.domain == domain]
+            return [
+                entry.keyword
+                for entry in self.predefined_keywords
+                if entry.domain == domain
+            ]
         return [entry.keyword for entry in self.predefined_keywords]
 
 
@@ -95,24 +121,29 @@ class ValidationError(Exception):
         self.details = details
         super().__init__(message)
 
+
 class DomainContext(BaseModel):
     """Domain-specific context for analysis."""
+
     name: str
     description: str
     key_terms: List[str]
     context: str
     stopwords: Optional[List[str]] = None
-    
+
     class Config:
         frozen = True
 
+
 class AnalysisContext(BaseModel):
     """Analysis context from parameters."""
+
     domains: Dict[str, DomainContext] = Field(default_factory=dict)
     enhancement_prompt: Optional[str] = None
-    
+
     class Config:
         frozen = True
+
 
 # Example parameter Excel sheet "Domain Context":
 """

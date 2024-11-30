@@ -3,10 +3,9 @@ import logging
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
-
-import threading
 
 from libvoikko import Voikko
 

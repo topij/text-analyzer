@@ -2,25 +2,27 @@
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, Tuple, List, Set
-import pandas as pd
-from pydantic import ValidationError, BaseModel, Field
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from .models import (
-    GeneralParameters,
-    DomainContext,
-    CategoryConfig,
-    PredefinedKeyword,
-    AnalysisSettings,
-    ParameterSet,
-)
+import pandas as pd
+from pydantic import BaseModel, Field, ValidationError
+
 from src.loaders.parameter_config import (
     ParameterConfigurations,
     ParameterSheets,
 )
 from src.loaders.parameter_validation import ParameterValidation
-from .parameter_config import ParameterSheets, ParameterConfigurations
 from src.utils.FileUtils.file_utils import FileUtils
+
+from .models import (
+    AnalysisSettings,
+    CategoryConfig,
+    DomainContext,
+    GeneralParameters,
+    ParameterSet,
+    PredefinedKeyword,
+)
+from .parameter_config import ParameterConfigurations, ParameterSheets
 
 logger = logging.getLogger(__name__)
 

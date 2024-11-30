@@ -1,23 +1,35 @@
 # tests/helpers/mock_llms/theme_mock.py
 
-from typing import List
-from .base import BaseMockLLM, BaseMessage
 import json
+import logging
+from typing import Any, Dict, List, Optional
+
+from langchain_core.messages import BaseMessage
+
+from .base import BaseMockLLM
+
+logger = logging.getLogger(__name__)
 
 
 class ThemeMockLLM(BaseMockLLM):
     """Mock LLM for theme analysis testing."""
 
+    def __init__(self):
+        """Initialize with call tracking."""
+        super().__init__()
+        self._call_history = []
+
     def _get_mock_response(self, messages: List[BaseMessage]) -> str:
-        """Get theme-specific mock response."""
+        """Get theme-specific mock response with call tracking."""
         last_message = messages[-1].content if messages else ""
+        self._call_history.append(last_message)
 
         if not last_message:
             return json.dumps(
                 {
                     "themes": [],
+                    "theme_hierarchy": {},
                     "evidence": {},
-                    "relationships": {},
                     "success": False,
                     "error": "Empty input text",
                     "language": "en",
@@ -25,10 +37,11 @@ class ThemeMockLLM(BaseMockLLM):
             )
 
         language, content_type = self._detect_content_type(last_message)
-
-        if language == "fi":
-            return self._get_finnish_response(content_type)
-        return self._get_english_response(content_type)
+        return (
+            self._get_finnish_response(content_type)
+            if language == "fi"
+            else self._get_english_response(content_type)
+        )
 
     def _get_english_response(self, content_type: str) -> str:
         """Get English theme response."""
@@ -45,7 +58,6 @@ class ThemeMockLLM(BaseMockLLM):
                                 "neural network",
                                 "data",
                             ],
-                            "domain": "technical",
                             "parent_theme": None,
                         },
                         {
@@ -57,10 +69,12 @@ class ThemeMockLLM(BaseMockLLM):
                                 "preprocessing",
                                 "feature engineering",
                             ],
-                            "domain": "technical",
                             "parent_theme": "Machine Learning",
                         },
                     ],
+                    "theme_hierarchy": {
+                        "Machine Learning": ["Data Processing"]
+                    },
                     "evidence": {
                         "Machine Learning": [
                             {
@@ -75,7 +89,7 @@ class ThemeMockLLM(BaseMockLLM):
                         ],
                         "Data Processing": [
                             {
-                                "text": "Data preprocessing and feature engineering are crucial steps",
+                                "text": "Data preprocessing and feature engineering are crucial",
                                 "relevance": 0.85,
                                 "keywords": [
                                     "preprocessing",
@@ -84,7 +98,6 @@ class ThemeMockLLM(BaseMockLLM):
                             }
                         ],
                     },
-                    "relationships": {"Machine Learning": ["Data Processing"]},
                     "success": True,
                     "language": "en",
                 }
@@ -95,7 +108,7 @@ class ThemeMockLLM(BaseMockLLM):
                     "themes": [
                         {
                             "name": "Financial Performance",
-                            "description": "Company financial results and growth metrics",
+                            "description": "Company financial results and metrics",
                             "confidence": 0.9,
                             "keywords": [
                                 "revenue",
@@ -103,23 +116,19 @@ class ThemeMockLLM(BaseMockLLM):
                                 "profit",
                                 "margins",
                             ],
-                            "domain": "business",
                             "parent_theme": None,
                         },
                         {
                             "name": "Market Strategy",
-                            "description": "Market expansion and customer acquisition",
+                            "description": "Market expansion and strategic growth",
                             "confidence": 0.85,
-                            "keywords": [
-                                "market",
-                                "customer",
-                                "acquisition",
-                                "retention",
-                            ],
-                            "domain": "business",
+                            "keywords": ["market", "expansion", "strategy"],
                             "parent_theme": "Financial Performance",
                         },
                     ],
+                    "theme_hierarchy": {
+                        "Financial Performance": ["Market Strategy"]
+                    },
                     "evidence": {
                         "Financial Performance": [
                             {
@@ -135,9 +144,6 @@ class ThemeMockLLM(BaseMockLLM):
                                 "keywords": ["market", "expansion", "strategy"],
                             }
                         ],
-                    },
-                    "relationships": {
-                        "Financial Performance": ["Market Strategy"]
                     },
                     "success": True,
                     "language": "en",
@@ -159,7 +165,6 @@ class ThemeMockLLM(BaseMockLLM):
                                 "neuroverkko",
                                 "data",
                             ],
-                            "domain": "technical",
                             "parent_theme": None,
                         },
                         {
@@ -167,10 +172,10 @@ class ThemeMockLLM(BaseMockLLM):
                             "description": "Datan käsittely ja analysointi",
                             "confidence": 0.85,
                             "keywords": ["data", "esikäsittely", "piirteet"],
-                            "domain": "technical",
                             "parent_theme": "Koneoppiminen",
                         },
                     ],
+                    "theme_hierarchy": {"Koneoppiminen": ["Data-analyysi"]},
                     "evidence": {
                         "Koneoppiminen": [
                             {
@@ -191,7 +196,6 @@ class ThemeMockLLM(BaseMockLLM):
                             }
                         ],
                     },
-                    "relationships": {"Koneoppiminen": ["Data-analyysi"]},
                     "success": True,
                     "language": "fi",
                 }
@@ -204,13 +208,7 @@ class ThemeMockLLM(BaseMockLLM):
                             "name": "Taloudellinen Suorituskyky",
                             "description": "Yrityksen taloudelliset tulokset ja kasvu",
                             "confidence": 0.9,
-                            "keywords": [
-                                "liikevaihto",
-                                "kasvu",
-                                "tulos",
-                                "katteet",
-                            ],
-                            "domain": "business",
+                            "keywords": ["liikevaihto", "kasvu", "tulos"],
                             "parent_theme": None,
                         },
                         {
@@ -218,10 +216,12 @@ class ThemeMockLLM(BaseMockLLM):
                             "description": "Markkinoiden ja liiketoiminnan kehitys",
                             "confidence": 0.85,
                             "keywords": ["markkina", "strategia", "kasvu"],
-                            "domain": "business",
                             "parent_theme": "Taloudellinen Suorituskyky",
                         },
                     ],
+                    "theme_hierarchy": {
+                        "Taloudellinen Suorituskyky": ["Markkinakehitys"]
+                    },
                     "evidence": {
                         "Taloudellinen Suorituskyky": [
                             {
@@ -238,10 +238,19 @@ class ThemeMockLLM(BaseMockLLM):
                             }
                         ],
                     },
-                    "relationships": {
-                        "Taloudellinen Suorituskyky": ["Markkinakehitys"]
-                    },
                     "success": True,
                     "language": "fi",
                 }
             )
+
+    def get_calls(self) -> List[str]:
+        """Get list of recorded calls."""
+        return self._call_history
+
+    def get_last_call(self) -> Optional[str]:
+        """Get the last recorded call."""
+        return self._call_history[-1] if self._call_history else None
+
+    def reset_calls(self) -> None:
+        """Reset call history."""
+        self._call_history = []

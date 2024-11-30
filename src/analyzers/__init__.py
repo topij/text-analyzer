@@ -8,11 +8,14 @@ Provides specialized analyzers for different aspects of text analysis:
 - CategoryAnalyzer: Classify text into categories
 """
 
-from src.schemas import KeywordAnalysisResult, KeywordInfo  # Changed to absolute import
 from src.analyzers.base import AnalyzerOutput, TextAnalyzer
 from src.analyzers.category_analyzer import CategoryAnalyzer, CategoryOutput
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer, ThemeOutput
+from src.schemas import (  # Changed to absolute import
+    KeywordAnalysisResult,
+    KeywordInfo,
+)
 
 __all__ = [
     "TextAnalyzer",

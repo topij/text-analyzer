@@ -1,16 +1,22 @@
 # src/nb_helpers/environment.py
+import logging
+import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
+
 from dotenv import load_dotenv
-from src.utils.FileUtils.file_utils import FileUtils
+
 from src.nb_helpers.logging import configure_logging
-import os
-import logging
-import sys
+from src.utils.FileUtils.file_utils import FileUtils
 
 
 class EnvironmentSetup:
-    def __init__(self, project_root: Optional[Path] = None, log_level: Optional[str] = None):
+    def __init__(
+        self,
+        project_root: Optional[Path] = None,
+        log_level: Optional[str] = None,
+    ):
         self.project_root = project_root or Path().resolve().parent
         # Initialize FileUtils with optional log level
         self.file_utils = FileUtils(log_level=log_level)
@@ -19,7 +25,11 @@ class EnvironmentSetup:
     def verify(self) -> bool:
         # Store current logging level
         root_level = logging.getLogger().level
-        handler_level = logging.getLogger().handlers[0].level if logging.getLogger().handlers else None
+        handler_level = (
+            logging.getLogger().handlers[0].level
+            if logging.getLogger().handlers
+            else None
+        )
 
         env_loaded = load_dotenv(self.project_root / ".env")
         checks = self._run_checks(env_loaded)
@@ -34,7 +44,11 @@ class EnvironmentSetup:
         return all(result for _, result in checks.items())
 
     def _run_checks(self, env_loaded: bool) -> Dict[str, bool]:
-        return {**self._check_basic_setup(env_loaded), **self._check_env_vars(), **self._check_paths()}
+        return {
+            **self._check_basic_setup(env_loaded),
+            **self._check_env_vars(),
+            **self._check_paths(),
+        }
 
     def _check_basic_setup(self, env_loaded: bool) -> Dict[str, bool]:
         return {
@@ -45,7 +59,10 @@ class EnvironmentSetup:
         }
 
     def _check_env_vars(self) -> Dict[str, bool]:
-        return {f"{var} set": os.getenv(var) is not None for var in self.required_env_vars}
+        return {
+            f"{var} set": os.getenv(var) is not None
+            for var in self.required_env_vars
+        }
 
     def _check_paths(self) -> Dict[str, bool]:
         paths = {
@@ -58,9 +75,17 @@ class EnvironmentSetup:
 
     def _display_results(self, checks: Dict[str, bool]) -> None:
         sections = {
-            "Basic Setup": {k: v for k, v in checks.items() if "in path" in k or "initialized" in k or "loaded" in k},
-            "Environment Variables": {k: v for k, v in checks.items() if "set" in k},
-            "Project Structure": {k: v for k, v in checks.items() if "exists" in k},
+            "Basic Setup": {
+                k: v
+                for k, v in checks.items()
+                if "in path" in k or "initialized" in k or "loaded" in k
+            },
+            "Environment Variables": {
+                k: v for k, v in checks.items() if "set" in k
+            },
+            "Project Structure": {
+                k: v for k, v in checks.items() if "exists" in k
+            },
         }
 
         print("Environment Check Results:")
@@ -75,7 +100,9 @@ class EnvironmentSetup:
 
         print("\n" + "=" * 50)
         all_passed = all(checks.values())
-        print("Environment Status:", "Ready ✓" if all_passed else "Setup needed ✗")
+        print(
+            "Environment Status:", "Ready ✓" if all_passed else "Setup needed ✗"
+        )
 
 
 def verify_environment(log_level: Optional[str] = None) -> bool:
@@ -99,10 +126,16 @@ def setup_notebook_env(log_level: Optional[str] = None) -> None:
         sys.path.append(str(setup.project_root))
 
     # Log current levels before any changes
-    logger.debug("Before environment setup - Root logger level: %s", logging.getLevelName(logging.getLogger().level))
+    logger.debug(
+        "Before environment setup - Root logger level: %s",
+        logging.getLevelName(logging.getLogger().level),
+    )
 
     # We're not calling configure_logging() anymore
     # Remove or comment out: configure_logging()
 
     # Log levels after setup
-    logger.debug("After environment setup - Root logger level: %s", logging.getLevelName(logging.getLogger().level))
+    logger.debug(
+        "After environment setup - Root logger level: %s",
+        logging.getLevelName(logging.getLogger().level),
+    )

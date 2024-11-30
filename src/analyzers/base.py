@@ -1,7 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
@@ -108,9 +109,13 @@ class TextAnalyzer(ABC):
 
     def _handle_error(self, error: str) -> AnalyzerOutput:
         """Create error output."""
-        return AnalyzerOutput(error=str(error), success=False, language="unknown")
+        return AnalyzerOutput(
+            error=str(error), success=False, language="unknown"
+        )
 
-    def _get_text_sections(self, text: str, section_size: int = 200) -> List[TextSection]:
+    def _get_text_sections(
+        self, text: str, section_size: int = 200
+    ) -> List[TextSection]:
         """Split text into weighted sections."""
         sections = []
         text = text.strip()
@@ -123,7 +128,9 @@ class TextAnalyzer(ABC):
         for i in range(0, len(text), section_size):
             section = text[i : i + section_size]
             # Higher weights for start and end sections
-            weight = 1.2 if i == 0 else 1.1 if i + section_size >= len(text) else 1.0
+            weight = (
+                1.2 if i == 0 else 1.1 if i + section_size >= len(text) else 1.0
+            )
             sections.append(TextSection(section, i, i + len(section), weight))
 
         return sections

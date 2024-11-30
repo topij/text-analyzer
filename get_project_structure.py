@@ -32,7 +32,9 @@ def write_structure_to_file(
             return 0
         if path.is_file():
             return path.stat().st_size
-        return sum(get_size(item) for item in path.iterdir() if not should_ignore(item))
+        return sum(
+            get_size(item) for item in path.iterdir() if not should_ignore(item)
+        )
 
     def format_size(size):
         for unit in ["B", "KB", "MB", "GB"]:
@@ -51,11 +53,15 @@ def write_structure_to_file(
         if level == 0:
             indent = ""
         else:
-            indent = "".join(["│   " if p else "    " for p in parent_has_next[:-1]])
+            indent = "".join(
+                ["│   " if p else "    " for p in parent_has_next[:-1]]
+            )
             indent += "└── " if is_last else "├── "
 
         path = root.relative_to(start_path) if use_relative_path else root.name
-        path = str(path).replace("\\", "/")  # Replace backslashes with forward slashes
+        path = str(path).replace(
+            "\\", "/"
+        )  # Replace backslashes with forward slashes
 
         size_str = f" ({format_size(get_size(root))})" if show_size else ""
         date_str = (
@@ -96,7 +102,9 @@ def write_structure_to_file(
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(f"{start_path.name}\n")
-        items = [item for item in start_path.iterdir() if not should_ignore(item)]
+        items = [
+            item for item in start_path.iterdir() if not should_ignore(item)
+        ]
         if sort:
             items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
         for i, item in enumerate(items):

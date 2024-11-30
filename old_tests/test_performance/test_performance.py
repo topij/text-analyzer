@@ -1,7 +1,9 @@
 # tests/test_performance/test_performance.py
 
-import pytest
 import time
+
+import pytest
+
 from src.semantic_analyzer import SemanticAnalyzer
 
 

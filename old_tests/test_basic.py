@@ -1,7 +1,9 @@
 # tests/test_basic.py
 
-import pytest
 from pathlib import Path
+
+import pytest
+
 from src.utils.FileUtils.file_utils import FileUtils
 from tests.helpers.mock_llm import MockLLM
 

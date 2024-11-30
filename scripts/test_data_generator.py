@@ -1,10 +1,11 @@
 # scripts/test_data_generator.py
 
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
-import pandas as pd
 import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
 
 # Add project root to Python path
 project_root = str(Path().resolve())
@@ -13,11 +14,11 @@ if project_root not in sys.path:
     print(f"Added {project_root} to Python path")
 
 
+from src.loaders.models import CategoryConfig, GeneralParameters
+
 # Update imports
 from src.loaders.parameter_config import ParameterSheets
 from src.loaders.parameter_handler import ParameterHandler
-from src.loaders.models import GeneralParameters, CategoryConfig
-
 from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
 
 # from src.loaders.parameter_config import ParameterSheets, ParameterConfigurations

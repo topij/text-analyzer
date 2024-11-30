@@ -1,13 +1,14 @@
 # src/analyzers/category_analyzer.py
-from typing import Any, Dict, List, Optional, Set
-import logging
 import json
+import logging
 import re
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Set
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
+from pydantic import BaseModel, Field
 
-from src.analyzers.base import TextAnalyzer, AnalyzerOutput
+from src.analyzers.base import AnalyzerOutput, TextAnalyzer
 from src.core.language_processing.base import BaseTextProcessor
 from src.loaders.models import CategoryConfig
 from src.schemas import CategoryMatch, Evidence

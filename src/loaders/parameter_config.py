@@ -1,8 +1,8 @@
 # src/loaders/parameter_config.py
 
-from enum import Enum
 import logging
-from typing import Dict, Any
+from enum import Enum
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 

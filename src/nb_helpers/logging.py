@@ -1,9 +1,11 @@
 # src/nb_helpers/logging.py
 import logging
-from typing import Optional, List
+from typing import List, Optional
 
 
-def configure_logging(level: str = "WARNING", format_string: Optional[str] = None) -> None:
+def configure_logging(
+    level: str = "WARNING", format_string: Optional[str] = None
+) -> None:
     """Configure logging with proper handler cleanup."""
     # Convert string level to numeric
     numeric_level = getattr(logging, level.upper(), logging.WARNING)
@@ -17,7 +19,9 @@ def configure_logging(level: str = "WARNING", format_string: Optional[str] = Non
 
     # Add new handler to root logger
     handler = logging.StreamHandler()
-    formatter = logging.Formatter(format_string or "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        format_string or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     handler.setFormatter(formatter)
     handler.setLevel(numeric_level)
     root_logger.addHandler(handler)
@@ -87,13 +91,17 @@ def verify_logging_setup() -> None:
         logger_name = "root" if name == "" else name
         print(f"\nLogger: {logger_name}")
         print(f"Set Level: {logging.getLevelName(logger.level)}")
-        print(f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}")
+        print(
+            f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}"
+        )
         print(f"Handlers: {len(logger.handlers)}")
         print(f"Propagate: {logger.propagate}")
 
         if logger.handlers:
             for i, handler in enumerate(logger.handlers):
-                print(f"Handler {i+1} level: {logging.getLevelName(handler.level)}")
+                print(
+                    f"Handler {i+1} level: {logging.getLevelName(handler.level)}"
+                )
 
 
 def _get_logger_hierarchy(logger_name: str) -> List[str]:
@@ -128,16 +136,22 @@ def verify_logging_setup_with_hierarchy() -> None:
             hierarchy = _get_logger_hierarchy(name)
             for ancestor in hierarchy:
                 ancestor_logger = logging.getLogger(ancestor)
-                print(f"  {ancestor}: {logging.getLevelName(ancestor_logger.level)}")
+                print(
+                    f"  {ancestor}: {logging.getLevelName(ancestor_logger.level)}"
+                )
 
         print(f"Set Level: {logging.getLevelName(logger.level)}")
-        print(f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}")
+        print(
+            f"Effective Level: {logging.getLevelName(logger.getEffectiveLevel())}"
+        )
         print(f"Propagates to root: {logger.propagate}")
 
         if logger.handlers:
             print("Handlers:")
             for i, handler in enumerate(logger.handlers):
-                print(f"  Handler {i+1} level: {logging.getLevelName(handler.level)}")
+                print(
+                    f"  Handler {i+1} level: {logging.getLevelName(handler.level)}"
+                )
         else:
             print("No handlers (uses root handlers)")
 
@@ -148,7 +162,9 @@ def setup_debug_logging(logger_name: str) -> None:
 
     # Add detailed formatter for debug output
     handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     handler.setFormatter(formatter)
 
     # Replace existing handlers

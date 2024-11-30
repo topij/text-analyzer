@@ -1,13 +1,14 @@
 # tests/unit/test_analyzers/test_keyword_analyzer.py
 
-import pytest
-from typing import Dict, List, Optional
-from pydantic import BaseModel
 import json
+from typing import Dict, List, Optional
+
+import pytest
+from pydantic import BaseModel
 
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
-from src.schemas import KeywordAnalysisResult, KeywordInfo
 from src.core.language_processing import create_text_processor
+from src.schemas import KeywordAnalysisResult, KeywordInfo
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
 
 

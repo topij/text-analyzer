@@ -1,16 +1,16 @@
 # src/analyzers/theme_analyzer.py
 
-from typing import Any, Dict, List, Optional, Set
-import logging
 import json
-from pydantic import BaseModel, Field
+import logging
+from typing import Any, Dict, List, Optional, Set
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
+from pydantic import BaseModel, Field
 
-from src.core.llm.factory import create_llm
-
-from src.analyzers.base import TextAnalyzer, AnalyzerOutput, TextSection
+from src.analyzers.base import AnalyzerOutput, TextAnalyzer, TextSection
 from src.core.language_processing.base import BaseTextProcessor
+from src.core.llm.factory import create_llm
 from src.schemas import ThemeInfo
 
 logger = logging.getLogger(__name__)

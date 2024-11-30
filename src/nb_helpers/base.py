@@ -1,11 +1,12 @@
 # src/nb_helpers/base.py
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from langchain_core.language_models import BaseChatModel
+
 from src.core.llm.factory import create_llm
 from src.utils.FileUtils.file_utils import FileUtils
 
@@ -28,7 +29,9 @@ class DisplayMixin:
         filled = int(value * width)
         return "█" * filled + "░" * (width - filled)
 
-    def format_results(self, results: Dict[str, Any], detailed: bool = True) -> None:
+    def format_results(
+        self, results: Dict[str, Any], detailed: bool = True
+    ) -> None:
         if isinstance(results, dict) and results.get("error"):
             print(f"Error: {results['error']}")
             return
@@ -39,7 +42,9 @@ class DisplayMixin:
             self._display_metadata(results)
 
     @abstractmethod
-    def _display_specific_results(self, results: Dict[str, Any], detailed: bool) -> None:
+    def _display_specific_results(
+        self, results: Dict[str, Any], detailed: bool
+    ) -> None:
         """Implement specific display logic in derived classes."""
         pass
 
@@ -95,7 +100,9 @@ class DebugMixin:
         # Configure debug handler if not present
         if not any(h.level == logging.DEBUG for h in logger.handlers):
             handler = logging.StreamHandler()
-            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
             handler.setFormatter(formatter)
             handler.setLevel(logging.DEBUG)
             logger.addHandler(handler)
@@ -122,12 +129,16 @@ class LoaderMixin:
     def __init__(self):
         self.file_utils = FileUtils()
 
-    def _load_test_data(self, file_pattern: str = "test_content_{lang}.xlsx") -> Dict[str, str]:
+    def _load_test_data(
+        self, file_pattern: str = "test_content_{lang}.xlsx"
+    ) -> Dict[str, str]:
         """Load test data from files."""
         try:
             texts = {}
             for lang in ["en", "fi"]:
-                df = self.file_utils.load_single_file(file_pattern.format(lang=lang), input_type="raw")
+                df = self.file_utils.load_single_file(
+                    file_pattern.format(lang=lang), input_type="raw"
+                )
                 if df is not None:
                     for _, row in df.iterrows():
                         key = f"{lang}_{row['type']}"
@@ -139,4 +150,7 @@ class LoaderMixin:
 
     def _create_default_data(self) -> Dict[str, str]:
         """Create default test data."""
-        return {"en_test": "Default test content for English.", "fi_test": "Oletustestisisältö suomeksi."}
+        return {
+            "en_test": "Default test content for English.",
+            "fi_test": "Oletustestisisältö suomeksi.",
+        }

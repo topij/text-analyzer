@@ -1,18 +1,18 @@
 # src/nb_helpers/testers.py
 import logging
+from typing import Any, Dict, List, Optional
 
-from typing import Dict, Any, Optional, List
 from langchain_core.language_models import BaseChatModel
 
-from src.nb_helpers.base import AnalysisTester, DisplayMixin
-from src.analyzers import KeywordAnalyzer, ThemeAnalyzer, CategoryAnalyzer
+from src.analyzers import CategoryAnalyzer, KeywordAnalyzer, ThemeAnalyzer
 from src.core.language_processing import create_text_processor
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.language_processing.finnish import FinnishTextProcessor
 from src.core.llm.factory import create_llm
 from src.loaders.models import CategoryConfig
-from src.schemas import KeywordInfo, ThemeInfo
 from src.loaders.parameter_handler import ParameterHandler
+from src.nb_helpers.base import AnalysisTester, DisplayMixin
+from src.schemas import KeywordInfo, ThemeInfo
 
 logger = logging.getLogger(__name__)
 
