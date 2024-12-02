@@ -9,7 +9,7 @@ from langdetect import DetectorFactory, detect
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.language_processing.english import EnglishTextProcessor
 from src.core.language_processing.finnish import FinnishTextProcessor
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 
 from src.nb_helpers.logging import configure_logging
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 
 class EnvironmentSetup:

@@ -27,7 +27,7 @@ from src.schemas import (
     ThemeAnalysisResult,
     ThemeOutput,
 )
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

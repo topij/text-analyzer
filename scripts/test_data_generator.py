@@ -19,7 +19,7 @@ from src.loaders.models import CategoryConfig, GeneralParameters
 # Update imports
 from src.loaders.parameter_config import ParameterSheets
 from src.loaders.parameter_handler import ParameterHandler
-from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
+from FileUtils import FileUtils, OutputFileType
 
 # from src.loaders.parameter_config import ParameterSheets, ParameterConfigurations
 

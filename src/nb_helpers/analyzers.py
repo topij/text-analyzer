@@ -18,7 +18,7 @@ from src.nb_helpers.testers import CategoryTester, KeywordTester, ThemeTester
 from src.nb_helpers.visualizers import (  # , format_confidence_bar,
     create_analysis_summary,
 )
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

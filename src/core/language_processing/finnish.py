@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Set
 from libvoikko import Voikko
 
 from src.core.language_processing.base import BaseTextProcessor
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

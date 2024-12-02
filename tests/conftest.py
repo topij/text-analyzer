@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=pytest.PytestDeprecationWarning)
 
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 
 def pytest_configure(config):

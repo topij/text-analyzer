@@ -62,7 +62,7 @@ dependencies:
 You can now import FileUtils in your code:
 
 ```python
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 # Initialize FileUtils
 file_utils = FileUtils()

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.loaders.models import ParameterSet
 from src.loaders.parameter_handler import ParameterHandler
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

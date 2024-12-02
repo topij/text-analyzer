@@ -64,5 +64,11 @@ dependencies:
     - mkdocstrings>=0.23.0
     - mkdocstrings-python>=1.7.0
 
+    # Azure dependencies
+    - azure-storage-blob>=12.0.0
+    - azure-identity>=1.5.0
+    - azure-ai-ml
+
+
   # Platform-specific dependencies
   #- windows-curses; platform_system == "Windows"  # For Windows compatibility
