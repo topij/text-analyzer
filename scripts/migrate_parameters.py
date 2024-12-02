@@ -21,7 +21,7 @@ from src.loaders.models import (
 )
 from src.loaders.parameter_config import ParameterSheets
 from src.loaders.parameter_handler import ParameterHandler
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

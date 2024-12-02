@@ -10,7 +10,7 @@ from nltk.tokenize import word_tokenize
 
 from src.core.language_processing.base import BaseTextProcessor
 
-# from src.utils.FileUtils.file_utils import FileUtils
+# from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 

@@ -30,7 +30,7 @@ __all__ = ['FileUtils', 'OutputFileType']
 
     print("FileUtils compatibility layer installed.")
     print("You can now use either:")
-    print("  from src.utils.FileUtils.file_utils import FileUtils  # Old way")
+    print("  from FileUtils import FileUtils  # Old way")
     print("  from FileUtils import FileUtils  # New way")
 
 

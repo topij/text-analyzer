@@ -11,7 +11,7 @@ from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
 from src.loaders.parameter_config import ParameterSheets
 from src.loaders.parameter_handler import ParameterHandler
 from src.loaders.parameter_validation import ParameterValidation
-from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
+from FileUtils import FileUtils, OutputFileType
 
 logger = logging.getLogger(__name__)
 

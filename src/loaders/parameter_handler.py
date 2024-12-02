@@ -12,7 +12,7 @@ from src.loaders.parameter_config import (
     ParameterSheets,
 )
 from src.loaders.parameter_validation import ParameterValidation
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 from .models import (
     AnalysisSettings,

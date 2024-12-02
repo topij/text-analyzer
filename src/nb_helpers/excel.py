@@ -5,7 +5,7 @@ import pandas as pd
 
 from src.nb_helpers.testers import CategoryTester, KeywordTester, ThemeTester
 from src.nb_helpers.visualizers import create_analysis_summary
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 
 class ExcelAnalyzer:

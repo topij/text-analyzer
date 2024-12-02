@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ class BaseTextProcessor(ABC):
 # from pathlib import Path
 # from typing import Any, Dict, List, Optional, Set
 
-# from src.utils.FileUtils.file_utils import FileUtils
+# from FileUtils import FileUtils
 
 # logger = logging.getLogger(__name__)
 

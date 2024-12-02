@@ -12,7 +12,7 @@ import pytest
 from src.loaders.parameter_handler import ParameterHandler, ParameterSheets
 from src.schemas import CompleteAnalysisResult
 from src.semantic_analyzer import SemanticAnalyzer
-from src.utils.FileUtils.file_utils import FileUtils, OutputFileType
+from FileUtils import FileUtils, OutputFileType
 from tests.helpers.mock_llms.category_mock import CategoryMockLLM
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM

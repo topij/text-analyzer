@@ -39,7 +39,7 @@ class LLMConfig:
         """Load configuration from file or use defaults."""
         if config_path and config_path.exists():
             try:
-                from src.utils.FileUtils.file_utils import FileUtils
+                from FileUtils import FileUtils
 
                 user_config = FileUtils().load_yaml(config_path)
                 return self._merge_config(self.DEFAULT_CONFIG, user_config)

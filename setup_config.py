@@ -4,7 +4,7 @@ import os
 import shutil
 from pathlib import Path
 
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 
 def setup_test_config():

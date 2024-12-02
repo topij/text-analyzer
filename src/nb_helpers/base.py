@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.language_models import BaseChatModel
 
 from src.core.llm.factory import create_llm
-from src.utils.FileUtils.file_utils import FileUtils
+from FileUtils import FileUtils
 
 
 @dataclass
