@@ -79,6 +79,11 @@ docs/_build/
 .pybuilder/
 target/
 
+# Azure files
+*.amlignore
+*.amltmp
+*_aml_checkpoints
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
