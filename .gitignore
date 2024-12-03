@@ -1,3 +1,8 @@
+# Used as a package imported separately, 
+# no need to push with the rest of the project
+src/utils/FileUtils
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -171,3 +176,5 @@ _archive/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+src/utils/FileUtils
+src/utils/FileUtils

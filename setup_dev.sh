@@ -21,7 +21,7 @@ conda activate semantic-analyzer
 
 # Download NLTK data
 echo "Downloading NLTK data..."
-python -c "import nltk; nltk.download('punkt'); nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
+python -c "import nltk; nltk.download('punkt_tab'); nltk.download('wordnet'); nltk.download('averaged_perceptron_tagger')"
 
 # Create .env file if it doesn't exist
 if [ ! -f .env ]; then
