@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
+from src.core.config import AnalyzerConfig
 
 from src.loaders.parameter_config import (
     ParameterConfigurations,
@@ -28,6 +29,22 @@ logger = logging.getLogger(__name__)
 
 
 class ParameterHandler:
+    def __init__(
+        self,
+        file_path: Optional[Union[str, Path]] = None,
+        file_utils: Optional[FileUtils] = None,
+    ):
+        self.file_utils = file_utils or FileUtils()
+        # Add analyzer config
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
+        # Rest of initialization...
+
+    def get_parameters(self) -> ParameterSet:
+        # Consider analyzer config when getting parameters
+        base_params = self.analyzer_config.config
+
+
+class ParameterHandler:
     """Unified parameter handling with validation."""
 
     REQUIRED_PARAMETERS = {
@@ -43,6 +60,8 @@ class ParameterHandler:
     ):
         """Initialize parameter handler."""
         self.file_utils = file_utils or FileUtils()
+        # Add analyzer config
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
         self.config = ParameterConfigurations()  # Initialize config
         self.validator = ParameterValidation()  # Initialize validator
         self.file_path = (
@@ -61,6 +80,7 @@ class ParameterHandler:
 
     def get_parameters(self) -> ParameterSet:
         """Get loaded and validated parameters with debug logging."""
+        base_params = self.analyzer_config.config
         if not hasattr(self, "parameters"):
             self._load_and_validate_parameters()
 

@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from src.core.config import AnalyzerConfig
+from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
+from src.core.language_processing.base import BaseTextProcessor
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import Field
@@ -191,15 +196,43 @@ class KeywordAnalyzer(TextAnalyzer):
     }
 
     def __init__(
-        self, llm=None, config: Optional[Dict] = None, language_processor=None
+        self,
+        llm: Optional[BaseChatModel] = None,
+        config: Optional[Dict] = None,
+        language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize analyzer with config and weights."""
+        """Initialize analyzer with configuration and language processing.
+
+        Args:
+            llm: Optional LLM instance (will create using factory if None)
+            config: Optional configuration dictionary
+            language_processor: Optional language processor instance
+        """
+        # Initialize analyzer config if not provided in config dict
+        if llm is None:
+            analyzer_config = AnalyzerConfig()
+            llm = create_llm(config=analyzer_config)
+
+            # Merge analyzer config with provided config if any
+            if config is None:
+                config = {}
+            config = {**analyzer_config.config.get("analysis", {}), **config}
+
+        # Call parent init with LLM and config
         super().__init__(llm, config)
+
+        # Set up language processor
         self.language_processor = language_processor
+
+        # Initialize components with config
         self.weights = self._initialize_weights(config)
         self.clustering_config = self._initialize_clustering_config(config)
+
+        # Initialize internal state
         self._frequency_cache = {}
         self._current_text = ""
+
+        # Create processing chain
         self.chain = self._create_chain()
 
     def _initialize_weights(self, config: Optional[Dict]) -> Dict[str, float]:

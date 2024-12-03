@@ -7,6 +7,10 @@ import warnings
 from pathlib import Path
 from typing import Dict, Generator
 
+from src.core.config import AnalyzerConfig
+from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
+
 import pytest
 
 # Add project root to Python path
@@ -18,6 +22,18 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=pytest.PytestDeprecationWarning)
 
 from FileUtils import FileUtils
+
+
+@pytest.fixture(scope="session")
+def analyzer_config(file_utils: FileUtils) -> AnalyzerConfig:
+    """Create AnalyzerConfig instance for testing."""
+    return AnalyzerConfig(file_utils=file_utils)
+
+
+@pytest.fixture(scope="session")
+def mock_llm(analyzer_config: AnalyzerConfig) -> BaseChatModel:
+    """Create mock LLM instance."""
+    return create_llm(config=analyzer_config)
 
 
 def pytest_configure(config):

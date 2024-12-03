@@ -9,6 +9,11 @@ from typing import Any, Dict
 import pandas as pd
 import pytest
 
+from src.core.config import AnalyzerConfig
+
+# from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
+
 from src.loaders.parameter_handler import ParameterHandler, ParameterSheets
 from src.schemas import CompleteAnalysisResult
 from src.semantic_analyzer import SemanticAnalyzer
@@ -130,21 +135,41 @@ class TestSemanticAnalyzer:
 
         return Path(next(iter(saved_files.values())))
 
+    @pytest.fixture
+    def mock_analyzer(
+        self,
+        file_utils: FileUtils,
+        analyzer_config: AnalyzerConfig,
+        mock_llm: BaseChatModel,
+    ):
+        return SemanticAnalyzer(file_utils=file_utils, llm=mock_llm)
+
     @pytest.mark.asyncio
     async def test_complete_analysis(
         self,
         file_utils: FileUtils,
-        keyword_mock: KeywordMockLLM,
-        theme_mock: ThemeMockLLM,
-        category_mock: CategoryMockLLM,
-        test_parameters: Dict[str, Any],
+        analyzer_config: AnalyzerConfig,
+        test_parameters: Dict[str, Any],  # Add the fixture parameter
     ):
         """Test complete analysis pipeline with all mock types."""
+        # Create analyzers with different mocks
+        keyword_mock = KeywordMockLLM()
+        theme_mock = ThemeMockLLM()
+        category_mock = CategoryMockLLM()
+
+        # Create test parameter file
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={"General Parameters": test_parameters["general"]},
             file_name="test_params",
         )
+
+        # # Initialize analyzers with config
+        # keyword_analyzer = SemanticAnalyzer(
+        #     parameter_file=file_path,
+        #     file_utils=file_utils,
+        #     llm=keyword_mock
+        # )
 
         # Create analyzers with different mocks
         keyword_analyzer = SemanticAnalyzer(

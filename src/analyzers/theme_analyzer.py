@@ -8,6 +8,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
+from src.core.config import AnalyzerConfig
+from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
+
 from src.analyzers.base import AnalyzerOutput, TextAnalyzer, TextSection
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.llm.factory import create_llm
@@ -99,15 +103,47 @@ class ThemeAnalyzer(TextAnalyzer):
         ],
     }
 
+    # def __init__(
+    #     self,
+    #     llm=None,
+    #     config: Optional[Dict[str, Any]] = None,
+    #     language_processor: Optional[BaseTextProcessor] = None,
+    # ):
+    #     super().__init__(llm, config)
+    #     self.language_processor = language_processor
+    #     self.llm = llm or create_llm()
+    #     self.chain = self._create_chain()
+
     def __init__(
         self,
-        llm=None,
-        config: Optional[Dict[str, Any]] = None,
+        llm: Optional[BaseChatModel] = None,
+        config: Optional[Dict] = None,
         language_processor: Optional[BaseTextProcessor] = None,
     ):
+        """Initialize analyzer with configuration and language processing.
+
+        Args:
+            llm: Optional LLM instance (will create using factory if None)
+            config: Optional configuration dictionary
+            language_processor: Optional language processor instance
+        """
+        # Initialize analyzer config if not provided in config dict
+        if llm is None:
+            analyzer_config = AnalyzerConfig()
+            llm = create_llm(config=analyzer_config)
+
+            # Merge analyzer config with provided config if any
+            if config is None:
+                config = {}
+            config = {**analyzer_config.config.get("analysis", {}), **config}
+
+        # Call parent init with LLM and config
         super().__init__(llm, config)
+
+        # Set up language processor
         self.language_processor = language_processor
-        self.llm = llm or create_llm()
+
+        # Create processing chain
         self.chain = self._create_chain()
 
     def _initialize_patterns(self) -> Dict[str, List[ThemePattern]]:

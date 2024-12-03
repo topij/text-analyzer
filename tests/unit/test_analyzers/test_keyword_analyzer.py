@@ -6,6 +6,8 @@ from typing import Dict, List, Optional
 import pytest
 from pydantic import BaseModel
 
+from src.core.config import AnalyzerConfig
+
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.core.language_processing import create_text_processor
 from src.schemas import KeywordAnalysisResult, KeywordInfo
@@ -19,18 +21,29 @@ class TestKeywordAnalyzer:
         return KeywordMockLLM()
 
     @pytest.fixture
-    def analyzer(self, mock_llm: KeywordMockLLM) -> KeywordAnalyzer:
-        """Create analyzer with mock LLM."""
+    def analyzer(
+        self, mock_llm: KeywordMockLLM, analyzer_config: AnalyzerConfig
+    ) -> KeywordAnalyzer:
+        """Create analyzer with mock LLM and config."""
         return KeywordAnalyzer(
             llm=mock_llm,
-            config={
-                "max_keywords": 10,
-                "min_keyword_length": 3,
-                "include_compounds": True,
-                "weights": {"statistical": 0.4, "llm": 0.6},
-            },
+            config=analyzer_config.config.get("analysis", {}),
             language_processor=create_text_processor(language="en"),
         )
+
+    # @pytest.fixture
+    # def analyzer(self, mock_llm: KeywordMockLLM) -> KeywordAnalyzer:
+    #     """Create analyzer with mock LLM."""
+    #     return KeywordAnalyzer(
+    #         llm=mock_llm,
+    #         config={
+    #             "max_keywords": 10,
+    #             "min_keyword_length": 3,
+    #             "include_compounds": True,
+    #             "weights": {"statistical": 0.4, "llm": 0.6},
+    #         },
+    #         language_processor=create_text_processor(language="en"),
+    #     )
 
     def _validate_keyword_result(self, result: KeywordAnalysisResult) -> None:
         """Validate keyword analysis result structure."""
@@ -45,7 +58,10 @@ class TestKeywordAnalyzer:
 
     @pytest.mark.asyncio
     async def test_technical_keyword_extraction(
-        self, analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
+        self,
+        analyzer: KeywordAnalyzer,
+        mock_llm: KeywordMockLLM,
+        analyzer_config: AnalyzerConfig,
     ):
         """Test extraction of technical keywords."""
         text = "The machine learning model uses neural networks."

@@ -1,105 +1,117 @@
-# config.yaml
-# at project root level
-
 # Project settings
 project_name: "semantic-text-analyzer"
-version: "1.0.0"
-environment: "development"  # development, test, production
+version: "0.4.5"
+environment: "development"
 
 # Logging configuration
 logging:
-  level: #"DEBUG" #"WARNING"  # "INFO" #,  #
+  level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "logs/app.log"
-  disable_existing_loggers: false #true #
+  disable_existing_loggers: false
 
 # Core analyzer settings
 analyzer:
   default_language: "en"
   content_column: "content"
 
-  # Analysis configurations
-  analysis:
-    keywords:
-      max_keywords: 10
-      min_keyword_length: 3
-      include_compounds: true
-      min_confidence: 0.3
-      use_statistical: true
-      compound_word_bonus: 0.2
+# Model settings
+models:
+  default_provider: "openai"
+  default_model: "gpt-4-mini"
+  parameters:
+    temperature: 0.0
+    max_tokens: 1000
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+  
+  providers:
+    openai:
+      available_models:
+        gpt-4:
+          description: "Most capable model, best for complex tasks"
+          max_tokens: 8192
+          supports_functions: true
+        gpt-4-turbo:
+          description: "Faster GPT-4 variant"
+          max_tokens: 4096
+          supports_functions: true
+        gpt-4-mini:
+          description: "Fast and cost-effective for simpler tasks"
+          max_tokens: 4096
+          supports_functions: true
+      api_type: "open_ai"
+      api_version: null
+      
+    azure:
+      available_models:
+        gpt-4:
+          description: "Azure OpenAI GPT-4"
+          deployment_name: "gpt-4"
+          max_tokens: 8192
+          supports_functions: true
+        gpt-35-turbo:
+          description: "Azure OpenAI GPT-3.5 Turbo"
+          deployment_name: "gpt-35-turbo"
+          max_tokens: 4096
+          supports_functions: true
+      api_type: "azure"
+      api_version: "2024-02-15-preview"
+      
+    anthropic:
+      available_models:
+        claude-3-opus:
+          description: "Most capable Claude model"
+          max_tokens: 200000
+          supports_functions: false
+        claude-3-sonnet:
+          description: "Balanced performance and speed"
+          max_tokens: 200000
+          supports_functions: false
+        claude-3-haiku:
+          description: "Fastest Claude model"
+          max_tokens: 200000
+          supports_functions: false
+      api_type: "anthropic"
+      api_version: null
 
-    themes:
-      max_themes: 3
-      min_confidence: 0.5
-      include_hierarchy: true
-      require_evidence: true
-      min_theme_length: 10
+# Analysis configurations
+analysis:
+  keywords:
+    max_keywords: 10
+    min_keyword_length: 3
+    include_compounds: true
+    min_confidence: 0.3
+    use_statistical: true
+    compound_word_bonus: 0.2
+    weights:
+      statistical: 0.4
+      llm: 0.6
 
-    categories:
-      max_categories: 3
-      min_confidence: 0.3
-      require_evidence: true
-      allow_overlap: true
-      hierarchical: true
+  themes:
+    max_themes: 3
+    min_confidence: 0.5
+    include_hierarchy: true
+    require_evidence: true
+    min_theme_length: 10
 
-  # Model settings
-  models:
-    default_provider: "openai"
-    default_model: "gpt-4o-mini"
-    parameters:
-      temperature: 0.0
-      max_tokens: 1000
-      top_p: 1.0
-      frequency_penalty: 0.0
-      presence_penalty: 0.0
+  categories:
+    max_categories: 3
+    min_confidence: 0.3
+    require_evidence: true
+    allow_overlap: true
+    hierarchical: true
 
-  # Feature flags
-  features:
-    use_caching: true
-    use_async: true
-    use_batching: true
-    enable_finnish_support: true
-    enable_compound_detection: true
-    enable_spell_check: false
-
-# Data path configurations
-data_paths:
-  raw: "data/raw"
-  processed: "data/processed"
-  configurations: "data/configurations"
-  parameters: "data/parameters"
-  models: "models"
-  reports: "reports"
-  cache: "data/cache"
-  logs: "logs"
-
-# File handling settings
-file_handling:
-  csv_delimiter: ";"
-  encoding: "utf-8"
-  include_timestamp: true
-  output_format: "yaml"
-  quoting: 1  # csv.QUOTE_MINIMAL
-  compression: false
-  backup_files: true
-
-# Language-specific settings
-languages:
-  en:
-    min_word_length: 3
-    excluded_patterns: 
-      - "^\\d+$"
-      - "^[^a-zA-Z0-9]+$"
-    use_nltk: true
-    
-  fi:
-    min_word_length: 3
-    excluded_patterns:
-      - "^\\d+$"
-      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"
-    voikko_path: "C:/scripts/Voikko"
-    preserve_compounds: true
+# Feature flags
+features:
+  use_caching: true
+  use_async: true
+  use_batching: true
+  enable_finnish_support: true
+  enable_compound_detection: true
+  enable_spell_check: false
 
 # Processing settings
 processing:
@@ -115,16 +127,8 @@ caching:
   enabled: true
   ttl: 3600  # 1 hour
   max_size: 1000
-  backend: "memory"  # memory, redis, filesystem
+  backend: "memory"
   compression: true
-
-# Validation settings
-validation:
-  require_evidence: true
-  min_confidence: 0.3
-  max_keyword_overlap: 0.8
-  verify_results: true
-  strict_mode: false
 
 # Development settings
 development:
@@ -133,11 +137,3 @@ development:
   log_llm_calls: true
   mock_llm_responses: false
   save_intermediates: false
-
-# Monitoring settings
-monitoring:
-  log_performance: true
-  track_usage: true
-  save_metrics: true
-  alert_on_errors: true
-  metrics_path: "reports/metrics"

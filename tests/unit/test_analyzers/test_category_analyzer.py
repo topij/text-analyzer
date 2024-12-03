@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import pytest
 
+from src.core.config import AnalyzerConfig
+
 from src.analyzers.category_analyzer import CategoryAnalyzer, CategoryOutput
 from src.core.language_processing import create_text_processor
 from src.loaders.models import CategoryConfig
@@ -21,8 +23,10 @@ class TestCategoryAnalyzer:
         return CategoryMockLLM()
 
     @pytest.fixture
-    def analyzer(self, mock_llm: CategoryMockLLM) -> CategoryAnalyzer:
-        """Create English category analyzer with mock LLM."""
+    def analyzer(
+        self, mock_llm: CategoryMockLLM, analyzer_config: AnalyzerConfig
+    ) -> CategoryAnalyzer:
+        """Create analyzer with mock LLM."""
         categories = {
             "Machine Learning": CategoryConfig(
                 description="Machine learning and AI technology content",
@@ -49,7 +53,7 @@ class TestCategoryAnalyzer:
         return CategoryAnalyzer(
             categories=categories,
             llm=mock_llm,
-            config={"min_confidence": 0.3, "language": "en"},
+            config=analyzer_config.config.get("analysis", {}),
             language_processor=create_text_processor(language="en"),
         )
 

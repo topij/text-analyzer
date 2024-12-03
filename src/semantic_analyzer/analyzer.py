@@ -13,7 +13,7 @@ from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
 
-# from src.core.config import AnalyzerConfig
+from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
 from src.core.llm.factory import create_llm
 from src.loaders.parameter_handler import (  # get_parameter_file_path,
@@ -27,6 +27,7 @@ from src.schemas import (
     ThemeAnalysisResult,
     ThemeOutput,
 )
+
 from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
@@ -51,13 +52,15 @@ class SemanticAnalyzer:
             parameter_file: Path to Excel parameter file (default: parameters_en.xlsx)
             file_utils: Optional FileUtils instance
             llm: Optional LLM instance
-            language: Optional language override
             **kwargs: Additional configuration options
         """
         self.file_utils = file_utils or FileUtils()
         self.parameter_handler = ParameterHandler(parameter_file)
         self.parameters = self.parameter_handler.get_parameters()
-        self.llm = llm or create_llm()
+        # Create config instance for LLM
+        self.config = AnalyzerConfig(file_utils=self.file_utils)
+        # Use new factory with config
+        self.llm = llm or create_llm(config=self.config)
         self._init_analyzers()
         logger.info("Semantic analyzer initialization complete")
 

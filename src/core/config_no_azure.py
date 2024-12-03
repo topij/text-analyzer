@@ -1,7 +1,5 @@
 # src/core/config.py
 
-"""Configuration handler for semantic text analyzer."""
-
 import logging
 import os
 from pathlib import Path
@@ -38,26 +36,14 @@ class AnalyzerConfig:
             },
         },
         "models": {
-            "default_provider": "azure",  # Changed default to azure
-            "default_model": "gpt-4o-mini",
+            "default_provider": "openai",
+            "default_model": "gpt-4o-mini",  # Updated default model
             "parameters": {
                 "temperature": 0.0,
                 "max_tokens": 1000,
                 "top_p": 1.0,
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0,
-            },
-            "providers": {
-                "azure": {
-                    "api_version": "2024-02-15-preview",
-                    "api_type": "azure",
-                },
-                "openai": {
-                    "api_type": "open_ai",
-                },
-                "anthropic": {
-                    "api_type": "anthropic",
-                },
             },
         },
         "features": {
@@ -66,16 +52,6 @@ class AnalyzerConfig:
             "use_batching": True,
             "enable_finnish_support": True,
         },
-    }
-
-    REQUIRED_ENV_VARS = {
-        "azure": [
-            "AZURE_OPENAI_API_KEY",
-            "AZURE_OPENAI_ENDPOINT",
-            "AZURE_OPENAI_DEPLOYMENT_NAME",
-        ],
-        "openai": ["OPENAI_API_KEY"],
-        "anthropic": ["ANTHROPIC_API_KEY"],
     }
 
     def __init__(self, file_utils: Optional[FileUtils] = None):
@@ -101,7 +77,7 @@ class AnalyzerConfig:
             self._setup_logging()
 
     def _load_env_vars(self) -> None:
-        """Load environment variables from .env files."""
+        """Load environment variables from .env file."""
         for env_file in [".env", ".env.local"]:
             if Path(env_file).exists():
                 load_dotenv(env_file)
@@ -125,87 +101,6 @@ class AnalyzerConfig:
             logger.warning(f"Error loading configuration: {e}. Using defaults.")
 
         return config
-
-    def _validate_required_vars(self) -> None:
-        """Validate required environment variables."""
-        provider = self.config["models"]["default_provider"]
-        required_vars = self.REQUIRED_ENV_VARS.get(provider, [])
-
-        missing = [var for var in required_vars if not os.getenv(var)]
-        if missing:
-            raise ValueError(
-                f"Missing required environment variables for {provider}: {', '.join(missing)}"
-            )
-
-    # In src/core/config.py, update the get_provider_config method:
-
-    def get_provider_config(
-        self,
-        provider: Optional[str] = None,
-        model: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Get provider-specific configuration with credentials.
-
-        Args:
-            provider: Optional provider name (defaults to configured default)
-            model: Optional model name to override default
-
-        Returns:
-            Dict[str, Any]: Provider configuration with credentials
-        """
-        provider = provider or self.config["models"]["default_provider"]
-
-        if provider not in self.REQUIRED_ENV_VARS:
-            raise ValueError(f"Unsupported provider: {provider}")
-
-        # Get base configuration for provider
-        base_config = self.config["models"]["providers"][provider].copy()
-
-        # Add default model parameters
-        base_config.update(self.config["models"]["parameters"])
-
-        # Set model name
-        model = model or self.config["models"]["default_model"]
-        base_config["model"] = model
-
-        # Add provider-specific model config if available
-        if "available_models" in self.config["models"]["providers"][provider]:
-            if (
-                model
-                in self.config["models"]["providers"][provider][
-                    "available_models"
-                ]
-            ):
-                model_config = self.config["models"]["providers"][provider][
-                    "available_models"
-                ][model]
-                base_config.update(model_config)
-
-        # Add credentials based on provider
-        if provider == "azure":
-            base_config.update(
-                {
-                    "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                    "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                    "azure_deployment": os.getenv(
-                        "AZURE_OPENAI_DEPLOYMENT_NAME"
-                    ),
-                }
-            )
-        elif provider == "openai":
-            base_config.update(
-                {
-                    "api_key": os.getenv("OPENAI_API_KEY"),
-                }
-            )
-        elif provider == "anthropic":
-            base_config.update(
-                {
-                    "api_key": os.getenv("ANTHROPIC_API_KEY"),
-                }
-            )
-
-        return base_config
 
     def _deep_merge(self, dict1: Dict, dict2: Dict) -> Dict:
         """Deep merge two dictionaries."""

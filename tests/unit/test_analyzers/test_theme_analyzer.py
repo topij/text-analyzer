@@ -5,6 +5,8 @@ from typing import Dict, List
 
 import pytest
 
+from src.core.config import AnalyzerConfig
+
 from src.analyzers.theme_analyzer import ThemeAnalyzer, ThemeOutput
 from src.core.language_processing import create_text_processor
 from src.schemas import ThemeInfo
@@ -19,30 +21,55 @@ class TestThemeAnalyzer:
         """Create mock LLM instance."""
         return ThemeMockLLM()
 
+    # @pytest.fixture
+    # def analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    #     """Create English theme analyzer with mock LLM."""
+    #     return ThemeAnalyzer(
+    #         llm=mock_llm,
+    #         config={
+    #             "max_themes": 3,
+    #             "min_confidence": 0.3,
+    #             "language": "en",
+    #             "focus_on": "theme extraction",
+    #         },
+    #         language_processor=create_text_processor(language="en"),
+    #     )
+
+    # @pytest.fixture
+    # def fi_analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    #     """Create Finnish theme analyzer with mock LLM."""
+    #     return ThemeAnalyzer(
+    #         llm=mock_llm,
+    #         config={
+    #             "max_themes": 3,
+    #             "min_confidence": 0.3,
+    #             "language": "fi",
+    #             "focus_on": "theme extraction",
+    #         },
+    #         language_processor=create_text_processor(language="fi"),
+    #     )
+
     @pytest.fixture
-    def analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    def analyzer(
+        self, mock_llm: ThemeMockLLM, analyzer_config: AnalyzerConfig
+    ) -> ThemeAnalyzer:
         """Create English theme analyzer with mock LLM."""
         return ThemeAnalyzer(
             llm=mock_llm,
-            config={
-                "max_themes": 3,
-                "min_confidence": 0.3,
-                "language": "en",
-                "focus_on": "theme extraction",
-            },
+            config=analyzer_config.config.get("analysis", {}),
             language_processor=create_text_processor(language="en"),
         )
 
     @pytest.fixture
-    def fi_analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    def fi_analyzer(
+        self, mock_llm: ThemeMockLLM, analyzer_config: AnalyzerConfig
+    ) -> ThemeAnalyzer:
         """Create Finnish theme analyzer with mock LLM."""
         return ThemeAnalyzer(
             llm=mock_llm,
             config={
-                "max_themes": 3,
-                "min_confidence": 0.3,
+                **analyzer_config.config.get("analysis", {}),
                 "language": "fi",
-                "focus_on": "theme extraction",
             },
             language_processor=create_text_processor(language="fi"),
         )

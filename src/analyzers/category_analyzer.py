@@ -8,6 +8,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
+from src.core.config import AnalyzerConfig
+from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
+
 from src.analyzers.base import AnalyzerOutput, TextAnalyzer
 from src.core.language_processing.base import BaseTextProcessor
 from src.loaders.models import CategoryConfig
@@ -113,19 +117,55 @@ class CategoryAnalyzer(TextAnalyzer):
         },
     }
 
+    # def __init__(
+    #     self,
+    #     categories: Dict[str, CategoryConfig],
+    #     llm=None,
+    #     config: Optional[Dict[str, Any]] = None,
+    #     language_processor: Optional[BaseTextProcessor] = None,
+    # ):
+    #     """Initialize category analyzer with language support."""
+    #     super().__init__(llm, config)
+    #     self.categories = categories
+    #     self.language_processor = language_processor
+    #     self.boosts = self._initialize_boosts()
+    #     self.min_confidence = config.get("min_confidence", 0.3)
+    #     self.chain = self._create_chain()
+
     def __init__(
         self,
         categories: Dict[str, CategoryConfig],
-        llm=None,
-        config: Optional[Dict[str, Any]] = None,
+        llm: Optional[BaseChatModel] = None,
+        config: Optional[Dict] = None,
         language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize category analyzer with language support."""
+        """Initialize analyzer with configuration and language processing.
+
+        Args:
+            llm: Optional LLM instance (will create using factory if None)
+            config: Optional configuration dictionary
+            language_processor: Optional language processor instance
+        """
+        # Initialize analyzer config if not provided in config dict
+        if llm is None:
+            analyzer_config = AnalyzerConfig()
+            llm = create_llm(config=analyzer_config)
+
+            # Merge analyzer config with provided config if any
+            if config is None:
+                config = {}
+            config = {**analyzer_config.config.get("analysis", {}), **config}
+
+        # Call parent init with LLM and config
         super().__init__(llm, config)
-        self.categories = categories
+
+        # Set up language processor
         self.language_processor = language_processor
+        self.categories = categories
         self.boosts = self._initialize_boosts()
         self.min_confidence = config.get("min_confidence", 0.3)
+
+        # Create processing chain
         self.chain = self._create_chain()
 
     def _initialize_boosts(self) -> Dict:
@@ -306,8 +346,10 @@ class CategoryAnalyzer(TextAnalyzer):
             else "unknown"
         )
 
-    def _process_llm_response(self, response: Dict) -> List[CategoryMatch]:
-        """Process LLM response into CategoryMatch objects with debug output."""
+    def _process_llm_response(
+        self, response: Dict[str, Any]
+    ) -> List[CategoryMatch]:
+        """Process LLM output into CategoryMatch objects with debug output."""
         print(f"\nProcessing response: {response}")
         categories = []
 
@@ -316,7 +358,7 @@ class CategoryAnalyzer(TextAnalyzer):
                 print(f"\nProcessing category: {cat}")
                 # Convert evidence list
                 evidence_list = []
-                raw_evidence = cat.pop("evidence", [])
+                raw_evidence = cat.get("evidence", [])
                 for ev in raw_evidence:
                     if isinstance(ev, dict):
                         evidence_list.append(
@@ -330,9 +372,13 @@ class CategoryAnalyzer(TextAnalyzer):
 
                 # Create CategoryMatch with mapped fields
                 category = CategoryMatch(
-                    name=cat.get("name", ""),
+                    name=cat.get(
+                        "category", ""
+                    ),  # Use 'category' field instead of 'name'
                     confidence=float(cat.get("confidence", 0.0)),
-                    description=cat.get("description", ""),
+                    description=cat.get(
+                        "explanation", ""
+                    ),  # Use 'explanation' field for description
                     evidence=evidence_list,
                     themes=cat.get("themes", []),
                 )
