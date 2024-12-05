@@ -1,0 +1,10 @@
+# fill in template with your own API keys and user agent
+# and rename the file to .env
+
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+GOOGLE_API_KEY=
+FIRECRAWL_API_KEY=
+TAVILY_API_KEY=
+LANGCHAIN_API_KEY=
+USER_AGENT= myagent

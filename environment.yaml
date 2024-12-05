@@ -71,8 +71,8 @@ dependencies:
     - azure-ai-ml
     
     # own modules
-    - "git+ssh://git@github.com/topij/FileUtils.git#egg=FileUtils[azure,parquet,excel]"
-
+    - pip:
+      - pip install "FileUtils[all] @ git+https://github.com/topij/FileUtils.git"
 
   # Platform-specific dependencies
   #- windows-curses; platform_system == "Windows"  # For Windows compatibility
