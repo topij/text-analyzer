@@ -516,7 +516,7 @@ class TestDataGenerator:
             )
             return file_path
 
-        result = self.file_utils.save_data_to_disk(
+        result = self.file_utils.save_data_to_storage(
             data=sheets,
             output_type="parameters",
             file_name=file_name,
@@ -564,7 +564,7 @@ class TestDataGenerator:
 
         df = pd.DataFrame(rows)
 
-        result = self.file_utils.save_data_to_disk(
+        result = self.file_utils.save_data_to_storage(
             data={file_name: df},
             output_type="raw",
             file_name=file_name,

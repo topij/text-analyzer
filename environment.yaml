@@ -71,8 +71,7 @@ dependencies:
     - azure-ai-ml
     
     # own modules
-    - pip:
-      - pip install "FileUtils[all] @ git+https://github.com/topij/FileUtils.git"
+    - "FileUtils[all] @ git+https://github.com/topij/FileUtils.git"
 
   # Platform-specific dependencies
   #- windows-curses; platform_system == "Windows"  # For Windows compatibility

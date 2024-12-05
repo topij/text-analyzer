@@ -4,7 +4,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import pandas as pd
 import pytest
@@ -80,60 +80,60 @@ class TestSemanticAnalyzer:
         """Create CategoryMockLLM instance."""
         return CategoryMockLLM()
 
+    def _create_parameter_df(
+        self,
+        test_parameters: Dict[str, Any],
+        language: str = "en"
+    ) -> Tuple[str, pd.DataFrame]:
+        """Helper method to create parameter DataFrame with proper mappings."""
+        # Get proper names and mappings
+        general_sheet_name = ParameterSheets.get_sheet_name("general", language)
+        column_names = ParameterSheets.get_column_names("general", language)
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"][language]
+
+        # Create DataFrame rows
+        data_rows = []
+        for internal_name, value in test_parameters["general"].items():
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() 
+                if internal == internal_name),
+                internal_name
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Description for {excel_name}"
+            })
+
+        # Create and return sheet name and DataFrame
+        return general_sheet_name, pd.DataFrame(data_rows)
+
+
     def _save_parameter_file(
         self,
         file_utils: FileUtils,
-        sheet_data: Dict[str, Any],
+        sheet_data: Dict[str, pd.DataFrame],
         file_name: str,
     ) -> Path:
         """Helper to save parameter files using FileUtils."""
-        dataframes = {}
-        for sheet_name, params in sheet_data.items():
-            # Get language from sheet name
-            is_finnish = sheet_name == ParameterSheets.get_sheet_name(
-                "general", "fi"
+        
+        try:
+            # Save data
+            saved_files, _ = file_utils.save_data_to_storage(
+                data=sheet_data,
+                output_filetype=OutputFileType.XLSX,
+                output_type="parameters",
+                file_name=file_name,
+                include_timestamp=False,
+                engine='openpyxl'  # Add this explicitly
             )
-            language = "fi" if is_finnish else "en"
+            
+            return Path(next(iter(saved_files.values())))
 
-            # Get correct column names and parameter mappings
-            column_names = ParameterSheets.get_column_names("general", language)
-            param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-                "parameters"
-            ][language]
-
-            rows = []
-            for key, value in params.items():
-                # Map internal parameter names to language-specific names
-                # Find the Excel name that maps to this internal key
-                excel_name = next(
-                    (
-                        excel_key
-                        for excel_key, internal_key in param_mappings.items()
-                        if internal_key == key
-                    ),
-                    key,  # fallback to original key if no mapping found
-                )
-
-                rows.append(
-                    {
-                        column_names["parameter"]: excel_name,
-                        column_names["value"]: value,
-                        column_names[
-                            "description"
-                        ]: f"Description for {excel_name}",
-                    }
-                )
-            dataframes[sheet_name] = pd.DataFrame(rows)
-
-        saved_files, _ = file_utils.save_data_to_disk(
-            data=dataframes,
-            output_filetype=OutputFileType.XLSX,
-            output_type="parameters",
-            file_name=file_name,
-            include_timestamp=False,
-        )
-
-        return Path(next(iter(saved_files.values())))
+        except Exception as e:
+            print(f"Error saving parameter file: {e}")
+            print(f"Sheet data keys: {list(sheet_data.keys())}")
+            raise
 
     @pytest.fixture
     def mock_analyzer(
@@ -157,18 +157,19 @@ class TestSemanticAnalyzer:
         theme_mock = ThemeMockLLM()
         category_mock = CategoryMockLLM()
 
-        # Create test parameter file
+
+        sheet_name, param_df = self._create_parameter_df(test_parameters)
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={"General Parameters": test_parameters["general"]},
-            file_name="test_params",
+            sheet_data={sheet_name: param_df},
+            file_name="test_params"
         )
 
-        # # Initialize analyzers with config
-        # keyword_analyzer = SemanticAnalyzer(
-        #     parameter_file=file_path,
+        # # Create test parameter file
+        # file_path = self._save_parameter_file(
         #     file_utils=file_utils,
-        #     llm=keyword_mock
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
         # )
 
         # Create analyzers with different mocks
@@ -228,10 +229,18 @@ class TestSemanticAnalyzer:
         test_parameters: Dict[str, Any],
     ):
         """Test keyword analysis type specifically."""
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
+        # )
+
+        # Create parameter file
+        sheet_name, param_df = self._create_parameter_df(test_parameters)
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={"General Parameters": test_parameters["general"]},
-            file_name="test_params",
+            sheet_data={sheet_name: param_df},
+            file_name="test_params"
         )
 
         analyzer = SemanticAnalyzer(
@@ -257,10 +266,18 @@ class TestSemanticAnalyzer:
         test_parameters: Dict[str, Any],
     ):
         """Test error handling in analysis."""
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
+        # )
+
+        # Create parameter file
+        sheet_name, param_df = self._create_parameter_df(test_parameters)
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={"General Parameters": test_parameters["general"]},
-            file_name="test_params",
+            sheet_data={sheet_name: param_df},
+            file_name="test_params"
         )
 
         analyzer = SemanticAnalyzer(
@@ -293,14 +310,23 @@ class TestSemanticAnalyzer:
         fi_params = test_parameters.copy()
         fi_params["general"]["language"] = "fi"
 
-        # Get correct Finnish sheet name
-        sheet_name = ParameterSheets.get_sheet_name("general", "fi")
+        # # Get correct Finnish sheet name
+        # sheet_name = ParameterSheets.get_sheet_name("general", "fi")
 
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={sheet_name: fi_params["general"]},
+        #     file_name="test_params_fi",
+        # )
+
+        # Create parameter file
+        sheet_name, param_df = self._create_parameter_df(fi_params, language="fi")
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={sheet_name: fi_params["general"]},
-            file_name="test_params_fi",
+            sheet_data={sheet_name: param_df},
+            file_name="test_params_fi"
         )
+
 
         # Create analyzers with different mocks
         keyword_analyzer = SemanticAnalyzer(
@@ -355,12 +381,19 @@ class TestSemanticAnalyzer:
         test_parameters: Dict[str, Any],
     ):
         """Test batch analysis functionality with keyword mock."""
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
+        # )
+
+        # Create parameter file
+        sheet_name, param_df = self._create_parameter_df(test_parameters)
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={"General Parameters": test_parameters["general"]},
-            file_name="test_params",
+            sheet_data={sheet_name: param_df},
+            file_name="test_params"
         )
-
         analyzer = SemanticAnalyzer(
             parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
         )
@@ -379,32 +412,68 @@ class TestSemanticAnalyzer:
         self,
         file_utils: FileUtils,
         keyword_mock: KeywordMockLLM,
-        test_parameters: Dict[str, Any],
+        test_parameters: Dict[str, Any]
     ):
         """Test saving analysis results."""
+        # Get proper sheet name from ParameterSheets
+        general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
+        
+        # Create DataFrame with proper structure
+        column_names = ParameterSheets.get_column_names("general", "en")
+        param_df = pd.DataFrame([
+            {
+                column_names["parameter"]: "max_keywords",
+                column_names["value"]: test_parameters["general"]["max_keywords"],
+                column_names["description"]: "Maximum keywords to extract"
+            },
+            {
+                column_names["parameter"]: "language",
+                column_names["value"]: "en",
+                column_names["description"]: "Content language"  
+            },
+            {
+                column_names["parameter"]: "focus_on",
+                column_names["value"]: test_parameters["general"]["focus_on"],
+                column_names["description"]: "Analysis focus"
+            },
+            {
+                column_names["parameter"]: "column_name_to_analyze", 
+                column_names["value"]: "content",
+                column_names["description"]: "Content column name"
+            }
+        ])
+
+        # Save parameter file with correct sheet name
         file_path = self._save_parameter_file(
             file_utils=file_utils,
-            sheet_data={"General Parameters": test_parameters["general"]},
-            file_name="test_params",
+            sheet_data={general_sheet_name: param_df},
+            file_name="test_params"
         )
 
+        # Create analyzer with parameters
         analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
+            parameter_file=file_path,
+            file_utils=file_utils,
+            llm=keyword_mock
         )
 
+        # Create a complete test result with all required components
         result = CompleteAnalysisResult(
             keywords=analyzer._create_error_result_by_type("keywords"),
             themes=analyzer._create_error_result_by_type("themes"),
             categories=analyzer._create_error_result_by_type("categories"),
             language="en",
             success=True,
-            processing_time=1.0,
+            processing_time=1.0
         )
 
+        # Test saving
         output_path = analyzer.save_results(
-            results=result, output_file="test_results", output_type="processed"
+            results=result,
+            output_file="test_results",
+            output_type="processed"
         )
-
+        
         assert output_path.exists()
         assert output_path.suffix == ".xlsx"
 

@@ -265,7 +265,7 @@ class SemanticAnalyzer:
         }
 
         # Save using FileUtils
-        saved_files, _ = self.file_utils.save_data_to_disk(
+        saved_files, _ = self.file_utils.save_data_to_storage(
             data=dfs,
             output_filetype="xlsx",
             file_name=output_file,

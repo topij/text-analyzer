@@ -77,9 +77,9 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "name": "Machine Learning",
+                            "category": "Machine Learning",
                             "confidence": 0.9,
-                            "description": "Machine learning and AI content",
+                            "explanation": "Machine learning and AI content",
                             "evidence": [
                                 {
                                     "text": "Machine learning models are trained using large datasets",
@@ -93,9 +93,9 @@ class CategoryMockLLM(BaseMockLLM):
                             "themes": ["AI Technology", "Neural Networks"],
                         },
                         {
-                            "name": "Data Science",
+                            "category": "Data Science",
                             "confidence": 0.85,
-                            "description": "Data processing and analysis",
+                            "explanation": "Data processing and analysis",
                             "evidence": [
                                 {
                                     "text": "Data preprocessing and feature engineering",
@@ -117,9 +117,9 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "name": "Financial Analysis",
+                            "category": "Financial Analysis",
                             "confidence": 0.9,
-                            "description": "Financial metrics and performance",
+                            "explanation": "Financial metrics and performance",
                             "evidence": [
                                 {
                                     "text": "Q3 financial results show 15% revenue growth",
@@ -136,9 +136,9 @@ class CategoryMockLLM(BaseMockLLM):
                             ],
                         },
                         {
-                            "name": "Market Strategy",
+                            "category": "Market Strategy",
                             "confidence": 0.85,
-                            "description": "Market and business strategy",
+                            "explanation": "Market and business strategy",
                             "evidence": [
                                 {
                                     "text": "Market expansion strategy focuses on emerging sectors",
@@ -160,9 +160,9 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "name": "Koneoppiminen",
+                            "category": "Koneoppiminen",
                             "confidence": 0.9,
-                            "description": "Koneoppimisen ja tekoälyn teknologia",
+                            "explanation": "Koneoppimisen ja tekoälyn teknologia",
                             "evidence": [
                                 {
                                     "text": "Koneoppimismalleja koulutetaan suurilla datajoukolla",
@@ -176,9 +176,9 @@ class CategoryMockLLM(BaseMockLLM):
                             "themes": ["Tekoäly", "Neuroverkot"],
                         },
                         {
-                            "name": "Data-analyysi",
+                            "category": "Data-analyysi",
                             "confidence": 0.85,
-                            "description": "Datan käsittely ja analysointi",
+                            "explanation": "Datan käsittely ja analysointi",
                             "evidence": [
                                 {
                                     "text": "Datan esikäsittely ja piirteiden suunnittelu",
@@ -200,9 +200,9 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "name": "Taloudellinen Analyysi",
+                            "category": "Taloudellinen Analyysi",
                             "confidence": 0.9,
-                            "description": "Taloudelliset tulokset ja mittarit",
+                            "explanation": "Taloudelliset tulokset ja mittarit",
                             "evidence": [
                                 {
                                     "text": "Q3 taloudelliset tulokset osoittavat 15% kasvun",
@@ -212,9 +212,9 @@ class CategoryMockLLM(BaseMockLLM):
                             "themes": ["Taloudellinen Suorituskyky", "Kasvu"],
                         },
                         {
-                            "name": "Markkinastrategia",
+                            "category": "Markkinastrategia",
                             "confidence": 0.85,
-                            "description": "Markkinoiden ja liiketoiminnan strategia",
+                            "explanation": "Markkinoiden ja liiketoiminnan strategia",
                             "evidence": [
                                 {
                                     "text": "Markkinalaajennusstrategia keskittyy uusiin sektoreihin",

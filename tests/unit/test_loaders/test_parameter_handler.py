@@ -79,62 +79,70 @@ class TestParameterHandling:
         file_name: str,
     ) -> Path:
         """Helper to save parameter files using FileUtils."""
-        saved_files, _ = file_utils.save_data_to_disk(
-            data=sheet_data,
-            output_filetype=OutputFileType.XLSX,
-            output_type="parameters",
-            file_name=file_name,
-            include_timestamp=False,
-        )
-        return Path(next(iter(saved_files.values())))
+        try:
+            # Verify input is correct format
+            if not all(isinstance(df, pd.DataFrame) for df in sheet_data.values()):
+                raise ValueError("All values in sheet_data must be pandas DataFrames")
 
+            saved_files, _ = file_utils.save_data_to_storage(
+                data=sheet_data,
+                output_filetype=OutputFileType.XLSX,
+                output_type="parameters",
+                file_name=file_name,
+                include_timestamp=False,
+                engine='openpyxl'
+            )
+
+            return Path(next(iter(saved_files.values())))
+        except Exception as e:
+            print(f"Error saving parameter file: {e}")
+            print(f"Sheet data: {sheet_data}")
+            raise
     def test_parameter_loading(
         self, file_utils: FileUtils, test_parameters: Dict[str, Any]
     ) -> None:
         """Test parameter loading with proper sheet structure."""
-        # Get correct sheet and column names
+        # Get correct sheet name and column names
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ]["en"]
         column_names = ParameterSheets.get_column_names("general", "en")
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["en"]
 
         # Create DataFrame with proper structure
-        param_data = []
-        for key, value in test_parameters["general"].items():
-            for excel_name, internal_name in param_mappings.items():
-                if internal_name == key:
-                    param_data.append(
-                        {
-                            column_names["parameter"]: excel_name,
-                            column_names["value"]: value,
-                            column_names[
-                                "description"
-                            ]: f"Description for {excel_name}",
-                        }
-                    )
+        data_rows = []
+        for internal_name, value in test_parameters["general"].items():
+            # Find the Excel parameter name that maps to this internal name
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() 
+                if internal == internal_name),
+                internal_name  # Fallback to internal name if no mapping found
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Description for {excel_name}"
+            })
 
-        param_df = pd.DataFrame(param_data)
-        sheet_data = {general_sheet_name: param_df}
+        # Create DataFrame 
+        param_df = pd.DataFrame(data_rows)
+        
+        # Create the dictionary of DataFrames with proper sheet name
+        sheet_data = {general_sheet_name: param_df}  # Now this is Dict[str, pd.DataFrame]
 
-        # Save using FileUtils
-        param_file = self._save_parameter_file(
+        # Save file
+        file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data=sheet_data,
-            file_name="test_params",
+            file_name="test_params"
         )
 
         # Test parameter loading
-        handler = ParameterHandler(param_file)
+        handler = ParameterHandler(file_path)
         params = handler.get_parameters()
 
         assert isinstance(params, ParameterSet)
         assert params.general.language == test_parameters["general"]["language"]
         assert params.general.focus_on == test_parameters["general"]["focus_on"]
-        assert (
-            params.general.max_keywords
-            == test_parameters["general"]["max_keywords"]
-        )
+        assert params.general.max_keywords == test_parameters["general"]["max_keywords"]
 
     def test_finnish_parameters(
         self, file_utils: FileUtils, test_parameters: Dict[str, Any]
@@ -142,9 +150,7 @@ class TestParameterHandling:
         """Test Finnish parameter handling."""
         # Get Finnish sheet and column names
         general_sheet_name = ParameterSheets.get_sheet_name("general", "fi")
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ]["fi"]
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["fi"]
         column_names = ParameterSheets.get_column_names("general", "fi")
 
         # Modify for Finnish
@@ -152,29 +158,30 @@ class TestParameterHandling:
         fi_params["general"]["language"] = "fi"
         fi_params["general"]["focus_on"] = "tekninen sisältö"
 
-        # Create Excel mappings
-        excel_mappings = {
-            internal: excel for excel, internal in param_mappings.items()
-        }
+        # Create Excel mappings and DataFrame rows
+        data_rows = []
+        for internal_name, value in fi_params["general"].items():
+            # Find the Excel parameter name that maps to this internal name
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() 
+                if internal == internal_name),
+                internal_name  # Fallback to internal name if no mapping found
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Kuvaus: {excel_name}"
+            })
 
-        # Create parameter data
-        param_data = []
-        for key, value in fi_params["general"].items():
-            if key in excel_mappings:
-                param_data.append(
-                    {
-                        column_names["parameter"]: excel_mappings[key],
-                        column_names["value"]: value,
-                        column_names["description"]: "",
-                    }
-                )
-
-        param_df = pd.DataFrame(param_data)
+        # Create DataFrame and sheet data
+        param_df = pd.DataFrame(data_rows)
         sheet_data = {general_sheet_name: param_df}
 
         # Save and test
         param_file = self._save_parameter_file(
-            file_utils=file_utils, sheet_data=sheet_data, file_name="fi_params"
+            file_utils=file_utils,
+            sheet_data=sheet_data,
+            file_name="fi_params"
         )
 
         handler = ParameterHandler(param_file)
@@ -195,21 +202,29 @@ class TestParameterHandling:
         invalid_params["general"]["max_keywords"] = 50  # Above maximum
         invalid_params["general"]["min_confidence"] = 2.0  # Above 1.0
 
-        param_data = [
-            {
-                column_names["parameter"]: key,
+        # Create DataFrame rows
+        data_rows = []
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["en"]
+        for internal_name, value in invalid_params["general"].items():
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() 
+                if internal == internal_name),
+                internal_name
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
                 column_names["value"]: value,
-            }
-            for key, value in invalid_params["general"].items()
-        ]
+                column_names["description"]: f"Description for {excel_name}"
+            })
 
-        param_df = pd.DataFrame(param_data)
+        # Create DataFrame and sheet data
+        param_df = pd.DataFrame(data_rows)
         sheet_data = {general_sheet_name: param_df}
 
         param_file = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data=sheet_data,
-            file_name="invalid_params",
+            file_name="invalid_params"
         )
 
         # Expect ValueError with validation errors
@@ -222,7 +237,7 @@ class TestParameterHandling:
         assert "less than or equal to 20" in error_msg
         assert "min_confidence" in error_msg
         assert "less than or equal to 1" in error_msg
-
+        
     def test_missing_mandatory_fields(self, file_utils: FileUtils) -> None:
         """Test validation of mandatory fields."""
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
@@ -287,12 +302,19 @@ class TestParameterHandling:
     def test_empty_parameter_file(self, file_utils: FileUtils) -> None:
         """Test handling of empty parameter files."""
         sheet_name = ParameterSheets.get_sheet_name("general", "en")
-        sheet_data = {sheet_name: pd.DataFrame()}
+        # Create an empty DataFrame with correct columns
+        column_names = ParameterSheets.get_column_names("general", "en")
+        empty_df = pd.DataFrame(columns=[
+            column_names["parameter"],
+            column_names["value"],
+            column_names["description"]
+        ])
+        sheet_data = {sheet_name: empty_df}
 
         param_file = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data=sheet_data,
-            file_name="empty_params",
+            file_name="empty_params"
         )
 
         handler = ParameterHandler(param_file)
@@ -308,18 +330,31 @@ class TestParameterHandling:
     ) -> None:
         """Test parameter update functionality."""
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
-        param_df = pd.DataFrame(
-            [
-                {"parameter": key, "value": value}
-                for key, value in test_parameters["general"].items()
-            ]
-        )
+        column_names = ParameterSheets.get_column_names("general", "en")
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["en"]
+
+        # Create DataFrame rows
+        data_rows = []
+        for internal_name, value in test_parameters["general"].items():
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() 
+                if internal == internal_name),
+                internal_name
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Description for {excel_name}"
+            })
+
+        # Create DataFrame and sheet data
+        param_df = pd.DataFrame(data_rows)
         sheet_data = {general_sheet_name: param_df}
 
         param_file = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data=sheet_data,
-            file_name="update_params",
+            file_name="update_params"
         )
 
         handler = ParameterHandler(param_file)

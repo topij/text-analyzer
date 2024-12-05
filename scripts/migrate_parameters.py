@@ -96,7 +96,7 @@ class ParameterMigration:
     def _create_backup(self, file_path: Path) -> Path:
         """Create backup of original file."""
         backup_path = file_path.with_suffix(f".bak{file_path.suffix}")
-        self.file_utils.save_data_to_disk(
+        self.file_utils.save_data_to_storage(
             data=self.file_utils.load_excel_sheets(file_path),
             output_filetype="xlsx",
             file_name=backup_path.stem,
@@ -233,7 +233,7 @@ class ParameterMigration:
         output_path = Path(output_file)
 
         # Save using FileUtils and handle return value correctly
-        result, metadata = self.file_utils.save_data_to_disk(
+        result, metadata = self.file_utils.save_data_to_storage(
             data=sheets,
             output_filetype="xlsx",
             file_name=output_path.stem,
@@ -252,7 +252,7 @@ class ParameterMigration:
 
         # # Save using FileUtils
         # output_path = Path(output_file)
-        # self.file_utils.save_data_to_disk(
+        # self.file_utils.save_data_to_storage(
         #     data=sheets, output_filetype="xlsx", file_name=output_path.stem, include_timestamp=False
         # )
 
@@ -377,7 +377,7 @@ class ParameterMigration:
             ),
         }
 
-        self.file_utils.save_data_to_disk(
+        self.file_utils.save_data_to_storage(
             data=sheets, output_filetype="xlsx", file_name=output_path.stem
         )
 

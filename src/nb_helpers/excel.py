@@ -46,7 +46,7 @@ class ExcelAnalyzer:
         output_df = pd.DataFrame(results)
         output_df.insert(0, content_column, df[content_column])
 
-        self.file_utils.save_data_to_disk(
+        self.file_utils.save_data_to_storage(
             data={"Analysis Results": output_df},
             output_filetype="xlsx",
             file_name=output_file,

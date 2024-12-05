@@ -271,7 +271,7 @@ async def analyze_excel_content(
         )
 
     # Save results
-    analyzer.file_utils.save_data_to_disk(
+    analyzer.file_utils.save_data_to_storage(
         data={"Analysis Results": output_df},
         output_filetype="xlsx",
         file_name=output_file,
