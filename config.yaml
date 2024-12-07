@@ -5,7 +5,7 @@ environment: "development"
 
 # Logging configuration
 logging:
-  level: "INFO"
+  level: "DEBUG"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "logs/app.log"
@@ -47,18 +47,18 @@ models:
       
     azure:
       available_models:
-        gpt-4:
-          description: "Azure OpenAI GPT-4"
-          deployment_name: "gpt-4"
-          max_tokens: 8192
-          supports_functions: true
-        gpt-35-turbo:
-          description: "Azure OpenAI GPT-3.5 Turbo"
-          deployment_name: "gpt-35-turbo"
+        #gpt-4:
+        #  description: "Azure OpenAI GPT-4"
+        #  deployment_name: "gpt-4"
+        #  max_tokens: 8192
+        #  supports_functions: true
+        gpt-4o-mini:
+          description: "Azure OpenAI GPT-4o-mini deployment"
+          deployment_name: "gpt-4o-mini"
           max_tokens: 4096
           supports_functions: true
-      api_type: "azure"
-      api_version: "2024-02-15-preview"
+      api_type: "openai"
+      api_version: "2024-08-01-preview"
       
     anthropic:
       available_models:
