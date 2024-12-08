@@ -209,96 +209,19 @@ class FinnishTextProcessor(BaseTextProcessor):
     #         )
 
     def __init__(
-        self,
-        language: str = "fi",
-        custom_stop_words: Optional[Set[str]] = None,
-        config: Optional[Dict[str, Any]] = None,
-    ):
+            self, language: str = "fi", 
+            custom_stop_words: Optional[Set[str]] = None, 
+            config: Optional[Dict[str, Any]] = None):
         super().__init__(language, custom_stop_words, config)
         self._analysis_cache = {}
-        self._failed_words = set()  # Track words that fail analysis
+        self._failed_words = set()
 
         self.voikko_handler = VoikkoHandler()
         voikko_path = config.get("voikko_path") if config else None
         self.voikko = self.voikko_handler.initialize(voikko_path)
 
-        if not self.voikko:
-            logger.warning(
-                "Voikko initialization failed. Some Finnish-specific features will be limited."
-            )
-
-    # def _initialize_voikko(
-    #     self, voikko_path: Optional[str] = None
-    # ) -> Optional[Voikko]:
-    #     """Initialize Voikko with proper path handling."""
-    #     try:
-    #         # Determine platform
-    #         platform = sys.platform
-    #         logger.info(f"Detected platform: {platform}")
-
-    #         # Get platform-specific search paths
-    #         default_paths = self.VOIKKO_PATHS.get(
-    #             platform, self.VOIKKO_PATHS["linux"]
-    #         )
-    #         search_paths = [os.path.expanduser(p) for p in default_paths]
-
-    #         # Add config path if provided
-    #         if voikko_path:
-    #             search_paths.insert(0, os.path.expanduser(voikko_path))
-
-    #         # Try direct initialization first
-    #         try:
-    #             voikko = Voikko("fi")
-    #             if voikko.analyze("testi"):
-    #                 logger.info(
-    #                     "Successfully initialized Voikko using system libraries"
-    #                 )
-    #                 return voikko
-    #         except Exception as e:
-    #             logger.debug(f"System library initialization failed: {e}")
-
-    #         # Try with explicit paths
-    #         for path in search_paths:
-    #             if not os.path.exists(path):
-    #                 continue
-
-    #             try:
-    #                 # Windows-specific handling
-    #                 if platform == "win32":
-    #                     self._add_dll_directory(path)
-
-    #                 voikko = Voikko("fi", str(path))
-    #                 if voikko.analyze("testi"):
-    #                     logger.info(
-    #                         f"Successfully initialized Voikko with path: {path}"
-    #                     )
-    #                     return voikko
-    #             except Exception as e:
-    #                 logger.debug(f"Failed initialization with {path}: {e}")
-
-    #         logger.warning(
-    #             "Could not initialize Voikko. Using fallback methods."
-    #         )
-    #         return None
-
-    #     except Exception as e:
-    #         logger.error(f"Voikko initialization failed: {str(e)}")
-    #         return None
-
-    # def _add_dll_directory(self, path: str) -> None:
-    #     """Add directory to DLL search path on Windows."""
-    #     if sys.platform == "win32":
-    #         try:
-    #             if hasattr(os, "add_dll_directory"):
-    #                 os.add_dll_directory(path)
-    #             else:
-    #                 if path not in os.environ["PATH"]:
-    #                     os.environ["PATH"] = (
-    #                         path + os.pathsep + os.environ["PATH"]
-    #                     )
-    #             logger.info(f"Added {path} to DLL search path")
-    #         except Exception as e:
-    #             logger.error(f"Error adding DLL directory {path}: {str(e)}")
+        if not self.voikko_handler.is_available():
+            logger.warning("Voikko initialization failed. Using fallback mode for Finnish text processing.")
 
     def is_compound_word(self, word: str) -> bool:
         """Enhanced compound word detection for Finnish."""
@@ -398,15 +321,18 @@ class FinnishTextProcessor(BaseTextProcessor):
         return word.lower()
 
     def _analyze_word_safe(self, word: str) -> Optional[Dict[str, Any]]:
-        """Thread-safe word analysis with failure tracking."""
-        if not self.voikko or word in self._failed_words:
+        """Thread-safe word analysis with fallback."""
+        if not self.voikko_handler.is_available():
+            return self.voikko_handler.get_fallback_analysis(word)
+
+        if word in self._failed_words:
             return None
 
         try:
             if word in self._analysis_cache:
                 return self._analysis_cache[word]
 
-            with threading.Lock():  # Thread-safe Voikko access
+            with threading.Lock():
                 analysis = self.voikko.analyze(word)
                 if not analysis:
                     self._failed_words.add(word)
@@ -784,53 +710,122 @@ class FinnishTextProcessor(BaseTextProcessor):
 
 
 class VoikkoHandler:
-    """Handler for Voikko initialization with proper cleanup."""
+    """Handler for Voikko initialization with robust fallback behavior."""
+
+    SEARCH_PATHS = {
+        "linux": [
+            "/usr/lib/voikko",
+            "/usr/local/lib/voikko",
+            "/usr/share/voikko",
+            "/opt/conda/lib/voikko",  # Common in conda environments
+            "/anaconda/lib/voikko",   # Specific to Azure ML conda
+            "~/voikko",
+        ],
+        "win32": [
+            r"C:\scripts\Voikko",
+            r"C:\Program Files\Voikko",
+            r"C:\Voikko",
+            "~/Voikko",
+        ],
+        "darwin": [
+            "/usr/local/lib/voikko",
+            "/opt/voikko",
+            "~/voikko",
+        ]
+    }
 
     def __init__(self):
         """Initialize handler."""
         self.voikko = None
-        self.initialized = False  # Add explicit initialization
+        self.initialized = False
+        self.fallback_mode = False
+        self._initialize_logging()
+
+    def _initialize_logging(self):
+        """Set up dedicated logger for Voikko handling."""
+        self.logger = logging.getLogger(__name__ + ".VoikkoHandler")
+        self.logger.setLevel(logging.DEBUG)
 
     def initialize(self, voikko_path: Optional[str] = None) -> Optional[Voikko]:
-        """Initialize Voikko safely."""
-        self._cleanup_existing()  # Clean up any existing instance
+        """Initialize Voikko with comprehensive error handling and fallbacks."""
+        self._cleanup_existing()
 
         try:
-            # Try explicit paths first
-            paths = self._get_search_paths(sys.platform, voikko_path)
-            for path in paths:
+            # Try direct system initialization first
+            self.logger.debug("Attempting direct Voikko initialization...")
+            if self._try_direct_initialization():
+                return self.voikko
+
+            # Try with explicit paths
+            self.logger.debug("Attempting initialization with explicit paths...")
+            if voikko_instance := self._try_path_initialization(voikko_path):
+                return voikko_instance
+
+            # If all attempts fail, set up fallback mode
+            self.logger.warning(
+                "Voikko initialization failed in all attempts. Switching to fallback mode."
+            )
+            self.fallback_mode = True
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Unexpected error during Voikko initialization: {e}")
+            self.fallback_mode = True
+            return None
+        
+    def _try_direct_initialization(self) -> bool:
+        """Try to initialize Voikko using system libraries."""
+        try:
+            self.voikko = Voikko("fi")
+            self.voikko.analyze("testi")  # Verification test
+            self.initialized = True
+            self.logger.info("Successfully initialized Voikko using system libraries")
+            return True
+        except Exception as e:
+            self.logger.debug(f"Direct initialization failed: {e}")
+            return False
+
+    def _try_path_initialization(self, custom_path: Optional[str] = None) -> Optional[Voikko]:
+        """Try initialization with various paths."""
+        paths = self._get_search_paths(custom_path)
+        
+        for path in paths:
+            try:
                 if not os.path.exists(path):
                     continue
 
-                try:
-                    if sys.platform == "win32":
-                        self._add_dll_directory(path)
+                self.logger.debug(f"Trying initialization with path: {path}")
+                
+                if sys.platform == "win32":
+                    self._add_dll_directory(path)
 
-                    self.voikko = Voikko("fi", str(path))
-                    self.voikko.analyze("testi")  # Test
-                    self.initialized = True  # Mark as successfully initialized
-                    logger.info(
-                        f"Successfully initialized Voikko with path: {path}"
-                    )
-                    return self.voikko
-                except Exception as e:
-                    logger.debug(f"Failed to initialize with {path}: {e}")
-                    self._cleanup_existing()
-                    continue
+                self.voikko = Voikko("fi", str(path))
+                self.voikko.analyze("testi")  # Verification test
+                self.initialized = True
+                self.logger.info(f"Successfully initialized Voikko with path: {path}")
+                return self.voikko
 
-            # Try system libraries as fallback
-            self.voikko = Voikko("fi")
-            self.voikko.analyze("testi")
-            self.initialized = True  # Mark as successfully initialized
-            logger.info(
-                "Successfully initialized Voikko using system libraries"
-            )
-            return self.voikko
+            except Exception as e:
+                self.logger.debug(f"Failed initialization with {path}: {e}")
+                self._cleanup_existing()
 
-        except Exception as e:
-            self._cleanup_existing()
-            logger.debug(f"System library initialization failed: {e}")
-            return None
+        return None
+
+    def _get_search_paths(self, custom_path: Optional[str] = None) -> List[str]:
+        """Get platform-specific search paths."""
+        platform_paths = self.SEARCH_PATHS.get(sys.platform, self.SEARCH_PATHS["linux"])
+        paths = [os.path.expanduser(p) for p in platform_paths]
+        
+        if custom_path:
+            paths.insert(0, os.path.expanduser(custom_path))
+            
+        # Add environment-specific paths
+        conda_prefix = os.environ.get("CONDA_PREFIX")
+        if conda_prefix:
+            paths.insert(0, os.path.join(conda_prefix, "lib", "voikko"))
+
+        self.logger.debug(f"Search paths: {paths}")
+        return paths
 
     def _cleanup_existing(self):
         """Clean up existing Voikko instance."""
@@ -838,43 +833,10 @@ class VoikkoHandler:
             try:
                 self.voikko.terminate()
             except Exception as e:
-                logger.debug(f"Error during Voikko cleanup: {e}")
+                self.logger.debug(f"Error during Voikko cleanup: {e}")
         self.voikko = None
         self.initialized = False
-
-    def _get_search_paths(
-        self, platform: str, custom_path: Optional[str] = None
-    ) -> List[str]:
-        """Get platform-specific Voikko search paths."""
-        # Only return platform-specific paths
-        if platform == "win32":
-            base_paths = [
-                r"C:\scripts\Voikko",
-                r"C:\Program Files\Voikko",
-                r"C:\Voikko",
-                "~/Voikko",
-            ]
-        elif platform == "linux":
-            base_paths = [
-                "/usr/lib/voikko",
-                "/usr/local/lib/voikko",
-                "/usr/share/voikko",
-                "~/voikko",
-            ]
-        elif platform == "darwin":
-            base_paths = [
-                "/usr/local/lib/voikko",
-                "/opt/voikko",
-                "~/voikko",
-            ]
-        else:
-            base_paths = []  # Unsupported platform
-
-        # Add custom path at the start if provided
-        if custom_path:
-            base_paths.insert(0, os.path.expanduser(custom_path))
-
-        return [os.path.expanduser(p) for p in base_paths]
+        self.fallback_mode = False
 
     def _add_dll_directory(self, path: str) -> None:
         """Add directory to DLL search path on Windows."""
@@ -884,18 +846,27 @@ class VoikkoHandler:
                     os.add_dll_directory(path)
                 else:
                     if path not in os.environ["PATH"]:
-                        os.environ["PATH"] = (
-                            path + os.pathsep + os.environ["PATH"]
-                        )
-                logger.info(f"Added {path} to DLL search path")
+                        os.environ["PATH"] = path + os.pathsep + os.environ["PATH"]
+                self.logger.debug(f"Added {path} to DLL search path")
             except Exception as e:
-                logger.error(f"Error adding DLL directory {path}: {str(e)}")
+                self.logger.debug(f"Error adding DLL directory {path}: {e}")
+
+    def is_available(self) -> bool:
+        """Check if Voikko is available and initialized."""
+        return self.initialized and self.voikko is not None
+
+    def get_fallback_analysis(self, word: str) -> Optional[Dict[str, Any]]:
+        """Provide basic fallback analysis when Voikko is unavailable."""
+        if not word:
+            return None
+            
+        # Implement basic word analysis
+        return {
+            "BASEFORM": word.lower(),
+            "CLASS": "nimisana" if not word.endswith("a") else "teonsana",
+            "STRUCTURE": "=",
+        }
 
     def __del__(self):
-        """Clean up Voikko instance on deletion."""
-        if hasattr(self, "initialized") and hasattr(self, "voikko"):
-            if self.initialized and self.voikko:
-                try:
-                    self.voikko.terminate()
-                except Exception as e:
-                    logger.debug(f"Error during Voikko cleanup in __del__: {e}")
+        """Ensure cleanup on deletion."""
+        self._cleanup_existing()
