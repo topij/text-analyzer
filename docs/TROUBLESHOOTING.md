@@ -208,6 +208,52 @@ config = {
 
 ## FileUtils Issues
 
+### Project Structure Problems
+
+**Issue**: Missing directories or incorrect paths
+```
+FileNotFoundError: [Errno 2] No such file or directory: '.../data/processed'
+```
+
+**Solution**:
+```python
+from FileUtils import FileUtils
+
+# Reinitialize FileUtils to create directories
+file_utils = FileUtils()
+
+# Verify paths
+print(file_utils.get_data_path("processed"))
+print(file_utils.get_data_path("parameters"))
+```
+
+### Storage Backend Issues
+
+**Issue**: Azure storage connection fails
+```
+StorageConnectionError: Connection failed with error: Invalid connection string
+```
+
+**Solution**:
+1. Verify connection string:
+```python
+import os
+print("Connection string set:", bool(os.getenv("AZURE_STORAGE_CONNECTION_STRING")))
+```
+
+2. Test connection explicitly:
+```python
+from FileUtils import FileUtils
+
+try:
+    file_utils = FileUtils.create_azure_utils(
+        connection_string="your_connection_string"
+    )
+    print("Azure connection successful")
+except Exception as e:
+    print(f"Connection failed: {e}")
+```
+
 ### Storage Access Problems
 
 **Issue**: Cannot save/load files
@@ -247,6 +293,66 @@ fu = FileUtils.create_azure_utils(
 containers = fu.list_containers()
 print("Available containers:", containers)
 ```
+### File Operation Errors
+
+**Issue**: Permission errors when saving files
+```
+PermissionError: [Errno 13] Permission denied: '.../data/processed/results.xlsx'
+```
+
+**Solution**:
+```python
+import os
+from pathlib import Path
+
+# Check directory permissions
+path = file_utils.get_data_path("processed")
+print("Directory exists:", Path(path).exists())
+print("Writable:", os.access(path, os.W_OK))
+
+# Try creating directory with explicit permissions
+Path(path).mkdir(parents=True, exist_ok=True, mode=0o755)
+```
+
+### Parameter File Issues
+
+**Issue**: Cannot load parameter file
+```
+FileNotFoundError: Parameter file 'parameters_en.xlsx' not found
+```
+
+**Solution**:
+```python
+# Check parameter file location
+param_path = file_utils.get_data_path("parameters")
+print("Parameters directory:", param_path)
+print("Available files:", os.listdir(param_path))
+
+# Try explicit path
+from semantic_analyzer import SemanticAnalyzer
+analyzer = SemanticAnalyzer(
+    parameter_file=str(Path(param_path) / "parameters_en.xlsx")
+)
+```
+
+### File Format Issues
+
+**Issue**: Excel file corruption or format errors
+```
+ValueError: Excel file format cannot be determined
+```
+
+**Solution**:
+```python
+# Save with explicit format
+analyzer.save_results(
+    results=result,
+    output_file="analysis_results",
+    output_type="processed",
+    output_filetype="xlsx",
+    engine="openpyxl"
+)
+```
 
 ## Debug Mode
 
@@ -259,6 +365,28 @@ logging.basicConfig(level=logging.DEBUG)
 # Configure specific loggers
 logging.getLogger('semantic_analyzer').setLevel(logging.DEBUG)
 logging.getLogger('FileUtils').setLevel(logging.DEBUG)
+```
+
+### Debug FileUtils
+
+Enable detailed logging:
+```python
+import logging
+logging.getLogger('FileUtils').setLevel(logging.DEBUG)
+
+# Or during initialization
+file_utils = FileUtils(log_level="DEBUG")
+```
+
+Check configuration:
+```python
+# Print current configuration
+print(file_utils.config)
+
+# Verify directory structure
+for dir_type in ["raw", "processed", "parameters"]:
+    path = file_utils.get_data_path(dir_type)
+    print(f"{dir_type}: {path} (exists: {Path(path).exists()})")
 ```
 
 ## Common Error Messages

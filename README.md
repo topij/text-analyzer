@@ -14,6 +14,12 @@ A comprehensive toolkit for semantic text analysis with multi-language support (
   - Theme Analysis: Identify main themes and their relationships
   - Category Classification: Classify content into predefined categories
 
+- **File Management and Storage**
+  - Integrated FileUtils for robust file operations
+  - Support for local and cloud storage (Azure)
+  - Automatic project structure management
+  - Consistent file handling across environments
+
 - **Advanced Capabilities**
   - Compound word detection and analysis
   - Domain-specific terminology recognition
@@ -65,8 +71,32 @@ print(f"Categories: {result.categories}")
 ## Requirements
 
 - Python 3.9+
-- Required packages listed in `environment.yaml`
-- Optional: Azure subscription for cloud deployment
+- Core Dependencies:
+  - FileUtils (included in environment.yaml)
+  - pandas>=2.0.0
+  - pyyaml>=6.0
+  - langchain and related packages
+
+## Project Structure
+
+The analyzer uses FileUtils to maintain the following project structure:
+
+```
+project_root/
+├── data/
+│   ├── raw/           # Original data files
+│   ├── interim/       # Intermediate processing
+│   ├── processed/     # Analysis results
+│   ├── external/      # External data sources
+│   ├── parameters/    # Analysis parameters
+│   └── configurations/ # Config files
+├── reports/
+│   ├── figures/       # Visualizations
+│   ├── tables/        # Analysis tables
+│   └── outputs/       # Analysis outputs
+├── models/            # Trained models
+└── src/              # Source code
+```
 
 ## Installation
 

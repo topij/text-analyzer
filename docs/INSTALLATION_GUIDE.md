@@ -27,6 +27,67 @@ conda activate semantic-analyzer
 pip install -e .
 ```
 
+## FileUtils Setup
+
+### Automatic Installation
+
+FileUtils is automatically installed as part of the environment setup:
+```bash
+# Create conda environment
+conda env create -f environment.yaml
+```
+
+The environment.yaml includes FileUtils and its dependencies:
+```yaml
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - "FileUtils[all] @ git+https://github.com/topij/FileUtils.git"
+```
+
+### Storage Configuration
+
+#### Local Storage (Default)
+No additional configuration needed. FileUtils will automatically:
+- Create necessary project directories
+- Handle file paths consistently across platforms
+- Manage data organization
+
+#### Azure Storage Setup
+1. Set environment variables:
+```bash
+# Azure Storage
+export AZURE_STORAGE_CONNECTION_STRING="your_connection_string"
+```
+
+2. Or update config.yaml:
+```yaml
+storage:
+  default_type: "azure"
+  azure:
+    enabled: true
+    container_mapping:
+      raw: "raw-data"
+      processed: "processed-data"
+      parameters: "parameters"
+```
+
+### Verify FileUtils Installation
+
+Run in Python:
+```python
+from FileUtils import FileUtils
+from semantic_analyzer import verify_environment
+
+# Check FileUtils version
+print(FileUtils.__version__)
+
+# Verify analyzer environment
+result = verify_environment()
+print("FileUtils status:", "OK" if result else "Failed")
+```
+
 ## Language Support Setup
 
 ### Finnish Language Support (Voikko)
