@@ -11,6 +11,23 @@ logging:
   file_path: "logs/app.log"
   disable_existing_loggers: false
 
+# Language-specific settings
+languages:
+  fi:
+    min_word_length: 3
+    excluded_patterns: 
+      - "^\\d+$"
+      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"
+    voikko:
+      paths:
+        win32:
+          lib_path: "C:/scripts/Voikko/libvoikko-1.dll"
+          dict_path: "C:/scripts/Voikko"
+        linux:
+          lib_path: "/usr/lib/x86_64-linux-gnu/libvoikko.so.1"
+          dict_path: "/usr/lib/voikko"
+    preserve_compounds: true
+
 # Core analyzer settings
 analyzer:
   default_language: "en"

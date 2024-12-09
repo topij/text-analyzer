@@ -6,7 +6,9 @@ from typing import Dict, Optional
 
 from dotenv import load_dotenv
 
-from FileUtils import FileUtils  # Ensure FileUtils is installed in your AML environment
+from FileUtils import (
+    FileUtils,
+)  # Ensure FileUtils is installed in your AML environment
 
 
 class EnvironmentSetup:
@@ -20,7 +22,8 @@ class EnvironmentSetup:
             os.environ.get("WORKSPACE_ROOT", Path().resolve().parent)
         )
         self.file_utils = FileUtils(log_level=log_level)
-        self.required_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+        self.required_env_vars = ["AZURE_OPENAI_API_KEY"]
+        # self.required_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
 
     def verify(self) -> bool:
         # Load environment variables from .env
