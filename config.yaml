@@ -36,7 +36,7 @@ analyzer:
 # Model settings
 models:
   default_provider: "openai"
-  default_model: "gpt-4-mini"
+  default_model: "gpt-4o-mini"
   parameters:
     temperature: 0.0
     max_tokens: 1000
@@ -55,7 +55,7 @@ models:
           description: "Faster GPT-4 variant"
           max_tokens: 4096
           supports_functions: true
-        gpt-4-mini:
+        gpt-4o-mini:
           description: "Fast and cost-effective for simpler tasks"
           max_tokens: 4096
           supports_functions: true

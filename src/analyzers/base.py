@@ -9,6 +9,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
 from src.loaders.parameter_handler import ParameterHandler
+from src.core.language_processing.base import BaseTextProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +70,14 @@ class TextAnalyzer(ABC):
         self,
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
+        language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize analyzer with optional LLM and config."""
+        """Initialize analyzer with language support."""
         from src.core.llm.factory import create_llm
 
         self.llm = llm or create_llm()
         self.config = config or {}
-        self.logger = logging.getLogger(__name__)
+        self.language_processor = language_processor
         self.chain = self._create_chain()
 
     @abstractmethod
@@ -87,6 +89,22 @@ class TextAnalyzer(ABC):
     async def analyze(self, text: str, **kwargs) -> AnalyzerOutput:
         """Perform analysis on text."""
         pass
+
+    def _get_language(self) -> str:
+        """Get current language with better fallback."""
+        if self.language_processor:
+            return self.language_processor.language
+        if "language" in self.config:
+            return self.config["language"]
+        return "unknown"
+
+    def _prepare_result(self, result: Any, output_type: str) -> Any:
+        """Prepare result with proper language."""
+        if hasattr(result, "__dict__"):
+            result.language = self._get_language()
+        elif isinstance(result, dict):
+            result["language"] = self._get_language()
+        return result
 
     def _detect_language(self, text: str) -> str:
         """Detect text language."""

@@ -33,10 +33,40 @@ from FileUtils import FileUtils
 logger = logging.getLogger(__name__)
 
 
+# src/semantic_analyzer/analyzer.py
+
+import asyncio
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Awaitable, Dict, List, Optional, Union
+
+import pandas as pd
+from langchain_core.language_models import BaseChatModel
+
+from src.analyzers.category_analyzer import CategoryAnalyzer
+from src.analyzers.keyword_analyzer import KeywordAnalyzer
+from src.analyzers.theme_analyzer import ThemeAnalyzer
+from src.core.config import AnalyzerConfig
+from src.core.language_processing import create_text_processor
+from src.core.llm.factory import create_llm
+from src.loaders.parameter_handler import ParameterHandler
+from src.schemas import (
+    CategoryAnalysisResult,
+    CategoryOutput,
+    CompleteAnalysisResult,
+    KeywordAnalysisResult,
+    ThemeAnalysisResult,
+    ThemeOutput,
+)
+from FileUtils import FileUtils
+
+logger = logging.getLogger(__name__)
+
+
 class SemanticAnalyzer:
     """Main interface for semantic text analysis."""
 
-    # Valid analysis types
     VALID_TYPES = {"keywords", "themes", "categories"}
 
     def __init__(
@@ -46,23 +76,182 @@ class SemanticAnalyzer:
         llm: Optional[BaseChatModel] = None,
         **kwargs,
     ):
-        """Initialize analyzer with parameters and components.
-
-        Args:
-            parameter_file: Path to Excel parameter file (default: parameters_en.xlsx)
-            file_utils: Optional FileUtils instance
-            llm: Optional LLM instance
-            **kwargs: Additional configuration options
-        """
+        """Initialize analyzer with parameters and components."""
         self.file_utils = file_utils or FileUtils()
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
+        self.llm = llm or create_llm(config=self.analyzer_config)
+
+        # Store base parameter file path
+        self._base_parameter_file = parameter_file
+
+        # Initialize with default parameters
         self.parameter_handler = ParameterHandler(parameter_file)
         self.parameters = self.parameter_handler.get_parameters()
-        # Create config instance for LLM
-        self.config = AnalyzerConfig(file_utils=self.file_utils)
-        # Use new factory with config
-        self.llm = llm or create_llm(config=self.config)
         self._init_analyzers()
         logger.info("Semantic analyzer initialization complete")
+
+    def set_language(self, language: str) -> None:
+        """Update analyzer configuration for new language."""
+        try:
+            # Get base parameter file name
+            base_name = "parameters"
+            if self._base_parameter_file:
+                base_name = Path(self._base_parameter_file).stem.split("_")[0]
+
+            # Construct language-specific parameter file path
+            param_path = (
+                self.file_utils.get_data_path("parameters")
+                / f"{base_name}_{language}.xlsx"
+            )
+            logger.debug(f"Looking for parameter file: {param_path}")
+
+            # Update parameter handler with new file
+            self.parameter_handler = ParameterHandler(param_path)
+            self.parameters = self.parameter_handler.get_parameters()
+
+            # Create new config dictionary based on current config
+            new_config = self.analyzer_config.config.copy()
+            new_config["language"] = language
+            self.config = new_config
+
+            # Create new language processor
+            self.language_processor = create_text_processor(
+                language=language, config=self.config
+            )
+
+            # Reinitialize analyzers with new configuration
+            self._init_analyzers()
+            logger.info(f"Language switched to {language}")
+
+        except Exception as e:
+            logger.error(f"Error setting language to {language}: {e}")
+            raise
+
+    def _init_analyzers(self) -> None:
+        """Initialize analyzers with correct language."""
+        try:
+            # Get language from parameters
+            language = self.parameters.general.language
+
+            # Build config dict for language processor
+            config = {
+                "min_word_length": self.parameters.general.min_keyword_length,
+                "include_compounds": self.parameters.general.include_compounds,
+            }
+
+            # Add voikko_path for Finnish if available
+            if language == "fi":
+                general_dict = self.parameters.general.model_dump()
+                if "voikko_path" in general_dict:
+                    config["voikko_path"] = general_dict["voikko_path"]
+
+            # Initialize language processor if not already set
+            if (
+                not hasattr(self, "language_processor")
+                or self.language_processor.language != language
+            ):
+                self.language_processor = create_text_processor(
+                    language=language,
+                    config=config,
+                )
+                logger.debug(f"Created language processor for {language}")
+
+            # Base config for all analyzers
+            base_config = {
+                "language": language,
+                "min_confidence": self.parameters.general.min_confidence,
+                "focus_on": self.parameters.general.focus_on,
+            }
+
+            # Initialize analyzers with proper config
+            self.keyword_analyzer = KeywordAnalyzer(
+                llm=self.llm,
+                config={
+                    **base_config,
+                    "max_keywords": self.parameters.general.max_keywords,
+                    "min_keyword_length": self.parameters.general.min_keyword_length,
+                    "include_compounds": self.parameters.general.include_compounds,
+                    "weights": self.parameters.analysis_settings.weights.model_dump(),
+                },
+                language_processor=self.language_processor,
+            )
+            logger.debug("Initialized keyword analyzer")
+
+            self.theme_analyzer = ThemeAnalyzer(
+                llm=self.llm,
+                config={
+                    **base_config,
+                    "max_themes": self.parameters.general.max_themes,
+                },
+                language_processor=self.language_processor,
+            )
+            logger.debug("Initialized theme analyzer")
+
+            self.category_analyzer = CategoryAnalyzer(
+                categories=self.parameters.categories,
+                llm=self.llm,
+                config=base_config,
+                language_processor=self.language_processor,
+            )
+            logger.debug("Initialized category analyzer")
+
+        except Exception as e:
+            logger.error(f"Error initializing analyzers: {e}")
+            raise
+
+    async def analyze(
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+        language: Optional[str] = None,
+        timeout: float = 60.0,
+        **kwargs,
+    ) -> CompleteAnalysisResult:
+        """Run analysis pipeline."""
+        start_time = datetime.now()
+
+        try:
+            # Update language if specified
+            if language:
+                self.set_language(language)
+
+            types_to_run = self._validate_analysis_types(analysis_types)
+            tasks = []
+
+            for analysis_type in types_to_run:
+                coro = await self._create_analysis_task(
+                    analysis_type, text, **kwargs
+                )
+                if coro:
+                    tasks.append(asyncio.create_task(coro))
+
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), timeout=timeout
+            )
+
+            processed_results = self._process_analysis_results(
+                results, types_to_run
+            )
+
+            return CompleteAnalysisResult(
+                keywords=processed_results.get(
+                    "keywords", self._create_error_result_by_type("keywords")
+                ),
+                themes=processed_results.get(
+                    "themes", self._create_error_result_by_type("themes")
+                ),
+                categories=processed_results.get(
+                    "categories",
+                    self._create_error_result_by_type("categories"),
+                ),
+                language=self.parameters.general.language,
+                success=all(r.success for r in processed_results.values()),
+                processing_time=(datetime.now() - start_time).total_seconds(),
+            )
+
+        except Exception as e:
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            return self._create_error_result(str(e), start_time)
 
     @classmethod
     def from_excel(
@@ -82,69 +271,6 @@ class SemanticAnalyzer:
             SemanticAnalyzer: Configured analyzer instance
         """
         return cls(parameter_file=excel_file, language=language, **kwargs)
-
-    def _init_analyzers(self) -> None:
-        """Initialize analyzers with correct language."""
-        # Create language processor first
-        language = self.parameters.general.language
-
-        # Build config dict for language processor
-        config = {
-            "min_word_length": self.parameters.general.min_keyword_length,
-            "include_compounds": self.parameters.general.include_compounds,
-        }
-
-        # Add voikko_path for Finnish if available
-        if language == "fi":
-            # Access as model field or via dict conversion
-            general_dict = self.parameters.general.model_dump()
-            if "voikko_path" in general_dict:
-                config["voikko_path"] = general_dict["voikko_path"]
-
-        self.language_processor = create_text_processor(
-            language=language,
-            config=config,
-        )
-        logger.debug(f"Created language processor for {language}")
-
-        # Base config for all analyzers
-        base_config = {
-            "language": language,
-            "min_confidence": self.parameters.general.min_confidence,
-            "focus_on": self.parameters.general.focus_on,
-        }
-
-        # Initialize analyzers with proper config
-        self.keyword_analyzer = KeywordAnalyzer(
-            llm=self.llm,
-            config={
-                **base_config,
-                "max_keywords": self.parameters.general.max_keywords,
-                "min_keyword_length": self.parameters.general.min_keyword_length,
-                "include_compounds": self.parameters.general.include_compounds,
-                "weights": self.parameters.analysis_settings.weights.model_dump(),
-            },
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized keyword analyzer")
-
-        self.theme_analyzer = ThemeAnalyzer(
-            llm=self.llm,
-            config={
-                **base_config,
-                "max_themes": self.parameters.general.max_themes,
-            },
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized theme analyzer")
-
-        self.category_analyzer = CategoryAnalyzer(
-            categories=self.parameters.categories,
-            llm=self.llm,
-            config=base_config,
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized category analyzer")
 
     async def _create_analysis_task(
         self,
@@ -191,54 +317,6 @@ class SemanticAnalyzer:
             success=output.success,
             error=output.error,
         )
-
-    async def analyze(
-        self,
-        text: str,
-        analysis_types: Optional[List[str]] = None,
-        timeout: float = 60.0,
-        **kwargs,
-    ) -> CompleteAnalysisResult:
-        """Run analysis pipeline."""
-        start_time = datetime.now()
-        try:
-            types_to_run = self._validate_analysis_types(analysis_types)
-            tasks = []
-
-            for analysis_type in types_to_run:
-                coro = await self._create_analysis_task(
-                    analysis_type, text, **kwargs
-                )
-                if coro:
-                    tasks.append(asyncio.create_task(coro))
-
-            results = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True), timeout=timeout
-            )
-
-            processed_results = self._process_analysis_results(
-                results, types_to_run
-            )
-
-            return CompleteAnalysisResult(
-                keywords=processed_results.get(
-                    "keywords", self._create_error_result_by_type("keywords")
-                ),
-                themes=processed_results.get(
-                    "themes", self._create_error_result_by_type("themes")
-                ),
-                categories=processed_results.get(
-                    "categories",
-                    self._create_error_result_by_type("categories"),
-                ),
-                language=self.parameters.general.language,
-                success=all(r.success for r in processed_results.values()),
-                processing_time=(datetime.now() - start_time).total_seconds(),
-            )
-
-        except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            return self._create_error_result(str(e), start_time)
 
     def save_results(
         self,
