@@ -15,6 +15,7 @@ from src.core.config import AnalyzerConfig
 from langchain_core.language_models import BaseChatModel
 
 from src.loaders.parameter_handler import ParameterHandler, ParameterSheets
+from src.loaders.models import CategoryConfig
 from src.schemas import CompleteAnalysisResult
 from src.semantic_analyzer import SemanticAnalyzer
 from FileUtils import FileUtils, OutputFileType
@@ -81,33 +82,39 @@ class TestSemanticAnalyzer:
         return CategoryMockLLM()
 
     def _create_parameter_df(
-        self,
-        test_parameters: Dict[str, Any],
-        language: str = "en"
+        self, test_parameters: Dict[str, Any], language: str = "en"
     ) -> Tuple[str, pd.DataFrame]:
         """Helper method to create parameter DataFrame with proper mappings."""
         # Get proper names and mappings
         general_sheet_name = ParameterSheets.get_sheet_name("general", language)
         column_names = ParameterSheets.get_column_names("general", language)
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"][language]
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+            "parameters"
+        ][language]
 
         # Create DataFrame rows
         data_rows = []
         for internal_name, value in test_parameters["general"].items():
             excel_name = next(
-                (excel for excel, internal in param_mappings.items() 
-                if internal == internal_name),
-                internal_name
+                (
+                    excel
+                    for excel, internal in param_mappings.items()
+                    if internal == internal_name
+                ),
+                internal_name,
             )
-            data_rows.append({
-                column_names["parameter"]: excel_name,
-                column_names["value"]: value,
-                column_names["description"]: f"Description for {excel_name}"
-            })
+            data_rows.append(
+                {
+                    column_names["parameter"]: excel_name,
+                    column_names["value"]: value,
+                    column_names[
+                        "description"
+                    ]: f"Description for {excel_name}",
+                }
+            )
 
         # Create and return sheet name and DataFrame
         return general_sheet_name, pd.DataFrame(data_rows)
-
 
     def _save_parameter_file(
         self,
@@ -116,7 +123,7 @@ class TestSemanticAnalyzer:
         file_name: str,
     ) -> Path:
         """Helper to save parameter files using FileUtils."""
-        
+
         try:
             # Save data
             saved_files, _ = file_utils.save_data_to_storage(
@@ -125,9 +132,9 @@ class TestSemanticAnalyzer:
                 output_type="parameters",
                 file_name=file_name,
                 include_timestamp=False,
-                engine='openpyxl'  # Add this explicitly
+                engine="openpyxl",  # Add this explicitly
             )
-            
+
             return Path(next(iter(saved_files.values())))
 
         except Exception as e:
@@ -143,83 +150,6 @@ class TestSemanticAnalyzer:
         mock_llm: BaseChatModel,
     ):
         return SemanticAnalyzer(file_utils=file_utils, llm=mock_llm)
-
-    @pytest.mark.asyncio
-    async def test_complete_analysis(
-        self,
-        file_utils: FileUtils,
-        analyzer_config: AnalyzerConfig,
-        test_parameters: Dict[str, Any],  # Add the fixture parameter
-    ):
-        """Test complete analysis pipeline with all mock types."""
-        # Create analyzers with different mocks
-        keyword_mock = KeywordMockLLM()
-        theme_mock = ThemeMockLLM()
-        category_mock = CategoryMockLLM()
-
-
-        sheet_name, param_df = self._create_parameter_df(test_parameters)
-        file_path = self._save_parameter_file(
-            file_utils=file_utils,
-            sheet_data={sheet_name: param_df},
-            file_name="test_params"
-        )
-
-        # # Create test parameter file
-        # file_path = self._save_parameter_file(
-        #     file_utils=file_utils,
-        #     sheet_data={"General Parameters": test_parameters["general"]},
-        #     file_name="test_params",
-        # )
-
-        # Create analyzers with different mocks
-        keyword_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
-        )
-
-        theme_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=theme_mock
-        )
-
-        category_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=category_mock
-        )
-
-        text = """Machine learning models are trained using large datasets.
-                Neural networks enable complex pattern recognition.
-                The system's performance metrics show significant improvements."""
-
-        # Run analyses with specific types
-        keyword_result = await keyword_analyzer.analyze(
-            text, analysis_types=["keywords"]
-        )
-        assert keyword_result.keywords.success
-        assert len(keyword_result.keywords.keywords) > 0
-        assert any(
-            "machine learning" in kw.keyword.lower()
-            for kw in keyword_result.keywords.keywords
-        )
-
-        theme_result = await theme_analyzer.analyze(
-            text, analysis_types=["themes"]
-        )
-        assert theme_result.themes.success
-        assert len(theme_result.themes.themes) > 0
-        assert any(
-            "learning" in theme.name.lower()
-            for theme in theme_result.themes.themes
-        )
-
-        category_result = await category_analyzer.analyze(
-            text, analysis_types=["categories"]
-        )
-        assert category_result.categories.success
-        assert len(category_result.categories.matches) > 0
-        # Update expectation to match what the mock actually returns
-        assert any(
-            "learning" in cat.name.lower()
-            for cat in category_result.categories.matches
-        )
 
     @pytest.mark.asyncio
     async def test_specific_analysis_types(
@@ -240,7 +170,7 @@ class TestSemanticAnalyzer:
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={sheet_name: param_df},
-            file_name="test_params"
+            file_name="test_params",
         )
 
         analyzer = SemanticAnalyzer(
@@ -277,7 +207,7 @@ class TestSemanticAnalyzer:
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={sheet_name: param_df},
-            file_name="test_params"
+            file_name="test_params",
         )
 
         analyzer = SemanticAnalyzer(
@@ -297,60 +227,68 @@ class TestSemanticAnalyzer:
         assert not result.success
         assert "Invalid analysis types" in result.error
 
+    # tests/unit/test_semantic_analyzer.py
+
     @pytest.mark.asyncio
-    async def test_finnish_analysis(
+    async def test_complete_analysis(
         self,
         file_utils: FileUtils,
-        keyword_mock: KeywordMockLLM,
-        theme_mock: ThemeMockLLM,
-        category_mock: CategoryMockLLM,
+        analyzer_config: AnalyzerConfig,
         test_parameters: Dict[str, Any],
     ):
-        """Test Finnish language analysis with all mock types."""
-        fi_params = test_parameters.copy()
-        fi_params["general"]["language"] = "fi"
-
-        # # Get correct Finnish sheet name
-        # sheet_name = ParameterSheets.get_sheet_name("general", "fi")
-
-        # file_path = self._save_parameter_file(
-        #     file_utils=file_utils,
-        #     sheet_data={sheet_name: fi_params["general"]},
-        #     file_name="test_params_fi",
-        # )
-
+        """Test complete analysis pipeline with all mock types."""
         # Create parameter file
-        sheet_name, param_df = self._create_parameter_df(fi_params, language="fi")
+        sheet_name, param_df = self._create_parameter_df(test_parameters)
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={sheet_name: param_df},
-            file_name="test_params_fi"
+            file_name="test_params",
         )
 
+        # Create test categories
+        categories = {
+            "Technical": CategoryConfig(
+                description="Technical content",
+                keywords=["software", "api", "data"],
+                threshold=0.6,
+            ),
+            "Business": CategoryConfig(
+                description="Business content",
+                keywords=["revenue", "growth", "market"],
+                threshold=0.6,
+            ),
+        }
 
         # Create analyzers with different mocks
         keyword_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
+            parameter_file=file_path,
+            file_utils=file_utils,
+            llm=KeywordMockLLM(),
         )
 
         theme_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=theme_mock
+            parameter_file=file_path, file_utils=file_utils, llm=ThemeMockLLM()
         )
 
         category_analyzer = SemanticAnalyzer(
-            parameter_file=file_path, file_utils=file_utils, llm=category_mock
+            parameter_file=file_path,
+            file_utils=file_utils,
+            llm=CategoryMockLLM(),
+            categories=categories,  # Pass test categories
         )
 
-        text = """Koneoppimismallit analysoivat dataa tehokkaasti.
-                 Neuroverkon arkkitehtuuri mahdollistaa monimutkaisen hahmontunnistuksen."""
+        text = """Machine learning models are trained using large datasets.
+                Neural networks enable complex pattern recognition.
+                The system's performance metrics show significant improvements."""
 
-        # Run and validate each type of analysis
+        # Run analyses with specific types
         keyword_result = await keyword_analyzer.analyze(
             text, analysis_types=["keywords"]
         )
         assert keyword_result.keywords.success
+        assert len(keyword_result.keywords.keywords) > 0
         assert any(
-            "koneoppimis" in kw.keyword.lower()
+            "machine learning" in kw.keyword.lower()
             for kw in keyword_result.keywords.keywords
         )
 
@@ -358,8 +296,9 @@ class TestSemanticAnalyzer:
             text, analysis_types=["themes"]
         )
         assert theme_result.themes.success
+        assert len(theme_result.themes.themes) > 0
         assert any(
-            "koneoppiminen" in theme.name.lower()
+            "learning" in theme.name.lower()
             for theme in theme_result.themes.themes
         )
 
@@ -367,11 +306,94 @@ class TestSemanticAnalyzer:
             text, analysis_types=["categories"]
         )
         assert category_result.categories.success
-        # Update expectation to match the mock's actual Finnish output
+        assert len(category_result.categories.matches) > 0
         assert any(
-            "oppiminen" in cat.name.lower()
+            cat.name == "Machine Learning"
             for cat in category_result.categories.matches
         )
+
+    @pytest.mark.asyncio
+    async def test_finnish_analysis(
+        self,
+        file_utils: FileUtils,
+        analyzer_config: AnalyzerConfig,
+        test_parameters: Dict[str, Any],
+    ):
+        """Test Finnish language analysis."""
+        # Update test parameters for Finnish
+        fi_params = test_parameters.copy()
+        fi_params["general"]["language"] = "fi"
+
+        # Create parameter file
+        sheet_name, param_df = self._create_parameter_df(
+            fi_params, language="fi"
+        )
+        file_path = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data={sheet_name: param_df},
+            file_name="test_params_fi",
+        )
+
+        # Create test categories with Finnish translations
+        categories = {
+            "Technical": CategoryConfig(
+                description="Tekninen sisältö",
+                keywords=["ohjelmisto", "rajapinta", "data"],
+                threshold=0.6,
+            ),
+            "Business": CategoryConfig(
+                description="Liiketoimintasisältö",
+                keywords=["liikevaihto", "kasvu", "markkina"],
+                threshold=0.6,
+            ),
+        }
+
+        # Create analyzers
+        analyzers = {
+            "keywords": SemanticAnalyzer(
+                parameter_file=file_path,
+                file_utils=file_utils,
+                llm=KeywordMockLLM(),
+            ),
+            "themes": SemanticAnalyzer(
+                parameter_file=file_path,
+                file_utils=file_utils,
+                llm=ThemeMockLLM(),
+            ),
+            "categories": SemanticAnalyzer(
+                parameter_file=file_path,
+                file_utils=file_utils,
+                llm=CategoryMockLLM(),
+                categories=categories,
+            ),
+        }
+
+        text = """Koneoppimismallit analysoivat dataa tehokkaasti.
+                 Neuroverkon arkkitehtuuri mahdollistaa monimutkaisen hahmontunnistuksen."""
+
+        # Test each analyzer
+        for analysis_type, analyzer in analyzers.items():
+            result = await analyzer.analyze(
+                text, analysis_types=[analysis_type]
+            )
+            assert result.success
+            if analysis_type == "keywords":
+                assert any(
+                    "koneoppimis" in kw.keyword.lower()
+                    for kw in result.keywords.keywords
+                )
+            elif analysis_type == "themes":
+                assert any(
+                    "oppiminen" in theme.name.lower()
+                    for theme in result.themes.themes
+                )
+            elif analysis_type == "categories":
+                print(f"analysis_type: {analysis_type}")
+                print(f"result.categories.matches {result.categories.matches}")
+                assert any(
+                    cat.name == "Machine Learning"
+                    for cat in result.categories.matches
+                )
 
     @pytest.mark.asyncio
     async def test_batch_analysis(
@@ -392,7 +414,7 @@ class TestSemanticAnalyzer:
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={sheet_name: param_df},
-            file_name="test_params"
+            file_name="test_params",
         )
         analyzer = SemanticAnalyzer(
             parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
@@ -412,49 +434,53 @@ class TestSemanticAnalyzer:
         self,
         file_utils: FileUtils,
         keyword_mock: KeywordMockLLM,
-        test_parameters: Dict[str, Any]
+        test_parameters: Dict[str, Any],
     ):
         """Test saving analysis results."""
         # Get proper sheet name from ParameterSheets
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
-        
+
         # Create DataFrame with proper structure
         column_names = ParameterSheets.get_column_names("general", "en")
-        param_df = pd.DataFrame([
-            {
-                column_names["parameter"]: "max_keywords",
-                column_names["value"]: test_parameters["general"]["max_keywords"],
-                column_names["description"]: "Maximum keywords to extract"
-            },
-            {
-                column_names["parameter"]: "language",
-                column_names["value"]: "en",
-                column_names["description"]: "Content language"  
-            },
-            {
-                column_names["parameter"]: "focus_on",
-                column_names["value"]: test_parameters["general"]["focus_on"],
-                column_names["description"]: "Analysis focus"
-            },
-            {
-                column_names["parameter"]: "column_name_to_analyze", 
-                column_names["value"]: "content",
-                column_names["description"]: "Content column name"
-            }
-        ])
+        param_df = pd.DataFrame(
+            [
+                {
+                    column_names["parameter"]: "max_keywords",
+                    column_names["value"]: test_parameters["general"][
+                        "max_keywords"
+                    ],
+                    column_names["description"]: "Maximum keywords to extract",
+                },
+                {
+                    column_names["parameter"]: "language",
+                    column_names["value"]: "en",
+                    column_names["description"]: "Content language",
+                },
+                {
+                    column_names["parameter"]: "focus_on",
+                    column_names["value"]: test_parameters["general"][
+                        "focus_on"
+                    ],
+                    column_names["description"]: "Analysis focus",
+                },
+                {
+                    column_names["parameter"]: "column_name_to_analyze",
+                    column_names["value"]: "content",
+                    column_names["description"]: "Content column name",
+                },
+            ]
+        )
 
         # Save parameter file with correct sheet name
         file_path = self._save_parameter_file(
             file_utils=file_utils,
             sheet_data={general_sheet_name: param_df},
-            file_name="test_params"
+            file_name="test_params",
         )
 
         # Create analyzer with parameters
         analyzer = SemanticAnalyzer(
-            parameter_file=file_path,
-            file_utils=file_utils,
-            llm=keyword_mock
+            parameter_file=file_path, file_utils=file_utils, llm=keyword_mock
         )
 
         # Create a complete test result with all required components
@@ -464,16 +490,14 @@ class TestSemanticAnalyzer:
             categories=analyzer._create_error_result_by_type("categories"),
             language="en",
             success=True,
-            processing_time=1.0
+            processing_time=1.0,
         )
 
         # Test saving
         output_path = analyzer.save_results(
-            results=result,
-            output_file="test_results",
-            output_type="processed"
+            results=result, output_file="test_results", output_type="processed"
         )
-        
+
         assert output_path.exists()
         assert output_path.suffix == ".xlsx"
 

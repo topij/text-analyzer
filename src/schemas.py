@@ -60,17 +60,11 @@ class Evidence(BaseModel):
 class CategoryMatch(BaseModel):
     """Information about a category match."""
 
-    name: str = Field(..., description="Category name")
-    confidence: float = Field(
-        ..., ge=0.0, le=1.0, description="Confidence score"
-    )
-    description: str = Field(default="", description="Category description")
-    evidence: List[Evidence] = Field(
-        default_factory=list, description="Supporting evidence"
-    )
-    themes: List[str] = Field(
-        default_factory=list, description="Related themes"
-    )
+    name: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    description: str = Field(default="")
+    evidence: List[Evidence] = Field(default_factory=list)
+    themes: List[str] = Field(default_factory=list)
 
 
 class CategoryOutput(BaseModel):

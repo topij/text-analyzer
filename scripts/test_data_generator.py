@@ -151,6 +151,231 @@ class TestDataGenerator:
     #             ],
     #         }
     #     )
+    # def _create_general_params(self, language: str) -> pd.DataFrame:
+    #     """Create general parameters DataFrame using ParameterSheets mappings."""
+    #     column_names = ParameterSheets.get_column_names("general", language)
+    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+    #         "parameters"
+    #     ][language]
+
+    #     # Start with internal parameter names and values
+    #     internal_params = {
+    #         "max_keywords": 8,
+    #         "language": language,
+    #         "focus_on": "business and technical content analysis",
+    #         "min_keyword_length": 3,
+    #         "include_compounds": True,
+    #         "column_name_to_analyze": "content",
+    #         "max_themes": 3,
+    #         "min_confidence": 0.3,
+    #     }
+
+    #     # Map internal names to display names using PARAMETER_MAPPING
+    #     display_params = {}
+    #     for internal_name, value in internal_params.items():
+    #         # Find the display name from mappings
+    #         display_name = next(
+    #             excel_name
+    #             for excel_name, mapped_name in param_mappings.items()
+    #             if mapped_name == internal_name
+    #         )
+    #         display_params[display_name] = value
+
+    #     # Create DataFrame with mapped column names from ParameterSheets
+    #     return pd.DataFrame(
+    #         {
+    #             column_names["parameter"]: list(display_params.keys()),
+    #             column_names["value"]: list(display_params.values()),
+    #             column_names["description"]: [
+    #                 (
+    #                     f"Description for {k}"
+    #                     if language == "en"
+    #                     else f"Kuvaus: {k}"
+    #                 )
+    #                 for k in display_params.keys()
+    #             ],
+    #         }
+    #     )
+
+    # def _create_keywords_params(self, language: str) -> pd.DataFrame:
+    #     """Create keywords parameters DataFrame."""
+    #     column_names = ParameterSheets.get_column_names("keywords", language)
+
+    #     if language == "fi":
+    #         data = {
+    #             column_names["keyword"]: [
+    #                 "koneoppiminen",
+    #                 "data-analyysi",
+    #                 "pilvipalvelut",
+    #                 "liiketoimintatiedon hallinta",
+    #                 "markkina-analyysi",
+    #             ],
+    #             column_names["importance"]: [1.0, 0.9, 0.8, 0.9, 0.8],
+    #             column_names["domain"]: [
+    #                 "tekninen",
+    #                 "tekninen",
+    #                 "tekninen",
+    #                 "liiketoiminta",
+    #                 "liiketoiminta",
+    #             ],
+    #         }
+    #     else:
+    #         data = {
+    #             column_names["keyword"]: [
+    #                 "machine learning",
+    #                 "data analysis",
+    #                 "cloud computing",
+    #                 "business intelligence",
+    #                 "market analysis",
+    #             ],
+    #             column_names["importance"]: [1.0, 0.9, 0.8, 0.9, 0.8],
+    #             column_names["domain"]: [
+    #                 "technical",
+    #                 "technical",
+    #                 "technical",
+    #                 "business",
+    #                 "business",
+    #             ],
+    #         }
+
+    #     return pd.DataFrame(data)
+
+    # def _create_excluded_params(self, language: str) -> pd.DataFrame:
+    #     """Create excluded keywords DataFrame."""
+    #     column_names = ParameterSheets.get_column_names("excluded", language)
+
+    #     if language == "fi":
+    #         data = {
+    #             column_names["keyword"]: [
+    #                 "ja",
+    #                 "tai",
+    #                 "sekä",
+    #                 "kanssa",
+    #                 "uusi",
+    #             ],
+    #             column_names["reason"]: ["Yleinen sana"] * 5,
+    #         }
+    #     else:
+    #         data = {
+    #             column_names["keyword"]: ["the", "and", "with", "for", "new"],
+    #             column_names["reason"]: ["Common word"] * 5,
+    #         }
+
+    #     return pd.DataFrame(data)
+
+    # def _create_categories_params(self, language: str) -> pd.DataFrame:
+    #     """Create categories parameters DataFrame."""
+    #     column_names = ParameterSheets.get_column_names("categories", language)
+
+    #     if language == "fi":
+    #         data = {
+    #             column_names["category"]: [
+    #                 "tekninen_sisältö",
+    #                 "liiketoiminta_sisältö",
+    #             ],
+    #             column_names["description"]: [
+    #                 "Tekninen ja ohjelmistokehitys sisältö",
+    #                 "Liiketoiminta ja talousanalyysi sisältö",
+    #             ],
+    #             column_names["keywords"]: [
+    #                 "ohjelmisto,kehitys,rajapinta,ohjelmointi",
+    #                 "liikevaihto,myynti,markkina,kasvu",
+    #             ],
+    #             column_names["threshold"]: [0.6, 0.6],
+    #             column_names["parent"]: [None, None],
+    #         }
+    #     else:
+    #         data = {
+    #             column_names["category"]: [
+    #                 "technical_content",
+    #                 "business_content",
+    #             ],
+    #             column_names["description"]: [
+    #                 "Technical and software development content",
+    #                 "Business and financial analysis content",
+    #             ],
+    #             column_names["keywords"]: [
+    #                 "software,development,api,programming",
+    #                 "revenue,sales,market,growth",
+    #             ],
+    #             column_names["threshold"]: [0.6, 0.6],
+    #             column_names["parent"]: [None, None],
+    #         }
+
+    #     return pd.DataFrame(data)
+
+    # def _create_domains_params(self, language: str) -> pd.DataFrame:
+    #     """Create domains parameters DataFrame."""
+    #     column_names = ParameterSheets.get_column_names("domains", language)
+
+    #     if language == "fi":
+    #         data = {
+    #             column_names["name"]: ["tekninen", "liiketoiminta"],
+    #             column_names["description"]: [
+    #                 "Tekninen ja ohjelmistokehitys sisältö",
+    #                 "Liiketoiminta ja talousanalyysi sisältö",
+    #             ],
+    #             column_names["key_terms"]: [
+    #                 "ohjelmisto,kehitys,algoritmi,järjestelmä",
+    #                 "liikevaihto,kasvu,markkina,talous",
+    #             ],
+    #             column_names["context"]: [
+    #                 "Keskittyy teknisiin toteutusyksityiskohtiin",
+    #                 "Keskittyy liiketoiminnan suorituskykyyn",
+    #             ],
+    #             column_names["stopwords"]: [
+    #                 "käyttäen,toteutus,perus,yksinkertainen",
+    #                 "uusi,nykyinen,erilainen,yleinen",
+    #             ],
+    #         }
+    #     else:
+    #         data = {
+    #             column_names["name"]: ["technical", "business"],
+    #             column_names["description"]: [
+    #                 "Technical and software development content",
+    #                 "Business and financial content",
+    #             ],
+    #             column_names["key_terms"]: [
+    #                 "software,development,algorithm,system",
+    #                 "revenue,growth,market,financial",
+    #             ],
+    #             column_names["context"]: [
+    #                 "Focus on technical implementation details",
+    #                 "Focus on business performance metrics",
+    #             ],
+    #             column_names["stopwords"]: [
+    #                 "using,implementation,basic,simple",
+    #                 "new,current,various,general",
+    #             ],
+    #         }
+
+    #     return pd.DataFrame(data)
+
+    # def _create_settings_params(self, language: str) -> pd.DataFrame:
+    #     """Create settings parameters DataFrame."""
+    #     column_names = ParameterSheets.get_column_names("settings", language)
+    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["settings"][
+    #         "parameters"
+    #     ][language]
+
+    #     settings = [
+    #         ("theme_analysis.min_confidence", 0.5),
+    #         ("weights.statistical", 0.4),
+    #         ("weights.llm", 0.6),
+    #     ]
+
+    #     return pd.DataFrame(
+    #         {
+    #             column_names["setting"]: [
+    #                 param_mappings.get(s[0], s[0]) for s in settings
+    #             ],
+    #             column_names["value"]: [s[1] for s in settings],
+    #             column_names["description"]: [
+    #                 f"Description for {s[0]}" for s in settings
+    #             ],
+    #         }
+    #     )
+
     def _create_general_params(self, language: str) -> pd.DataFrame:
         """Create general parameters DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("general", language)
@@ -181,7 +406,6 @@ class TestDataGenerator:
             )
             display_params[display_name] = value
 
-        # Create DataFrame with mapped column names from ParameterSheets
         return pd.DataFrame(
             {
                 column_names["parameter"]: list(display_params.keys()),
@@ -198,180 +422,202 @@ class TestDataGenerator:
         )
 
     def _create_keywords_params(self, language: str) -> pd.DataFrame:
-        """Create keywords parameters DataFrame."""
+        """Create keywords parameters DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("keywords", language)
 
-        if language == "fi":
-            data = {
-                column_names["keyword"]: [
-                    "koneoppiminen",
-                    "data-analyysi",
-                    "pilvipalvelut",
-                    "liiketoimintatiedon hallinta",
-                    "markkina-analyysi",
-                ],
-                column_names["importance"]: [1.0, 0.9, 0.8, 0.9, 0.8],
-                column_names["domain"]: [
-                    "tekninen",
-                    "tekninen",
-                    "tekninen",
-                    "liiketoiminta",
-                    "liiketoiminta",
-                ],
-            }
-        else:
-            data = {
-                column_names["keyword"]: [
-                    "machine learning",
-                    "data analysis",
-                    "cloud computing",
-                    "business intelligence",
-                    "market analysis",
-                ],
-                column_names["importance"]: [1.0, 0.9, 0.8, 0.9, 0.8],
-                column_names["domain"]: [
-                    "technical",
-                    "technical",
-                    "technical",
-                    "business",
-                    "business",
-                ],
-            }
+        keywords_data = {
+            "en": [
+                ("machine learning", 1.0, "technical"),
+                ("data analysis", 0.9, "technical"),
+                ("cloud computing", 0.8, "technical"),
+                ("business intelligence", 0.9, "business"),
+                ("market analysis", 0.8, "business"),
+            ],
+            "fi": [
+                ("koneoppiminen", 1.0, "tekninen"),
+                ("data-analyysi", 0.9, "tekninen"),
+                ("pilvipalvelut", 0.8, "tekninen"),
+                ("liiketoimintatiedon hallinta", 0.9, "liiketoiminta"),
+                ("markkina-analyysi", 0.8, "liiketoiminta"),
+            ],
+        }
 
-        return pd.DataFrame(data)
+        data = keywords_data[language]
+
+        return pd.DataFrame(
+            {
+                column_names["keyword"]: [item[0] for item in data],
+                column_names["importance"]: [item[1] for item in data],
+                column_names["domain"]: [item[2] for item in data],
+            }
+        )
 
     def _create_excluded_params(self, language: str) -> pd.DataFrame:
-        """Create excluded keywords DataFrame."""
+        """Create excluded keywords DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("excluded", language)
 
-        if language == "fi":
-            data = {
-                column_names["keyword"]: [
-                    "ja",
-                    "tai",
-                    "sekä",
-                    "kanssa",
-                    "uusi",
-                ],
-                column_names["reason"]: ["Yleinen sana"] * 5,
-            }
-        else:
-            data = {
-                column_names["keyword"]: ["the", "and", "with", "for", "new"],
-                column_names["reason"]: ["Common word"] * 5,
-            }
+        excluded_data = {
+            "en": [
+                ("the", "Common word"),
+                ("and", "Common word"),
+                ("with", "Common word"),
+                ("for", "Common word"),
+                ("new", "Common word"),
+            ],
+            "fi": [
+                ("ja", "Yleinen sana"),
+                ("tai", "Yleinen sana"),
+                ("sekä", "Yleinen sana"),
+                ("kanssa", "Yleinen sana"),
+                ("uusi", "Yleinen sana"),
+            ],
+        }
 
-        return pd.DataFrame(data)
+        data = excluded_data[language]
+
+        return pd.DataFrame(
+            {
+                column_names["keyword"]: [item[0] for item in data],
+                column_names["reason"]: [item[1] for item in data],
+            }
+        )
 
     def _create_categories_params(self, language: str) -> pd.DataFrame:
-        """Create categories parameters DataFrame."""
+        """Create categories parameters DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("categories", language)
 
-        if language == "fi":
-            data = {
-                column_names["category"]: [
-                    "tekninen_sisältö",
-                    "liiketoiminta_sisältö",
-                ],
-                column_names["description"]: [
-                    "Tekninen ja ohjelmistokehitys sisältö",
-                    "Liiketoiminta ja talousanalyysi sisältö",
-                ],
-                column_names["keywords"]: [
-                    "ohjelmisto,kehitys,rajapinta,ohjelmointi",
-                    "liikevaihto,myynti,markkina,kasvu",
-                ],
-                column_names["threshold"]: [0.6, 0.6],
-                column_names["parent"]: [None, None],
-            }
-        else:
-            data = {
-                column_names["category"]: [
+        categories_data = {
+            "en": [
+                (
                     "technical_content",
-                    "business_content",
-                ],
-                column_names["description"]: [
                     "Technical and software development content",
-                    "Business and financial analysis content",
-                ],
-                column_names["keywords"]: [
                     "software,development,api,programming",
+                    0.6,
+                    None,
+                ),
+                (
+                    "business_content",
+                    "Business and financial analysis content",
                     "revenue,sales,market,growth",
-                ],
-                column_names["threshold"]: [0.6, 0.6],
-                column_names["parent"]: [None, None],
-            }
+                    0.6,
+                    None,
+                ),
+            ],
+            "fi": [
+                (
+                    "tekninen_sisältö",
+                    "Tekninen ja ohjelmistokehitys sisältö",
+                    "ohjelmisto,kehitys,rajapinta,ohjelmointi",
+                    0.6,
+                    None,
+                ),
+                (
+                    "liiketoiminta_sisältö",
+                    "Liiketoiminta ja talousanalyysi sisältö",
+                    "liikevaihto,myynti,markkina,kasvu",
+                    0.6,
+                    None,
+                ),
+            ],
+        }
 
-        return pd.DataFrame(data)
+        data = categories_data[language]
+
+        return pd.DataFrame(
+            {
+                column_names["category"]: [item[0] for item in data],
+                column_names["description"]: [item[1] for item in data],
+                column_names["keywords"]: [item[2] for item in data],
+                column_names["threshold"]: [item[3] for item in data],
+                column_names["parent"]: [item[4] for item in data],
+            }
+        )
 
     def _create_domains_params(self, language: str) -> pd.DataFrame:
-        """Create domains parameters DataFrame."""
+        """Create domains parameters DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("domains", language)
 
-        if language == "fi":
-            data = {
-                column_names["name"]: ["tekninen", "liiketoiminta"],
-                column_names["description"]: [
-                    "Tekninen ja ohjelmistokehitys sisältö",
-                    "Liiketoiminta ja talousanalyysi sisältö",
-                ],
-                column_names["key_terms"]: [
-                    "ohjelmisto,kehitys,algoritmi,järjestelmä",
-                    "liikevaihto,kasvu,markkina,talous",
-                ],
-                column_names["context"]: [
-                    "Keskittyy teknisiin toteutusyksityiskohtiin",
-                    "Keskittyy liiketoiminnan suorituskykyyn",
-                ],
-                column_names["stopwords"]: [
-                    "käyttäen,toteutus,perus,yksinkertainen",
-                    "uusi,nykyinen,erilainen,yleinen",
-                ],
-            }
-        else:
-            data = {
-                column_names["name"]: ["technical", "business"],
-                column_names["description"]: [
+        domains_data = {
+            "en": [
+                (
+                    "technical",
                     "Technical and software development content",
-                    "Business and financial content",
-                ],
-                column_names["key_terms"]: [
                     "software,development,algorithm,system",
-                    "revenue,growth,market,financial",
-                ],
-                column_names["context"]: [
                     "Focus on technical implementation details",
-                    "Focus on business performance metrics",
-                ],
-                column_names["stopwords"]: [
                     "using,implementation,basic,simple",
+                ),
+                (
+                    "business",
+                    "Business and financial content",
+                    "revenue,growth,market,financial",
+                    "Focus on business performance metrics",
                     "new,current,various,general",
-                ],
-            }
+                ),
+            ],
+            "fi": [
+                (
+                    "tekninen",
+                    "Tekninen ja ohjelmistokehitys sisältö",
+                    "ohjelmisto,kehitys,algoritmi,järjestelmä",
+                    "Keskittyy teknisiin toteutusyksityiskohtiin",
+                    "käyttäen,toteutus,perus,yksinkertainen",
+                ),
+                (
+                    "liiketoiminta",
+                    "Liiketoiminta ja talousanalyysi sisältö",
+                    "liikevaihto,kasvu,markkina,talous",
+                    "Keskittyy liiketoiminnan suorituskykyyn",
+                    "uusi,nykyinen,erilainen,yleinen",
+                ),
+            ],
+        }
 
-        return pd.DataFrame(data)
+        data = domains_data[language]
+
+        return pd.DataFrame(
+            {
+                column_names["name"]: [item[0] for item in data],
+                column_names["description"]: [item[1] for item in data],
+                column_names["key_terms"]: [item[2] for item in data],
+                column_names["context"]: [item[3] for item in data],
+                column_names["stopwords"]: [item[4] for item in data],
+            }
+        )
 
     def _create_settings_params(self, language: str) -> pd.DataFrame:
-        """Create settings parameters DataFrame."""
+        """Create settings parameters DataFrame using ParameterSheets mappings."""
         column_names = ParameterSheets.get_column_names("settings", language)
         param_mappings = ParameterSheets.PARAMETER_MAPPING["settings"][
             "parameters"
         ][language]
 
-        settings = [
-            ("theme_analysis.min_confidence", 0.5),
-            ("weights.statistical", 0.4),
-            ("weights.llm", 0.6),
-        ]
+        internal_settings = {
+            "theme_analysis.min_confidence": 0.5,
+            "weights.statistical": 0.4,
+            "weights.llm": 0.6,
+        }
+
+        # Map internal names to display names
+        display_settings = {}
+        for internal_name, value in internal_settings.items():
+            display_name = next(
+                excel_name
+                for excel_name, mapped_name in param_mappings.items()
+                if mapped_name == internal_name
+            )
+            display_settings[display_name] = value
 
         return pd.DataFrame(
             {
-                column_names["setting"]: [
-                    param_mappings.get(s[0], s[0]) for s in settings
-                ],
-                column_names["value"]: [s[1] for s in settings],
+                column_names["setting"]: list(display_settings.keys()),
+                column_names["value"]: list(display_settings.values()),
                 column_names["description"]: [
-                    f"Description for {s[0]}" for s in settings
+                    (
+                        f"Description for {k}"
+                        if language == "en"
+                        else f"Kuvaus: {k}"
+                    )
+                    for k in display_settings.keys()
                 ],
             }
         )

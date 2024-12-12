@@ -3,13 +3,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+# src.analyzer.base.py
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
+from src.core.llm.factory import create_llm
 from src.loaders.parameter_handler import ParameterHandler
 from src.core.language_processing.base import BaseTextProcessor
+from src.core.config import AnalyzerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,14 +74,23 @@ class TextAnalyzer(ABC):
         self,
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
-        language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize analyzer with language support."""
-        from src.core.llm.factory import create_llm
+        """Initialize analyzer with optional LLM and config."""
+        # Initialize analyzer config if not provided
+        if llm is None:
+            analyzer_config = AnalyzerConfig()
+            llm = create_llm(config=analyzer_config)
 
-        self.llm = llm or create_llm()
+            # Merge analyzer config with provided config if any
+            if config is None:
+                config = {}
+            config = {**analyzer_config.config.get("analysis", {}), **config}
+
+        self.llm = llm
         self.config = config or {}
-        self.language_processor = language_processor
+        self.logger = logging.getLogger(__name__)
+
+        # Create chain after all initialization is done
         self.chain = self._create_chain()
 
     @abstractmethod

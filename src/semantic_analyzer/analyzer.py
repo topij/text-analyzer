@@ -128,76 +128,63 @@ class SemanticAnalyzer:
             raise
 
     def _init_analyzers(self) -> None:
-        """Initialize analyzers with correct language."""
-        try:
-            # Get language from parameters
-            language = self.parameters.general.language
+        """Initialize analyzers with correct language and parameters."""
+        # Create language processor first
+        language = self.parameters.general.language
 
-            # Build config dict for language processor
-            config = {
-                "min_word_length": self.parameters.general.min_keyword_length,
+        # Build config dict for language processor
+        config = {
+            "min_word_length": self.parameters.general.min_keyword_length,
+            "include_compounds": self.parameters.general.include_compounds,
+        }
+
+        self.language_processor = create_text_processor(
+            language=language,
+            config=config,
+        )
+        logger.debug(f"Created language processor for {language}")
+
+        # Base config for all analyzers
+        base_config = {
+            "language": language,
+            "min_confidence": self.parameters.general.min_confidence,
+            "focus_on": self.parameters.general.focus_on,
+        }
+
+        # Initialize analyzers with proper config
+        self.keyword_analyzer = KeywordAnalyzer(
+            llm=self.llm,
+            config={
+                **base_config,
+                "max_keywords": self.parameters.general.max_keywords,
+                "min_keyword_length": self.parameters.general.min_keyword_length,
                 "include_compounds": self.parameters.general.include_compounds,
-            }
+                "weights": self.parameters.analysis_settings.weights.model_dump(),
+            },
+            language_processor=self.language_processor,
+        )
+        logger.debug("Initialized keyword analyzer")
 
-            # Add voikko_path for Finnish if available
-            if language == "fi":
-                general_dict = self.parameters.general.model_dump()
-                if "voikko_path" in general_dict:
-                    config["voikko_path"] = general_dict["voikko_path"]
+        self.theme_analyzer = ThemeAnalyzer(
+            llm=self.llm,
+            config={
+                **base_config,
+                "max_themes": self.parameters.general.max_themes,
+            },
+            language_processor=self.language_processor,
+        )
+        logger.debug("Initialized theme analyzer")
 
-            # Initialize language processor if not already set
-            if (
-                not hasattr(self, "language_processor")
-                or self.language_processor.language != language
-            ):
-                self.language_processor = create_text_processor(
-                    language=language,
-                    config=config,
-                )
-                logger.debug(f"Created language processor for {language}")
-
-            # Base config for all analyzers
-            base_config = {
-                "language": language,
-                "min_confidence": self.parameters.general.min_confidence,
-                "focus_on": self.parameters.general.focus_on,
-            }
-
-            # Initialize analyzers with proper config
-            self.keyword_analyzer = KeywordAnalyzer(
-                llm=self.llm,
-                config={
-                    **base_config,
-                    "max_keywords": self.parameters.general.max_keywords,
-                    "min_keyword_length": self.parameters.general.min_keyword_length,
-                    "include_compounds": self.parameters.general.include_compounds,
-                    "weights": self.parameters.analysis_settings.weights.model_dump(),
-                },
-                language_processor=self.language_processor,
-            )
-            logger.debug("Initialized keyword analyzer")
-
-            self.theme_analyzer = ThemeAnalyzer(
-                llm=self.llm,
-                config={
-                    **base_config,
-                    "max_themes": self.parameters.general.max_themes,
-                },
-                language_processor=self.language_processor,
-            )
-            logger.debug("Initialized theme analyzer")
-
-            self.category_analyzer = CategoryAnalyzer(
-                categories=self.parameters.categories,
-                llm=self.llm,
-                config=base_config,
-                language_processor=self.language_processor,
-            )
-            logger.debug("Initialized category analyzer")
-
-        except Exception as e:
-            logger.error(f"Error initializing analyzers: {e}")
-            raise
+        # Initialize category analyzer with parameter categories
+        self.category_analyzer = CategoryAnalyzer(
+            categories=self.parameters.categories,  # Pass categories from parameters
+            llm=self.llm,
+            config=base_config,
+            language_processor=self.language_processor,
+        )
+        logger.debug(
+            f"Initialized category analyzer with {len(self.parameters.categories)} categories"
+        )
 
     async def analyze(
         self,
