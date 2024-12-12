@@ -38,7 +38,7 @@ class AnalyzerConfig:
             },
         },
         "models": {
-            "default_provider": "azure",  # Changed default to azure
+            "default_provider": "openai",  # Changed default to azure
             "default_model": "gpt-4o-mini",
             "parameters": {
                 "temperature": 0.0,

@@ -1,10 +1,58 @@
 # src/semantic_analyzer/analyzer.py
 
+# import asyncio
+# import logging
+# from datetime import datetime
+# from pathlib import Path
+# from typing import Any, Awaitable, Dict, List, Optional, Union
+
+# import pandas as pd
+# from langchain_core.language_models import BaseChatModel
+
+# from src.analyzers.category_analyzer import CategoryAnalyzer
+# from src.analyzers.keyword_analyzer import KeywordAnalyzer
+# from src.analyzers.theme_analyzer import ThemeAnalyzer
+
+# from src.core.config import AnalyzerConfig
+# from src.core.language_processing import create_text_processor
+# from src.core.llm.factory import create_llm
+
+
+# from FileUtils import FileUtils
+
+# logger = logging.getLogger(__name__)
+
+
+# # src/semantic_analyzer/analyzer.py
+
+# import asyncio
+# import logging
+# from datetime import datetime
+# from pathlib import Path
+# from typing import Any, Awaitable, Dict, List, Optional, Union
+
+# import pandas as pd
+# from langchain_core.language_models import BaseChatModel
+
+
+# from src.core.llm.factory import create_llm
+# from src.loaders.parameter_handler import ParameterHandler
+# from src.schemas import (
+#     CategoryAnalysisResult,
+#     CategoryOutput,
+#     CompleteAnalysisResult,
+#     KeywordAnalysisResult,
+#     ThemeAnalysisResult,
+#     ThemeOutput,
+# )
+# from FileUtils import FileUtils
+
+
 import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 from langchain_core.language_models import BaseChatModel
@@ -12,10 +60,9 @@ from langchain_core.language_models import BaseChatModel
 from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
-
 from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
-from src.core.llm.factory import create_llm
+
 from src.loaders.parameter_handler import (  # get_parameter_file_path,
     ParameterHandler,
 )
@@ -28,40 +75,243 @@ from src.schemas import (
     ThemeOutput,
 )
 
-from FileUtils import FileUtils
-
-logger = logging.getLogger(__name__)
-
-
-# src/semantic_analyzer/analyzer.py
-
-import asyncio
-import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Awaitable, Dict, List, Optional, Union
-
-import pandas as pd
-from langchain_core.language_models import BaseChatModel
-
-from src.analyzers.category_analyzer import CategoryAnalyzer
-from src.analyzers.keyword_analyzer import KeywordAnalyzer
-from src.analyzers.theme_analyzer import ThemeAnalyzer
-from src.core.config import AnalyzerConfig
-from src.core.language_processing import create_text_processor
-from src.core.llm.factory import create_llm
-from src.loaders.parameter_handler import ParameterHandler
-from src.schemas import (
-    CategoryAnalysisResult,
-    CategoryOutput,
-    CompleteAnalysisResult,
-    KeywordAnalysisResult,
-    ThemeAnalysisResult,
-    ThemeOutput,
+from src.excel_analysis.base import ExcelAnalysisBase
+from src.excel_analysis.parameters import AnalysisParameters
+from src.analyzers.excel_support import (
+    ExcelKeywordAnalyzer,
+    ExcelThemeAnalyzer,
+    ExcelCategoryAnalyzer,
 )
+from src.schemas import CompleteAnalysisResult
+from src.core.llm.factory import create_llm
 from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
+
+from tqdm import tqdm  # For progress reporting
+
+
+class ExcelSemanticAnalyzer(ExcelAnalysisBase):
+    """Enhanced SemanticAnalyzer with Excel support."""
+
+    ANALYZER_MAPPING = {
+        "keywords": ("keyword_analyzer", ExcelKeywordAnalyzer),
+        "themes": ("theme_analyzer", ExcelThemeAnalyzer),
+        "categories": ("category_analyzer", ExcelCategoryAnalyzer),
+    }
+
+    def __init__(
+        self,
+        content_file: Union[str, Path],
+        parameter_file: Union[str, Path],
+        llm: Optional[BaseChatModel] = None,
+        file_utils: Optional[FileUtils] = None,
+        **kwargs,
+    ):
+        """Initialize analyzer with Excel support."""
+        logger.info("Initializing Excel Semantic Analyzer...")
+
+        # Initialize Excel base first
+        super().__init__(
+            content_file=content_file,
+            parameter_file=parameter_file,
+            file_utils=file_utils,
+            **kwargs,
+        )
+
+        # Create LLM if needed
+        self.llm = llm or create_llm()
+
+        # Initialize individual analyzers
+        self._init_analyzers()
+
+    def _init_analyzers(self) -> None:
+        """Initialize individual analyzers with proper configuration."""
+        language = self.parameters.parameters.general.language
+        logger.info(f"Initializing analyzers for language: {language}")
+
+        for analyzer_type, (
+            attr_name,
+            analyzer_class,
+        ) in self.ANALYZER_MAPPING.items():
+            logger.debug(f"Initializing {analyzer_type} analyzer...")
+            analyzer = analyzer_class(
+                content_file=self.content,
+                parameter_file=self.parameter_file,
+                llm=self.llm,
+                content_column=self.content_column,
+                file_utils=self.file_utils,
+            )
+            setattr(self, attr_name, analyzer)
+
+        logger.info(f"Successfully initialized all analyzers")
+
+    async def analyze_excel(
+        self,
+        analysis_types: Optional[List[str]] = None,
+        batch_size: int = 10,
+        save_results: bool = True,
+        output_file: Optional[Union[str, Path]] = None,
+        show_progress: bool = True,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Analyze Excel content with specified analysis types.
+
+        Args:
+            analysis_types: List of analysis types to perform
+            batch_size: Size of processing batches
+            save_results: Whether to save results to Excel
+            output_file: Optional output file path
+            show_progress: Whether to show progress bars
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            DataFrame with combined analysis results
+        """
+        start_time = datetime.now()
+
+        try:
+            # Validate analysis types
+            types_to_run = self._validate_analysis_types(analysis_types)
+            logger.info(f"Running analysis types: {types_to_run}")
+
+            # Initialize results storage
+            results = {}
+
+            # Create progress bar if requested
+            types_iter = (
+                tqdm(types_to_run, desc="Analysis Progress")
+                if show_progress
+                else types_to_run
+            )
+
+            # Run individual analyses
+            for analysis_type in types_iter:
+                logger.info(f"Running {analysis_type} analysis...")
+                attr_name = self.ANALYZER_MAPPING[analysis_type][0]
+                analyzer = getattr(self, attr_name)
+
+                # Create progress bar for batch processing
+                if show_progress:
+                    desc = f"Processing {analysis_type.capitalize()}"
+                    tqdm.write(f"\n{desc}...")
+
+                # Run analysis
+                result_df = await analyzer.analyze_excel(
+                    batch_size=batch_size, **kwargs
+                )
+                results[analysis_type] = result_df
+
+                if show_progress:
+                    tqdm.write(f"✓ Completed {analysis_type} analysis")
+
+            # Combine results
+            logger.info("Combining results...")
+            combined_df = self._combine_results(results)
+
+            # Add analysis metadata
+            combined_df["analysis_timestamp"] = datetime.now()
+            combined_df["processing_time"] = (
+                datetime.now() - start_time
+            ).total_seconds()
+            combined_df["language"] = (
+                self.parameters.parameters.general.language
+            )
+
+            # Save if requested
+            if save_results and output_file:
+                logger.info("Saving results...")
+                saved_path = self._save_results(combined_df, output_file)
+                logger.info(f"Results saved to: {saved_path}")
+
+            total_time = (datetime.now() - start_time).total_seconds()
+            logger.info(f"Analysis completed in {total_time:.2f} seconds")
+
+            return combined_df
+
+        except Exception as e:
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            raise
+
+    def _combine_results(
+        self, results: Dict[str, pd.DataFrame]
+    ) -> pd.DataFrame:
+        """Combine results from different analyzers.
+
+        Args:
+            results: Dict of DataFrames from each analyzer
+
+        Returns:
+            Combined DataFrame with all results
+        """
+        # Start with content DataFrame
+        combined_df = self.content.copy()
+
+        # Add results from each analyzer
+        for analysis_type, df in results.items():
+            # Get result columns (excluding content column)
+            result_columns = [
+                col for col in df.columns if col != self.content_column
+            ]
+
+            # Add columns with analyzer prefix
+            for col in result_columns:
+                new_col = (
+                    f"{analysis_type}_{col}"
+                    if not col.startswith(analysis_type)
+                    else col
+                )
+                combined_df[new_col] = df[col]
+
+        return combined_df
+
+    def _save_results(
+        self, results_df: pd.DataFrame, output_file: Union[str, Path]
+    ) -> Path:
+        """Save analysis results to Excel.
+
+        Args:
+            results_df: DataFrame with analysis results
+            output_file: Output file path
+
+        Returns:
+            Path to saved file
+        """
+        try:
+            # Save using FileUtils
+            saved_files, _ = self.file_utils.save_data_to_storage(
+                data={"Analysis Results": results_df},
+                output_type="processed",
+                file_name=output_file,
+                output_filetype="xlsx",
+                include_timestamp=True,
+            )
+
+            saved_path = Path(next(iter(saved_files.values())))
+            logger.info(f"Saved results to: {saved_path}")
+            return saved_path
+
+        except Exception as e:
+            logger.error(f"Error saving results: {e}")
+            raise
+
+    def _validate_analysis_types(
+        self, types: Optional[List[str]] = None
+    ) -> List[str]:
+        """Validate and return analysis types to run."""
+        valid_types = {"keywords", "themes", "categories"}
+
+        if not types:
+            return list(valid_types)
+
+        invalid_types = set(types) - valid_types
+        if invalid_types:
+            raise ValueError(
+                f"Invalid analysis types: {invalid_types}. "
+                f"Must be one of: {list(valid_types)}"
+            )
+
+        return types
 
 
 class SemanticAnalyzer:
@@ -243,46 +493,23 @@ class SemanticAnalyzer:
     @classmethod
     def from_excel(
         cls,
-        excel_file: Union[str, Path],
-        language: Optional[str] = None,
+        content_file: Union[str, Path],
+        parameter_file: Union[str, Path],
         **kwargs,
-    ) -> "SemanticAnalyzer":
-        """Create analyzer instance from Excel parameter file.
+    ) -> ExcelSemanticAnalyzer:
+        """Create Excel-aware analyzer instance.
 
         Args:
-            excel_file: Path to Excel parameter file
-            language: Optional language override
-            **kwargs: Additional initialization parameters
+            content_file: Path to content Excel file
+            parameter_file: Path to parameter Excel file
+            **kwargs: Additional configuration options
 
         Returns:
-            SemanticAnalyzer: Configured analyzer instance
+            ExcelSemanticAnalyzer instance
         """
-        return cls(parameter_file=excel_file, language=language, **kwargs)
-
-    async def _create_analysis_task(
-        self,
-        analysis_type: str,
-        text: str,
-        **kwargs,
-    ) -> Optional[Awaitable]:
-        """Create analysis coroutine for specified type."""
-        try:
-            if analysis_type == "keywords":
-                return self.keyword_analyzer.analyze(
-                    text, **kwargs.get("keyword_params", {})
-                )
-            elif analysis_type == "themes":
-                return self.theme_analyzer.analyze(
-                    text, **kwargs.get("theme_params", {})
-                )
-            elif analysis_type == "categories":
-                return self.category_analyzer.analyze(
-                    text, **kwargs.get("category_params", {})
-                )
-            return None
-        except Exception as e:
-            logger.error(f"Error creating {analysis_type} task: {e}")
-            return None
+        return ExcelSemanticAnalyzer(
+            content_file=content_file, parameter_file=parameter_file, **kwargs
+        )
 
     def _convert_theme_output(self, output: ThemeOutput) -> ThemeAnalysisResult:
         """Convert ThemeOutput to ThemeAnalysisResult."""
