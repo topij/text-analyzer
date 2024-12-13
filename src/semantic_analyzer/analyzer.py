@@ -52,7 +52,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Awaitable
 
 import pandas as pd
 from langchain_core.language_models import BaseChatModel
@@ -83,10 +83,8 @@ from src.analyzers.excel_support import (
     ExcelCategoryAnalyzer,
 )
 
-from src.excel_analysis.formatters import (
-    ExcelAnalysisFormatter,
-    ExcelOutputConfig,
-)
+from src.utils.formatting_config import ExcelOutputConfig
+from src.excel_analysis.formatters import ExcelAnalysisFormatter
 from src.utils.output_formatter import OutputDetail
 
 from src.schemas import CompleteAnalysisResult
@@ -539,6 +537,31 @@ class SemanticAnalyzer:
         return ExcelSemanticAnalyzer(
             content_file=content_file, parameter_file=parameter_file, **kwargs
         )
+
+    async def _create_analysis_task(
+        self,
+        analysis_type: str,
+        text: str,
+        **kwargs,
+    ) -> Optional[Awaitable]:
+        """Create analysis coroutine for specified type."""
+        try:
+            if analysis_type == "keywords":
+                return self.keyword_analyzer.analyze(
+                    text, **kwargs.get("keyword_params", {})
+                )
+            elif analysis_type == "themes":
+                return self.theme_analyzer.analyze(
+                    text, **kwargs.get("theme_params", {})
+                )
+            elif analysis_type == "categories":
+                return self.category_analyzer.analyze(
+                    text, **kwargs.get("category_params", {})
+                )
+            return None
+        except Exception as e:
+            logger.error(f"Error creating {analysis_type} task: {e}")
+            return None
 
     def _convert_theme_output(self, output: ThemeOutput) -> ThemeAnalysisResult:
         """Convert ThemeOutput to ThemeAnalysisResult."""
