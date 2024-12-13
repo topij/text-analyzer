@@ -82,6 +82,13 @@ from src.analyzers.excel_support import (
     ExcelThemeAnalyzer,
     ExcelCategoryAnalyzer,
 )
+
+from src.excel_analysis.formatters import (
+    ExcelAnalysisFormatter,
+    ExcelOutputConfig,
+)
+from src.utils.output_formatter import OutputDetail
+
 from src.schemas import CompleteAnalysisResult
 from src.core.llm.factory import create_llm
 from FileUtils import FileUtils
@@ -106,12 +113,11 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         parameter_file: Union[str, Path],
         llm: Optional[BaseChatModel] = None,
         file_utils: Optional[FileUtils] = None,
+        output_config: Optional[ExcelOutputConfig] = None,
         **kwargs,
     ):
-        """Initialize analyzer with Excel support."""
-        logger.info("Initializing Excel Semantic Analyzer...")
-
-        # Initialize Excel base first
+        """Initialize analyzer with Excel support and formatting."""
+        # Initialize base components
         super().__init__(
             content_file=content_file,
             parameter_file=parameter_file,
@@ -122,8 +128,18 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         # Create LLM if needed
         self.llm = llm or create_llm()
 
-        # Initialize individual analyzers
+        # Initialize formatter with configuration
+        self.formatter = ExcelAnalysisFormatter(
+            file_utils=self.file_utils,
+            config=output_config
+            or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
+        )
+
+        # Initialize analyzers
         self._init_analyzers()
+        logger.info(
+            "Excel Semantic Analyzer initialized with formatting support"
+        )
 
     def _init_analyzers(self) -> None:
         """Initialize individual analyzers with proper configuration."""
@@ -153,9 +169,10 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         save_results: bool = True,
         output_file: Optional[Union[str, Path]] = None,
         show_progress: bool = True,
+        format_config: Optional[ExcelOutputConfig] = None,
         **kwargs,
     ) -> pd.DataFrame:
-        """Analyze Excel content with specified analysis types.
+        """Analyze Excel content with enhanced formatting.
 
         Args:
             analysis_types: List of analysis types to perform
@@ -163,10 +180,11 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
             save_results: Whether to save results to Excel
             output_file: Optional output file path
             show_progress: Whether to show progress bars
+            format_config: Optional formatting configuration
             **kwargs: Additional analysis parameters
 
         Returns:
-            DataFrame with combined analysis results
+            DataFrame with formatted analysis results
         """
         start_time = datetime.now()
 
@@ -176,7 +194,7 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
             logger.info(f"Running analysis types: {types_to_run}")
 
             # Initialize results storage
-            results = {}
+            analysis_results = {}
 
             # Create progress bar if requested
             types_iter = (
@@ -191,43 +209,54 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
                 attr_name = self.ANALYZER_MAPPING[analysis_type][0]
                 analyzer = getattr(self, attr_name)
 
-                # Create progress bar for batch processing
+                # Process with progress reporting
                 if show_progress:
-                    desc = f"Processing {analysis_type.capitalize()}"
-                    tqdm.write(f"\n{desc}...")
+                    tqdm.write(f"\nProcessing {analysis_type.capitalize()}...")
 
                 # Run analysis
                 result_df = await analyzer.analyze_excel(
                     batch_size=batch_size, **kwargs
                 )
-                results[analysis_type] = result_df
+                analysis_results[analysis_type] = result_df
 
                 if show_progress:
                     tqdm.write(f"✓ Completed {analysis_type} analysis")
 
-            # Combine results
-            logger.info("Combining results...")
-            combined_df = self._combine_results(results)
+            # Format results using enhanced formatter
+            logger.info("Formatting results...")
+            formatted_df = self.formatter.format_analysis_results(
+                analysis_results=analysis_results,
+                original_content=self.content,
+                content_column=self.content_column,
+            )
 
             # Add analysis metadata
-            combined_df["analysis_timestamp"] = datetime.now()
-            combined_df["processing_time"] = (
+            formatted_df["analysis_timestamp"] = datetime.now()
+            formatted_df["processing_time"] = (
                 datetime.now() - start_time
             ).total_seconds()
-            combined_df["language"] = (
+            formatted_df["language"] = (
                 self.parameters.parameters.general.language
             )
 
             # Save if requested
             if save_results and output_file:
-                logger.info("Saving results...")
-                saved_path = self._save_results(combined_df, output_file)
+                logger.info("Saving formatted results...")
+                saved_path = self.formatter.save_excel_results(
+                    results_df=formatted_df,
+                    output_file=output_file,
+                    include_summary=True,
+                )
                 logger.info(f"Results saved to: {saved_path}")
+
+            # Display summary if progress shown
+            if show_progress:
+                self.formatter.display_results_summary(formatted_df)
 
             total_time = (datetime.now() - start_time).total_seconds()
             logger.info(f"Analysis completed in {total_time:.2f} seconds")
 
-            return combined_df
+            return formatted_df
 
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}", exc_info=True)

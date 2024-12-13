@@ -67,13 +67,17 @@ class CategoryMatch(BaseModel):
     themes: List[str] = Field(default_factory=list)
 
 
-class CategoryOutput(BaseModel):
-    """Complete result of category analysis."""
+class CategoryOutput(AnalyzerOutput):
+    """Output model for category analysis."""
 
     categories: List[CategoryMatch] = Field(default_factory=list)
     language: str = Field(default="unknown")
     success: bool = Field(default=True)
     error: Optional[str] = None
+    domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class CategoryAnalysisResult(BaseModel):

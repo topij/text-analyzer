@@ -9,7 +9,7 @@ logging:
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "logs/app.log"
-  disable_existing_loggers: false
+  disable_existing_loggers: true
 
 # Language-specific settings
 languages:

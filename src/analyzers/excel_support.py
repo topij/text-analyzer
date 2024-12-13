@@ -282,73 +282,52 @@ class ExcelCategoryAnalyzer(CategoryAnalyzer, ExcelAnalysisBase):
         )
 
     async def analyze_excel(
-        self, batch_size: int = 10, **kwargs
+        self,
+        batch_size: int = 10,
+        **kwargs,
     ) -> pd.DataFrame:
-        """Analyze Excel content for categories.
+        """Run category analysis on Excel content."""
+        try:
+            # Process all content
+            results = []
+            texts = self.content[self.content_column].tolist()
 
-        Args:
-            batch_size: Size of processing batches
-            **kwargs: Additional analysis parameters
+            # Process in batches
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i : i + batch_size]
+                batch_results = []
 
-        Returns:
-            DataFrame with category analysis results
-        """
-        logger.info(f"Starting category analysis on {len(self.content)} rows")
+                for text in batch_texts:
+                    try:
+                        result = await self.analyze(text, **kwargs)
+                        batch_results.append(result)
+                    except Exception as e:
+                        logger.error(f"Error analyzing text: {e}")
+                        batch_results.append(None)
 
-        # Get texts from content
-        texts = self._get_texts()
-        results = []
-
-        # Process in batches
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            try:
-                # Process batch
-                batch_results = await asyncio.gather(
-                    *[self.analyze(text, **kwargs) for text in batch]
-                )
                 results.extend(batch_results)
-                logger.debug(f"Processed batch {i//batch_size + 1}")
-            except Exception as e:
-                logger.error(f"Error processing batch {i//batch_size}: {e}")
-                results.extend([None] * len(batch))
 
-        # Create results DataFrame
-        result_df = self.content.copy()
+            # Create results DataFrame
+            result_df = self.content.copy()
 
-        # Add category columns
-        result_df["categories"] = [
-            (
-                ", ".join([cat.name for cat in r.matches])
-                if r and r.matches
-                else ""
-            )
-            for r in results
-        ]
-        result_df["category_confidence"] = [
-            (
-                ", ".join([f"{cat.confidence:.2f}" for cat in r.matches])
-                if r and r.matches
-                else ""
-            )
-            for r in results
-        ]
-        result_df["category_evidence"] = [
-            (
-                "; ".join(
-                    [
-                        f"{cat.name}: {', '.join(e.text for e in cat.evidence)}"
-                        for cat in r.matches
-                    ]
+            # Format categories with scores
+            result_df["categories"] = [
+                (
+                    ", ".join(
+                        f"{cat.name} ({cat.confidence:.2f})"
+                        for cat in r.categories
+                    )  # Change from r.matches to r.categories
+                    if r and hasattr(r, "categories") and r.categories
+                    else ""
                 )
-                if r and r.matches
-                else ""
-            )
-            for r in results
-        ]
+                for r in results
+            ]
 
-        logger.info("Category analysis complete")
-        return result_df
+            return result_df
+
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}")
+            raise
 
     async def _process_batch(
         self, batch: List[str], **kwargs
