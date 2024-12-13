@@ -590,103 +590,229 @@ class SemanticAnalyzer:
         output_file: str,
         output_type: str = "processed",
     ) -> Path:
-        """Save analysis results to Excel file.
-
-        Args:
-            results: Analysis results to save
-            output_file: Output file name
-            output_type: Output directory type
-
-        Returns:
-            Path: Path to saved file
-        """
-        # Convert results to DataFrames
-        dfs = {
-            "Keywords": self._format_keyword_results(results.keywords),
-            "Themes": self._format_theme_results(results.themes),
-            "Categories": self._format_category_results(results.categories),
-            "Summary": self._create_summary(results),
-        }
-
-        # Save using FileUtils
-        saved_files, _ = self.file_utils.save_data_to_storage(
-            data=dfs,
-            output_filetype="xlsx",
-            file_name=output_file,
-            output_type=output_type,
+        """Save analysis results to Excel file."""
+        # Create formatter with default config
+        formatter = ExcelAnalysisFormatter(
+            file_utils=self.file_utils,
+            config=ExcelOutputConfig(detail_level=OutputDetail.DETAILED),
         )
 
-        # Return path to saved file
-        return Path(next(iter(saved_files.values())))
-
-    def _format_keyword_results(
-        self, results: KeywordAnalysisResult
-    ) -> pd.DataFrame:
-        """Format keyword results for Excel."""
-        rows = []
-        for kw in results.keywords:
-            rows.append(
-                {
-                    "Keyword": kw.keyword,
-                    "Score": f"{kw.score:.2f}",
-                    "Domain": kw.domain or "",
-                    "Compound Parts": (
-                        ", ".join(kw.compound_parts)
-                        if kw.compound_parts
-                        else ""
-                    ),
-                }
-            )
-        return pd.DataFrame(rows)
-
-    def _format_theme_results(
-        self, results: ThemeAnalysisResult
-    ) -> pd.DataFrame:
-        """Format theme results for Excel."""
-        rows = []
-        for theme in results.themes:
-            rows.append(
-                {
-                    "Theme": theme.name,
-                    "Description": theme.description,
-                    "Confidence": f"{theme.confidence:.2f}",
-                    "Keywords": ", ".join(theme.keywords),
-                    "Parent Theme": theme.parent_theme or "",
-                }
-            )
-        return pd.DataFrame(rows)
-
-    def _format_category_results(
-        self, results: CategoryAnalysisResult
-    ) -> pd.DataFrame:
-        """Format category results for Excel."""
-        rows = []
-        for cat in results.matches:
-            rows.append(
-                {
-                    "Category": cat.name,
-                    "Confidence": f"{cat.confidence:.2f}",
-                    "Description": cat.description,
-                    "Evidence": "\n".join(e.text for e in cat.evidence),
-                }
-            )
-        return pd.DataFrame(rows)
-
-    def _create_summary(self, results: CompleteAnalysisResult) -> pd.DataFrame:
-        """Create summary sheet for Excel output."""
-        return pd.DataFrame(
-            [
-                {
-                    "Language": results.language,
-                    "Success": results.success,
-                    "Error": results.error or "",
-                    "Processing Time": f"{results.processing_time:.2f}s",
-                    "Keywords Found": len(results.keywords.keywords),
-                    "Themes Found": len(results.themes.themes),
-                    "Categories Found": len(results.categories.matches),
-                }
-            ]
+        # Format results
+        formatted_results = formatter.format_output(
+            {
+                "keywords": results.keywords,
+                "themes": results.themes,
+                "categories": results.categories,
+            },
+            ["keywords", "themes", "categories"],
         )
+
+        # Create DataFrame
+        results_df = pd.DataFrame([formatted_results])
+
+        # Add metadata columns
+        results_df["language"] = results.language
+        results_df["processing_time"] = f"{results.processing_time:.2f}s"
+        results_df["success"] = str(results.success)
+        if results.error:
+            results_df["error"] = results.error
+
+        # Save using formatter
+        return formatter.save_excel_results(
+            results_df, output_file, include_summary=True
+        )
+
+    async def analyze_excel(
+        self,
+        analysis_types: Optional[List[str]] = None,
+        batch_size: int = 10,
+        save_results: bool = True,
+        output_file: Optional[Union[str, Path]] = None,
+        show_progress: bool = True,
+        format_config: Optional[ExcelOutputConfig] = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Analyze Excel content with enhanced formatting."""
+        start_time = datetime.now()
+
+        try:
+            # Update formatter config if provided
+            if format_config:
+                self.formatter = ExcelAnalysisFormatter(
+                    file_utils=self.file_utils, config=format_config
+                )
+
+            # Run analyses
+            types_to_run = self._validate_analysis_types(analysis_types)
+            analysis_results = await self._run_analyses(
+                types_to_run, batch_size, show_progress, **kwargs
+            )
+
+            # Format results using formatter
+            formatted_df = self.formatter.format_output(
+                analysis_results, types_to_run
+            )
+
+            # Add metadata
+            formatted_df["analysis_timestamp"] = datetime.now()
+            formatted_df["processing_time"] = (
+                datetime.now() - start_time
+            ).total_seconds()
+            formatted_df["language"] = (
+                self.parameters.parameters.general.language
+            )
+
+            # Save results if requested
+            if save_results and output_file:
+                self.formatter.save_excel_results(
+                    formatted_df, output_file, include_summary=True
+                )
+
+            return formatted_df
+
+        except Exception as e:
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            raise
+
+    async def _run_analyses(
+        self,
+        types_to_run: List[str],
+        batch_size: int,
+        show_progress: bool,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Run individual analyses."""
+        analysis_results = {}
+
+        # Create progress bar if requested
+        types_iter = (
+            tqdm(types_to_run, desc="Analysis Progress")
+            if show_progress
+            else types_to_run
+        )
+
+        for analysis_type in types_iter:
+            logger.info(f"Running {analysis_type} analysis...")
+            attr_name = self.ANALYZER_MAPPING[analysis_type][0]
+            analyzer = getattr(self, attr_name)
+
+            if show_progress:
+                tqdm.write(f"\nProcessing {analysis_type.capitalize()}...")
+
+            # Run analysis
+            result = await analyzer.analyze_excel(
+                batch_size=batch_size, **kwargs
+            )
+            analysis_results[analysis_type] = result
+
+            if show_progress:
+                tqdm.write(f"✓ Completed {analysis_type} analysis")
+
+        return analysis_results
+
+    # def save_results(
+    #     self,
+    #     results: CompleteAnalysisResult,
+    #     output_file: str,
+    #     output_type: str = "processed",
+    # ) -> Path:
+    #     """Save analysis results to Excel file.
+
+    #     Args:
+    #         results: Analysis results to save
+    #         output_file: Output file name
+    #         output_type: Output directory type
+
+    #     Returns:
+    #         Path: Path to saved file
+    #     """
+    #     # Convert results to DataFrames
+    #     dfs = {
+    #         "Keywords": self._format_keyword_results(results.keywords),
+    #         "Themes": self._format_theme_results(results.themes),
+    #         "Categories": self._format_category_results(results.categories),
+    #         "Summary": self._create_summary(results),
+    #     }
+
+    #     # Save using FileUtils
+    #     saved_files, _ = self.file_utils.save_data_to_storage(
+    #         data=dfs,
+    #         output_filetype="xlsx",
+    #         file_name=output_file,
+    #         output_type=output_type,
+    #     )
+
+    #     # Return path to saved file
+    #     return Path(next(iter(saved_files.values())))
+
+    # def _format_keyword_results(
+    #     self, results: KeywordAnalysisResult
+    # ) -> pd.DataFrame:
+    #     """Format keyword results for Excel."""
+    #     rows = []
+    #     for kw in results.keywords:
+    #         rows.append(
+    #             {
+    #                 "Keyword": kw.keyword,
+    #                 "Score": f"{kw.score:.2f}",
+    #                 "Domain": kw.domain or "",
+    #                 "Compound Parts": (
+    #                     ", ".join(kw.compound_parts)
+    #                     if kw.compound_parts
+    #                     else ""
+    #                 ),
+    #             }
+    #         )
+    #     return pd.DataFrame(rows)
+
+    # def _format_theme_results(
+    #     self, results: ThemeAnalysisResult
+    # ) -> pd.DataFrame:
+    #     """Format theme results for Excel."""
+    #     rows = []
+    #     for theme in results.themes:
+    #         rows.append(
+    #             {
+    #                 "Theme": theme.name,
+    #                 "Description": theme.description,
+    #                 "Confidence": f"{theme.confidence:.2f}",
+    #                 "Keywords": ", ".join(theme.keywords),
+    #                 "Parent Theme": theme.parent_theme or "",
+    #             }
+    #         )
+    #     return pd.DataFrame(rows)
+
+    # def _format_category_results(
+    #     self, results: CategoryAnalysisResult
+    # ) -> pd.DataFrame:
+    #     """Format category results for Excel."""
+    #     rows = []
+    #     for cat in results.matches:
+    #         rows.append(
+    #             {
+    #                 "Category": cat.name,
+    #                 "Confidence": f"{cat.confidence:.2f}",
+    #                 "Description": cat.description,
+    #                 "Evidence": "\n".join(e.text for e in cat.evidence),
+    #             }
+    #         )
+    #     return pd.DataFrame(rows)
+
+    # def _create_summary(self, results: CompleteAnalysisResult) -> pd.DataFrame:
+    #     """Create summary sheet for Excel output."""
+    #     return pd.DataFrame(
+    #         [
+    #             {
+    #                 "Language": results.language,
+    #                 "Success": results.success,
+    #                 "Error": results.error or "",
+    #                 "Processing Time": f"{results.processing_time:.2f}s",
+    #                 "Keywords Found": len(results.keywords.keywords),
+    #                 "Themes Found": len(results.themes.themes),
+    #                 "Categories Found": len(results.categories.matches),
+    #             }
+    #         ]
+    #     )
 
     async def analyze_batch(
         self,
