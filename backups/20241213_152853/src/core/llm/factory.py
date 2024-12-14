@@ -1,12 +1,16 @@
 # src/core/llm/factory.py
+"""LLM factory for creating and configuring language models."""
 
 import logging
 from pathlib import Path
+
 from typing import Any, Dict, Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
+
+from src.core.config import AnalyzerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +83,52 @@ class LLMConfig:
 
 
 def create_llm(
-    provider: Optional[str] = None, model: Optional[str] = None, **kwargs
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    config: Optional[AnalyzerConfig] = None,
+    **kwargs,
 ) -> BaseChatModel:
     """Create an LLM instance with specified configuration."""
-    config = LLMConfig()
-    model_config = config.get_model_config(provider, model)
-    model_config.update(kwargs)
+    try:
+        # Create or use provided config
+        config = config or AnalyzerConfig()
 
-    provider = provider or config.config["default_provider"]
+        # Get provider-specific configuration
+        provider = provider or config.config["models"]["default_provider"]
+        provider_config = config.get_provider_config(provider, model)
 
-    if provider == "openai":
-        return ChatOpenAI(**model_config)
-    elif provider == "anthropic":
-        return ChatAnthropic(**model_config)
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+        # Override with kwargs
+        provider_config.update(kwargs)
+
+        # Create appropriate LLM instance
+        if provider == "azure":
+            return AzureChatOpenAI(
+                azure_endpoint=provider_config["azure_endpoint"],
+                azure_deployment=provider_config["azure_deployment"],
+                api_key=provider_config["api_key"],
+                api_version=provider_config.get(
+                    "api_version", "2024-02-15-preview"
+                ),
+                temperature=provider_config.get("temperature", 0),
+                max_tokens=provider_config.get("max_tokens", 1000),
+            )
+        elif provider == "openai":
+            return ChatOpenAI(
+                api_key=provider_config["api_key"],
+                model=provider_config["model"],
+                temperature=provider_config.get("temperature", 0),
+                max_tokens=provider_config.get("max_tokens", 1000),
+            )
+        elif provider == "anthropic":
+            return ChatAnthropic(
+                api_key=provider_config["api_key"],
+                model=provider_config["model"],
+                temperature=provider_config.get("temperature", 0),
+                max_tokens=provider_config.get("max_tokens", 1000),
+            )
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+
+    except Exception as e:
+        logger.error(f"Error creating LLM instance: {e}")
+        raise

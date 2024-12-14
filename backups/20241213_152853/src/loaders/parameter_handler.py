@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 
 from src.loaders.parameter_config import (
     ParameterConfigurations,
@@ -36,7 +36,7 @@ class ParameterHandler:
     ):
         self.file_utils = file_utils or FileUtils()
         # Add analyzer config
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
         # Rest of initialization...
 
     def get_parameters(self) -> ParameterSet:
@@ -61,7 +61,7 @@ class ParameterHandler:
         """Initialize parameter handler."""
         self.file_utils = file_utils or FileUtils()
         # Add analyzer config
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
         self.config = ParameterConfigurations()  # Initialize config
         self.validator = ParameterValidation()  # Initialize validator
         self.file_path = (

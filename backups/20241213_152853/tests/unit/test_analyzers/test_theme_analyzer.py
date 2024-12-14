@@ -1,19 +1,14 @@
 # tests/unit/test_analyzers/test_theme_analyzer.py
 
 import json
+from typing import Dict, List
+
 import pytest
-from typing import Any, Dict, List, Optional
-from pathlib import Path
 
-from langchain_core.language_models import BaseChatModel
-from FileUtils import FileUtils
-from src.core.config import AnalyzerConfig
-
-from src.core.config_management import ConfigManager
-from src.core.language_processing import create_text_processor
 from src.core.config import AnalyzerConfig
 
 from src.analyzers.theme_analyzer import ThemeAnalyzer, ThemeOutput
+from src.core.language_processing import create_text_processor
 from src.schemas import ThemeInfo
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM
 
@@ -26,11 +21,39 @@ class TestThemeAnalyzer:
         """Create mock LLM instance."""
         return ThemeMockLLM()
 
+    # @pytest.fixture
+    # def analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    #     """Create English theme analyzer with mock LLM."""
+    #     return ThemeAnalyzer(
+    #         llm=mock_llm,
+    #         config={
+    #             "max_themes": 3,
+    #             "min_confidence": 0.3,
+    #             "language": "en",
+    #             "focus_on": "theme extraction",
+    #         },
+    #         language_processor=create_text_processor(language="en"),
+    #     )
+
+    # @pytest.fixture
+    # def fi_analyzer(self, mock_llm: ThemeMockLLM) -> ThemeAnalyzer:
+    #     """Create Finnish theme analyzer with mock LLM."""
+    #     return ThemeAnalyzer(
+    #         llm=mock_llm,
+    #         config={
+    #             "max_themes": 3,
+    #             "min_confidence": 0.3,
+    #             "language": "fi",
+    #             "focus_on": "theme extraction",
+    #         },
+    #         language_processor=create_text_processor(language="fi"),
+    #     )
+
     @pytest.fixture
-    def test_analyzer(
+    def analyzer(
         self, mock_llm: ThemeMockLLM, analyzer_config: AnalyzerConfig
     ) -> ThemeAnalyzer:
-        """Create analyzer with mock LLM and config."""
+        """Create English theme analyzer with mock LLM."""
         return ThemeAnalyzer(
             llm=mock_llm,
             config=analyzer_config.config.get("analysis", {}),
@@ -44,7 +67,10 @@ class TestThemeAnalyzer:
         """Create Finnish theme analyzer with mock LLM."""
         return ThemeAnalyzer(
             llm=mock_llm,
-            config=analyzer_config.config.get("analysis", {}),
+            config={
+                **analyzer_config.config.get("analysis", {}),
+                "language": "fi",
+            },
             language_processor=create_text_processor(language="fi"),
         )
 
@@ -82,13 +108,13 @@ class TestThemeAnalyzer:
                 ), "Theme hierarchy children should be strings"
 
     @pytest.mark.asyncio
-    async def test_technical_theme_analysis(self, test_analyzer: ThemeAnalyzer):
+    async def test_technical_theme_analysis(self, analyzer: ThemeAnalyzer):
         """Test theme analysis of technical content."""
         text = """Machine learning models are trained using large datasets.
                 Neural network architecture includes multiple layers.
                 Data preprocessing and feature engineering are crucial steps."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         # Verify specific themes
@@ -104,13 +130,13 @@ class TestThemeAnalyzer:
         ), "Expected main theme not found in hierarchy"
 
     @pytest.mark.asyncio
-    async def test_business_theme_analysis(self, test_analyzer: ThemeAnalyzer):
+    async def test_business_theme_analysis(self, analyzer: ThemeAnalyzer):
         """Test theme analysis of business content."""
         text = """Q3 financial results show 15% revenue growth.
                 Market expansion strategy focuses on emerging sectors.
                 Customer acquisition and retention metrics improved."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         themes = {theme.name.lower() for theme in result.themes}
@@ -156,13 +182,13 @@ class TestThemeAnalyzer:
         assert "markkinakehitys" in themes, "Markkinakehitys theme not found"
 
     @pytest.mark.asyncio
-    async def test_theme_hierarchy(self, test_analyzer: ThemeAnalyzer):
+    async def test_theme_hierarchy(self, analyzer: ThemeAnalyzer):
         """Test theme hierarchy relationships."""
         text = """Machine learning models perform complex data analysis.
                  Neural networks enable advanced pattern recognition.
                  Data preprocessing improves model accuracy."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         # Verify hierarchy structure
@@ -182,27 +208,27 @@ class TestThemeAnalyzer:
         ), "Parent-child relationship not properly established"
 
     @pytest.mark.asyncio
-    async def test_error_handling(self, test_analyzer: ThemeAnalyzer):
+    async def test_error_handling(self, analyzer: ThemeAnalyzer):
         """Test error handling for invalid inputs."""
         # Empty input
-        result = await test_analyzer.analyze("")
+        result = await analyzer.analyze("")
         assert not result.success
         assert result.error is not None
         assert "Empty input" in result.error
 
         # None input
         with pytest.raises(ValueError) as exc_info:
-            await test_analyzer.analyze(None)
+            await analyzer.analyze(None)
         assert "Input text cannot be None" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_evidence_validation(self, test_analyzer: ThemeAnalyzer):
+    async def test_evidence_validation(self, analyzer: ThemeAnalyzer):
         """Test theme evidence validation."""
         text = """Machine learning models are becoming increasingly sophisticated.
                  Neural networks enable complex pattern recognition.
                  Data preprocessing is essential for model accuracy."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         # Verify keywords presence

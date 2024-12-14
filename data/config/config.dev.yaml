@@ -7,7 +7,7 @@ environment: "development"
 logging:
   level: "WARNING" # "WARNING" # 
   format: "%(asctime)s - %(name)s - %(levelname)s [%(filename)s:%(lineno)d] - %(message)s"
-  file_path: "logs/dev.log"
+  file_path: "data/logs/dev.log"
 
 # Language-specific settings
 languages:
@@ -42,8 +42,9 @@ analyzer:
 data_paths:
   raw: "data/dev/raw"
   processed: "data/dev/processed"
+  config: "data/dev/config"
   cache: "data/dev/cache"
-  logs: "logs/dev"
+  logs: "data/logs/dev"
 
 # Development-specific settings
 development:

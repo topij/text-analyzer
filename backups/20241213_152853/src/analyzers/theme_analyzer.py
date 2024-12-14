@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
 
@@ -129,7 +129,7 @@ class ThemeAnalyzer(TextAnalyzer):
         """
         # Initialize analyzer config if not provided in config dict
         if llm is None:
-            analyzer_config = ConfigManager()
+            analyzer_config = AnalyzerConfig()
             llm = create_llm(config=analyzer_config)
 
             # Merge analyzer config with provided config if any

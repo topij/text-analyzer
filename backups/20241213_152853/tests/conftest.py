@@ -5,17 +5,13 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Dict, Generator, Any
-from dotenv import load_dotenv
-import logging
+from typing import Dict, Generator
 
-import pytest
-
-from src.core.config_management import ConfigManager, LoggingConfig
 from src.core.config import AnalyzerConfig
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
-from FileUtils import FileUtils
+
+import pytest
 
 # Add project root to Python path
 PROJECT_ROOT = Path(__file__).parent.parent.absolute()
@@ -25,64 +21,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=pytest.PytestDeprecationWarning)
 
-logger = logging.getLogger(__name__)
-
-
-# Load environment variables at the start of test session
-def pytest_sessionstart(session):
-    """Load environment variables before test session starts."""
-    project_root = Path(__file__).parent.parent
-    env_path = project_root / ".env"
-    if env_path.exists():
-        load_dotenv(str(env_path))
-        logger.info(f"Loaded environment from {env_path}")
+from FileUtils import FileUtils
 
 
 @pytest.fixture(scope="session")
-def project_path() -> Path:
-    """Get project root path."""
-    return Path(__file__).parent.parent
-
-
-@pytest.fixture(scope="session")
-def file_utils(project_path: Path) -> FileUtils:
-    """Create FileUtils instance."""
-    return FileUtils(project_root=project_path)
-
-
-@pytest.fixture(scope="session")
-def config_manager(file_utils: FileUtils) -> ConfigManager:
-    """Create ConfigManager instance for testing."""
-    return ConfigManager(file_utils=file_utils, config_dir="config")
-
-
-@pytest.fixture(scope="session")
-def analyzer_config(config_manager: ConfigManager) -> AnalyzerConfig:
+def analyzer_config(file_utils: FileUtils) -> AnalyzerConfig:
     """Create AnalyzerConfig instance for testing."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError("OPENAI_API_KEY not found in environment")
-
-    config = AnalyzerConfig(
-        file_utils=config_manager.file_utils, config_manager=config_manager
-    )
-
-    # Override test-specific settings
-    config.config["models"]["default_model"] = "gpt-4o-mini"
-    return config
-
-
-@pytest.fixture(scope="session")
-def test_config() -> Dict[str, Any]:
-    """Basic test configuration."""
-    return {
-        "language": "en",
-        "min_confidence": 0.3,
-        "focus_on": "test content",
-        "max_keywords": 10,
-        "min_keyword_length": 3,
-        "include_compounds": True,
-        "max_themes": 3,
-    }
+    return AnalyzerConfig(file_utils=file_utils)
 
 
 @pytest.fixture(scope="session")

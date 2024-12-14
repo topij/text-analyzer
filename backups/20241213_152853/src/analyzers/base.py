@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from src.core.llm.factory import create_llm
 from src.loaders.parameter_handler import ParameterHandler
 from src.core.language_processing.base import BaseTextProcessor
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class TextAnalyzer(ABC):
         """Initialize analyzer with optional LLM and config."""
         # Initialize analyzer config if not provided
         if llm is None:
-            analyzer_config = ConfigManager()
+            analyzer_config = AnalyzerConfig()
             llm = create_llm(config=analyzer_config)
 
             # Merge analyzer config with provided config if any

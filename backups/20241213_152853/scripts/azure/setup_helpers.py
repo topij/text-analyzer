@@ -85,8 +85,9 @@ def setup_voikko(project_root: Optional[Path] = None) -> bool:
 
 if __name__ == "__main__":
     # Configure logging
-    # Logging is now handled by ConfigManager
-# Old code: logging.basicConfig(level=)s - %(name)s - %(levelname)s - %(message)s'
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
     # Run setup

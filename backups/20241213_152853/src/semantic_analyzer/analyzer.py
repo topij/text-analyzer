@@ -60,7 +60,7 @@ from langchain_core.language_models import BaseChatModel
 from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
 
 from src.loaders.parameter_handler import (  # get_parameter_file_path,
@@ -355,7 +355,7 @@ class SemanticAnalyzer:
     ):
         """Initialize analyzer with parameters and components."""
         self.file_utils = file_utils or FileUtils()
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
         self.llm = llm or create_llm(config=self.analyzer_config)
 
         # Store base parameter file path

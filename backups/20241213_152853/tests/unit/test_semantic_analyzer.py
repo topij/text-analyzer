@@ -2,23 +2,23 @@
 
 """Test cases for semantic analyzer."""
 
-import pytest
-from typing import Any, Dict, List, Optional, Tuple
+import asyncio
 from pathlib import Path
+from typing import Any, Dict, Tuple
+
 import pandas as pd
+import pytest
 
-from langchain_core.language_models import BaseChatModel
-from FileUtils import FileUtils, OutputFileType
-
-from src.core.config_management import ConfigManager
-from src.core.language_processing import create_text_processor
+from src.core.config import AnalyzerConfig
 
 # from src.core.llm.factory import create_llm
+from langchain_core.language_models import BaseChatModel
 
 from src.loaders.parameter_handler import ParameterHandler, ParameterSheets
 from src.loaders.models import CategoryConfig
 from src.schemas import CompleteAnalysisResult
 from src.semantic_analyzer import SemanticAnalyzer
+from FileUtils import FileUtils, OutputFileType
 from tests.helpers.mock_llms.category_mock import CategoryMockLLM
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM
@@ -146,7 +146,7 @@ class TestSemanticAnalyzer:
     def mock_analyzer(
         self,
         file_utils: FileUtils,
-        config_manager: ConfigManager,  # Updated fixture name and type
+        analyzer_config: AnalyzerConfig,
         mock_llm: BaseChatModel,
     ):
         return SemanticAnalyzer(file_utils=file_utils, llm=mock_llm)
@@ -196,6 +196,11 @@ class TestSemanticAnalyzer:
         test_parameters: Dict[str, Any],
     ):
         """Test error handling in analysis."""
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
+        # )
 
         # Create parameter file
         sheet_name, param_df = self._create_parameter_df(test_parameters)
@@ -228,7 +233,7 @@ class TestSemanticAnalyzer:
     async def test_complete_analysis(
         self,
         file_utils: FileUtils,
-        config_manager: ConfigManager,
+        analyzer_config: AnalyzerConfig,
         test_parameters: Dict[str, Any],
     ):
         """Test complete analysis pipeline with all mock types."""
@@ -311,7 +316,7 @@ class TestSemanticAnalyzer:
     async def test_finnish_analysis(
         self,
         file_utils: FileUtils,
-        config_manager: ConfigManager,
+        analyzer_config: AnalyzerConfig,
         test_parameters: Dict[str, Any],
     ):
         """Test Finnish language analysis."""
@@ -398,6 +403,11 @@ class TestSemanticAnalyzer:
         test_parameters: Dict[str, Any],
     ):
         """Test batch analysis functionality with keyword mock."""
+        # file_path = self._save_parameter_file(
+        #     file_utils=file_utils,
+        #     sheet_data={"General Parameters": test_parameters["general"]},
+        #     file_name="test_params",
+        # )
 
         # Create parameter file
         sheet_name, param_df = self._create_parameter_df(test_parameters)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
 from src.core.language_processing.base import BaseTextProcessor
@@ -210,7 +210,7 @@ class KeywordAnalyzer(TextAnalyzer):
         """
         # Initialize analyzer config if not provided in config dict
         if llm is None:
-            analyzer_config = ConfigManager()
+            analyzer_config = AnalyzerConfig()
             llm = create_llm(config=analyzer_config)
 
             # Merge analyzer config with provided config if any

@@ -1,16 +1,14 @@
 # src/core/llm/factory.py
-"""LLM factory for creating and configuring language models."""
 
 import logging
 from pathlib import Path
-
 from typing import Any, Dict, Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 
-from src.core.config import AnalyzerConfig
+from src.core.config_management import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -85,22 +83,25 @@ class LLMConfig:
 def create_llm(
     provider: Optional[str] = None,
     model: Optional[str] = None,
-    config: Optional[AnalyzerConfig] = None,
+    config_manager: Optional[ConfigManager] = None,
     **kwargs,
 ) -> BaseChatModel:
     """Create an LLM instance with specified configuration."""
     try:
-        # Create or use provided config
-        config = config or AnalyzerConfig()
+        # Create or use provided config manager
+        config_manager = config_manager or ConfigManager()
 
         # Get provider-specific configuration
-        provider = provider or config.config["models"]["default_provider"]
-        provider_config = config.get_provider_config(provider, model)
+        provider_config = config_manager.get_provider_config(provider, model)
 
         # Override with kwargs
         provider_config.update(kwargs)
 
         # Create appropriate LLM instance
+        provider = (
+            provider or config_manager.get_model_config().default_provider
+        )
+
         if provider == "azure":
             return AzureChatOpenAI(
                 azure_endpoint=provider_config["azure_endpoint"],
