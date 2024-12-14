@@ -80,17 +80,46 @@ class GlobalConfig(BaseModel):
         return result
 
 
+class DirectoryConfig(BaseModel):
+    """Directory structure configuration."""
+
+    data: Dict[str, list] = {
+        "raw": [],
+        "interim": [],
+        "processed": [],
+        "config": [],
+        "parameters": [],
+        "testing": [],
+    }
+    reports: Dict[str, list] = {"figures": [], "outputs": []}
+    models: Dict[str, list] = {"evaluations": [], "trained": []}
+    scripts: Dict[str, list] = {}
+    notebooks: Dict[str, list] = {}
+
+
 class ConfigManager:
-    """Unified configuration manager."""
+    """Configuration manager with FileUtils integration."""
+
+    DEFAULT_DIRECTORY_STRUCTURE = {
+        "data": ["raw", "interim", "processed", "config", "parameters", "logs"],
+        "reports": ["figures", "outputs"],
+        "models": ["evaluations", "trained"],
+    }
 
     def __init__(
-        self, file_utils: Optional[FileUtils] = None, config_dir: str = "config"
+        self,
+        file_utils: Optional[FileUtils] = None,
+        config_dir: str = "config",
+        project_root: Optional[Path] = None,
+        custom_directory_structure: Optional[Dict[str, Any]] = None,
     ):
         """Initialize configuration manager.
 
         Args:
             file_utils: Optional FileUtils instance
             config_dir: Directory name for config files (default: "config")
+            project_root: Optional project root path
+            custom_directory_structure: Optional custom directory structure
         """
         # Load environment variables first
         for env_file in [".env", ".env.local"]:
@@ -99,11 +128,100 @@ class ConfigManager:
                 load_dotenv(env_path)
                 logger.debug(f"Loaded environment from {env_path}")
 
-        self.file_utils = file_utils or FileUtils()
-        self.config_dir = config_dir
-        self._config: Dict[str, Any] = {}
+        # Get log level from environment first, for early logging
+        initial_log_level = os.getenv("LOG_LEVEL", "INFO")
+
+        # Set project root
+        self.project_root = (
+            Path(project_root) if project_root else Path().resolve()
+        )
+
+        # Get paths
+        self.data_dir = self.project_root / "data"
+        self.config_dir = self.data_dir / config_dir
+        self.logs_dir = self.data_dir / "logs"
+
+        # Prepare FileUtils configuration
+        fileutils_config_path = self.config_dir / "fileutils_config.yaml"
+        fileutils_config = {
+            "directory_structure": (
+                custom_directory_structure
+                if custom_directory_structure
+                else self.DEFAULT_DIRECTORY_STRUCTURE
+            )
+        }
+
+        # Initialize FileUtils if not provided
+        if file_utils is None:
+            self.file_utils = FileUtils(
+                project_root=self.project_root,
+                config_file=(
+                    fileutils_config_path
+                    if fileutils_config_path.exists()
+                    else None
+                ),
+                config_override=fileutils_config,
+                log_level=initial_log_level,
+                create_directories=True,  # Create initial directories
+            )
+        else:
+            self.file_utils = file_utils
+
+        # Load configurations
         self._load_configurations()
+
+        # Update FileUtils log level if different
+        config_log_level = self.config.logging.level
+        if config_log_level != initial_log_level:
+            self.file_utils = FileUtils(
+                project_root=self.project_root,
+                config_file=(
+                    fileutils_config_path
+                    if fileutils_config_path.exists()
+                    else None
+                ),
+                config_override=fileutils_config,
+                log_level=config_log_level,
+                create_directories=False,  # Don't recreate directories
+            )
+            logger.debug(f"Updated FileUtils log level to {config_log_level}")
+
+        # Setup logging last, after all configs are loaded
         self._setup_logging()
+
+    def get_directory_structure(self) -> Dict[str, Any]:
+        """Get current directory structure from FileUtils."""
+        return self.file_utils.get_directory_structure()
+
+    def validate_directory_structure(self) -> bool:
+        """Validate that required directories exist."""
+        structure = self.get_directory_structure()
+
+        for parent_dir, subdirs in structure.items():
+            parent_path = self.project_root / parent_dir
+            if not parent_path.exists():
+                logger.warning(f"Missing directory: {parent_path}")
+                return False
+
+            if isinstance(subdirs, list):
+                for subdir in subdirs:
+                    if not (parent_path / subdir).exists():
+                        logger.warning(
+                            f"Missing subdirectory: {parent_path / subdir}"
+                        )
+                        return False
+
+        return True
+
+    def _ensure_directories(self) -> None:
+        """Ensure required directories exist."""
+        required_dirs = [self.data_dir, self.config_dir, self.logs_dir]
+        for directory in required_dirs:
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def get_file_utils(self) -> FileUtils:
+        """Get the configured FileUtils instance."""
+        return self.file_utils
 
     def _load_configurations(self) -> None:
         """Load configurations from all sources with correct precedence."""
@@ -143,15 +261,14 @@ class ConfigManager:
     ) -> Dict[str, Any]:
         """Load YAML configuration file."""
         try:
-            # Update to use config directory
-            config_path = (
-                self.file_utils.get_data_path(self.config_dir) / filename
-            )
+            # Use config_dir path directly
+            config_path = self.config_dir / filename
+            if not config_path.exists() and required:
+                raise FileNotFoundError(
+                    f"Required config file not found: {config_path}"
+                )
+
             return self.file_utils.load_yaml(config_path) or {}
-        except FileNotFoundError:
-            if required:
-                raise
-            return {}
         except Exception as e:
             logger.warning(f"Could not load {filename}: {e}")
             return {}
@@ -186,7 +303,7 @@ class ConfigManager:
         return dict1
 
     def _setup_logging(self) -> None:
-        """Setup logging with configuration."""
+        """Setup logging with proper paths."""
         log_config = self.config.logging
 
         # Configure root logger
@@ -207,17 +324,20 @@ class ConfigManager:
         # Add file handler if specified
         if log_config.file_path:
             try:
-                # Use FileUtils to create log directory
-                log_dir = Path(log_config.file_path).parent
-                self.file_utils.create_directory(log_dir)
+                # Ensure logs directory exists
+                self.logs_dir.mkdir(parents=True, exist_ok=True)
 
-                file_handler = logging.FileHandler(log_config.file_path)
+                # Use logs_dir for file path
+                log_file = self.logs_dir / log_config.file_path
+
+                file_handler = logging.FileHandler(log_file)
                 file_handler.setFormatter(formatter)
                 root_logger.addHandler(file_handler)
 
+                logger.debug(f"Log file configured at: {log_file}")
+
             except Exception as e:
                 logger.warning(f"Could not set up file logging: {e}")
-                # Continue without file logging
 
     def get_config(self) -> GlobalConfig:
         """Get the complete configuration."""
@@ -293,3 +413,42 @@ class ConfigManager:
                 value = os.getenv(env_var)
                 if value:
                     config[config_key] = value
+
+    def _ensure_essential_directories(self) -> None:
+        """Ensure only essential directories exist."""
+        essential_dirs = [self.config_dir, self.logs_dir]
+        for directory in essential_dirs:
+            directory.mkdir(parents=True, exist_ok=True)
+
+    # def validate_directory_structure(self) -> bool:
+    #     """Validate that required directories from FileUtils config exist."""
+    #     try:
+    #         structure = self.file_utils.get_directory_structure()
+    #         if not structure:
+    #             logger.warning("No directory structure defined in FileUtils")
+    #             return False
+
+    #         for parent_dir, subdirs in structure.items():
+    #             parent_path = self.file_utils.project_root / parent_dir
+    #             if not parent_path.exists():
+    #                 logger.debug(f"Directory does not exist: {parent_path}")
+    #                 continue  # Skip if directory doesn't exist - don't create automatically
+
+    #             if isinstance(subdirs, dict):
+    #                 for subdir in subdirs:
+    #                     if not (parent_path / subdir).exists():
+    #                         logger.debug(
+    #                             f"Subdirectory does not exist: {parent_path / subdir}"
+    #                         )
+    #             elif isinstance(subdirs, list):
+    #                 for subdir in subdirs:
+    #                     if not (parent_path / subdir).exists():
+    #                         logger.debug(
+    #                             f"Subdirectory does not exist: {parent_path / subdir}"
+    #                         )
+
+    #         return True
+
+    #     except Exception as e:
+    #         logger.error(f"Error validating directory structure: {e}")
+    #         return False

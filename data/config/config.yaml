@@ -8,9 +8,50 @@ logging:
   level: "DEBUG"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
-  file_path: "data/logs/app.log"
+  file_path: "app.log" # "data/logs/app.log"
   disable_existing_loggers: true
 
+# Basic settings
+csv_delimiter: ";"
+encoding: "utf-8"
+quoting: 0  # csv.QUOTE_MINIMAL
+include_timestamp: true
+logging_level: "INFO"
+disable_logging: false
+
+## FileUtils settings
+# Directory structure
+directory_structure:
+  docs: []
+  data:
+    - raw
+    - interim
+    - processed
+    - config
+    - testing
+  reports:
+    - figures
+    - outputs
+  models: []
+  src: []
+  scripts: []
+  notebooks: []
+  
+# Azure Storage settings (optional)
+azure:
+  enabled: false  # Set to true to enable Azure storage
+  container_mapping:
+    raw: "raw-data"
+    processed: "processed-data"
+    interim: "interim-data"
+    parameters: "parameters"
+    configurations: "configurations"
+  retry_settings:
+    max_retries: 3
+    retry_delay: 1
+  connection_string: ""  # Set via environment variable
+
+##
 # Language-specific settings
 languages:
   fi:

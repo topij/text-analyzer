@@ -1,0 +1,40 @@
+# data/config/fileutils_config.yaml
+
+# Basic settings
+csv_delimiter: ";"
+encoding: "utf-8"
+quoting: 0  # csv.QUOTE_MINIMAL
+include_timestamp: true
+logging_level: "INFO"
+disable_logging: false
+
+# Directory structure specific to semantic-text-analyzer
+directory_structure:
+  data:
+    - raw
+    - interim
+    - processed
+    - config
+    - parameters
+    - logs
+    - testing
+  reports:
+    - figures
+    - outputs
+  models: []
+
+# File format settings
+parquet_compression: "snappy"
+
+# Azure Storage settings (optional)
+azure:
+  enabled: false
+  container_mapping:
+    raw: "raw-data"
+    processed: "processed-data"
+    interim: "interim-data"
+    parameters: "parameters"
+    configurations: "configurations"
+  retry_settings:
+    max_retries: 3
+    retry_delay: 1
