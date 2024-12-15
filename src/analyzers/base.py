@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from src.core.llm.factory import create_llm
 from src.loaders.parameter_handler import ParameterHandler
 from src.core.language_processing.base import BaseTextProcessor
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 

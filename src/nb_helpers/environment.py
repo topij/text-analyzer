@@ -68,7 +68,7 @@ class EnvironmentSetup:
         paths = {
             "Raw data": self.file_utils.get_data_path("raw"),
             "Processed data": self.file_utils.get_data_path("processed"),
-            "Configuration": self.file_utils.get_data_path("configurations"),
+            "Configuration": self.file_utils.get_data_path("config"),
             "Main config.yaml": self.project_root / "config.yaml",
         }
         return {f"{name} exists": path.exists() for name, path in paths.items()}

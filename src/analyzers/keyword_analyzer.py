@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
 from src.core.language_processing.base import BaseTextProcessor

@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 import logging
 from typing import Optional
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 
 
 def setup_project(project_root: Optional[Path] = None):

@@ -1,53 +1,5 @@
 # src/semantic_analyzer/analyzer.py
 
-# import asyncio
-# import logging
-# from datetime import datetime
-# from pathlib import Path
-# from typing import Any, Awaitable, Dict, List, Optional, Union
-
-# import pandas as pd
-# from langchain_core.language_models import BaseChatModel
-
-# from src.analyzers.category_analyzer import CategoryAnalyzer
-# from src.analyzers.keyword_analyzer import KeywordAnalyzer
-# from src.analyzers.theme_analyzer import ThemeAnalyzer
-
-# from src.core.config import AnalyzerConfig
-# from src.core.language_processing import create_text_processor
-# from src.core.llm.factory import create_llm
-
-
-# from FileUtils import FileUtils
-
-# logger = logging.getLogger(__name__)
-
-
-# # src/semantic_analyzer/analyzer.py
-
-# import asyncio
-# import logging
-# from datetime import datetime
-# from pathlib import Path
-# from typing import Any, Awaitable, Dict, List, Optional, Union
-
-# import pandas as pd
-# from langchain_core.language_models import BaseChatModel
-
-
-# from src.core.llm.factory import create_llm
-# from src.loaders.parameter_handler import ParameterHandler
-# from src.schemas import (
-#     CategoryAnalysisResult,
-#     CategoryOutput,
-#     CompleteAnalysisResult,
-#     KeywordAnalysisResult,
-#     ThemeAnalysisResult,
-#     ThemeOutput,
-# )
-# from FileUtils import FileUtils
-
-
 import asyncio
 import logging
 from datetime import datetime
@@ -60,7 +12,7 @@ from langchain_core.language_models import BaseChatModel
 from src.analyzers.category_analyzer import CategoryAnalyzer
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
-from src.core.config_management import ConfigManager
+from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
 
 from src.loaders.parameter_handler import (  # get_parameter_file_path,
@@ -341,6 +293,11 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         return types
 
 
+from src.config import ConfigManager
+from src.core.config import AnalyzerConfig
+from FileUtils import FileUtils
+
+
 class SemanticAnalyzer:
     """Main interface for semantic text analysis."""
 
@@ -351,21 +308,113 @@ class SemanticAnalyzer:
         parameter_file: Optional[Union[str, Path]] = None,
         file_utils: Optional[FileUtils] = None,
         llm: Optional[BaseChatModel] = None,
+        config_manager: Optional[ConfigManager] = None,
         **kwargs,
     ):
-        """Initialize analyzer with parameters and components."""
+        """Initialize analyzer with parameters and components.
+
+        Args:
+            parameter_file: Path to parameter file (optional)
+            file_utils: Optional FileUtils instance
+            llm: Optional LLM instance
+            config_manager: Optional ConfigManager instance
+            **kwargs: Additional configuration options
+        """
+        # Initialize core components
         self.file_utils = file_utils or FileUtils()
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
-        self.llm = llm or create_llm(config=self.analyzer_config)
+
+        # Initialize configuration management
+        self.config_manager = config_manager or ConfigManager(
+            file_utils=self.file_utils
+        )
+        self.analyzer_config = AnalyzerConfig(
+            file_utils=self.file_utils, config_manager=self.config_manager
+        )
+
+        # Get model configuration
+        model_config = self.config_manager.get_model_config()
+
+        # Create LLM if not provided
+        self.llm = llm or create_llm(
+            config_manager=self.config_manager,
+            provider=model_config.default_provider,
+            model=model_config.default_model,
+        )
 
         # Store base parameter file path
         self._base_parameter_file = parameter_file
 
-        # Initialize with default parameters
+        # Initialize with parameters
         self.parameter_handler = ParameterHandler(parameter_file)
         self.parameters = self.parameter_handler.get_parameters()
+
+        # Initialize analyzers with proper configuration
         self._init_analyzers()
         logger.info("Semantic analyzer initialization complete")
+
+    def _init_analyzers(self) -> None:
+        """Initialize analyzers with correct language and parameters."""
+        # Get language configuration
+        language = self.parameters.general.language
+        language_config = self.config_manager.get_language_config()
+
+        # Build config dict for language processor
+        processor_config = {
+            "min_word_length": self.parameters.general.min_keyword_length,
+            "include_compounds": self.parameters.general.include_compounds,
+            **language_config.languages.get(language, {}),
+        }
+
+        # Create language processor
+        self.language_processor = create_text_processor(
+            language=language,
+            config=processor_config,
+        )
+        logger.debug(f"Created language processor for {language}")
+
+        # Get base config from analyzer config
+        base_config = self.analyzer_config.get_analyzer_config("base")
+        base_config.update(
+            {
+                "language": language,
+                "min_confidence": self.parameters.general.min_confidence,
+                "focus_on": self.parameters.general.focus_on,
+            }
+        )
+
+        # Initialize analyzers with proper config
+        self.keyword_analyzer = KeywordAnalyzer(
+            llm=self.llm,
+            config={
+                **base_config,
+                "max_keywords": self.parameters.general.max_keywords,
+                "min_keyword_length": self.parameters.general.min_keyword_length,
+                "include_compounds": self.parameters.general.include_compounds,
+                "weights": self.parameters.analysis_settings.weights.model_dump(),
+            },
+            language_processor=self.language_processor,
+        )
+        logger.debug("Initialized keyword analyzer")
+
+        self.theme_analyzer = ThemeAnalyzer(
+            llm=self.llm,
+            config={
+                **base_config,
+                "max_themes": self.parameters.general.max_themes,
+            },
+            language_processor=self.language_processor,
+        )
+        logger.debug("Initialized theme analyzer")
+
+        self.category_analyzer = CategoryAnalyzer(
+            categories=self.parameters.categories,
+            llm=self.llm,
+            config=base_config,
+            language_processor=self.language_processor,
+        )
+        logger.debug(
+            f"Initialized category analyzer with {len(self.parameters.categories)} categories"
+        )
 
     def set_language(self, language: str) -> None:
         """Update analyzer configuration for new language."""
@@ -403,65 +452,6 @@ class SemanticAnalyzer:
         except Exception as e:
             logger.error(f"Error setting language to {language}: {e}")
             raise
-
-    def _init_analyzers(self) -> None:
-        """Initialize analyzers with correct language and parameters."""
-        # Create language processor first
-        language = self.parameters.general.language
-
-        # Build config dict for language processor
-        config = {
-            "min_word_length": self.parameters.general.min_keyword_length,
-            "include_compounds": self.parameters.general.include_compounds,
-        }
-
-        self.language_processor = create_text_processor(
-            language=language,
-            config=config,
-        )
-        logger.debug(f"Created language processor for {language}")
-
-        # Base config for all analyzers
-        base_config = {
-            "language": language,
-            "min_confidence": self.parameters.general.min_confidence,
-            "focus_on": self.parameters.general.focus_on,
-        }
-
-        # Initialize analyzers with proper config
-        self.keyword_analyzer = KeywordAnalyzer(
-            llm=self.llm,
-            config={
-                **base_config,
-                "max_keywords": self.parameters.general.max_keywords,
-                "min_keyword_length": self.parameters.general.min_keyword_length,
-                "include_compounds": self.parameters.general.include_compounds,
-                "weights": self.parameters.analysis_settings.weights.model_dump(),
-            },
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized keyword analyzer")
-
-        self.theme_analyzer = ThemeAnalyzer(
-            llm=self.llm,
-            config={
-                **base_config,
-                "max_themes": self.parameters.general.max_themes,
-            },
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized theme analyzer")
-
-        # Initialize category analyzer with parameter categories
-        self.category_analyzer = CategoryAnalyzer(
-            categories=self.parameters.categories,  # Pass categories from parameters
-            llm=self.llm,
-            config=base_config,
-            language_processor=self.language_processor,
-        )
-        logger.debug(
-            f"Initialized category analyzer with {len(self.parameters.categories)} categories"
-        )
 
     async def analyze(
         self,
@@ -709,110 +699,6 @@ class SemanticAnalyzer:
                 tqdm.write(f"✓ Completed {analysis_type} analysis")
 
         return analysis_results
-
-    # def save_results(
-    #     self,
-    #     results: CompleteAnalysisResult,
-    #     output_file: str,
-    #     output_type: str = "processed",
-    # ) -> Path:
-    #     """Save analysis results to Excel file.
-
-    #     Args:
-    #         results: Analysis results to save
-    #         output_file: Output file name
-    #         output_type: Output directory type
-
-    #     Returns:
-    #         Path: Path to saved file
-    #     """
-    #     # Convert results to DataFrames
-    #     dfs = {
-    #         "Keywords": self._format_keyword_results(results.keywords),
-    #         "Themes": self._format_theme_results(results.themes),
-    #         "Categories": self._format_category_results(results.categories),
-    #         "Summary": self._create_summary(results),
-    #     }
-
-    #     # Save using FileUtils
-    #     saved_files, _ = self.file_utils.save_data_to_storage(
-    #         data=dfs,
-    #         output_filetype="xlsx",
-    #         file_name=output_file,
-    #         output_type=output_type,
-    #     )
-
-    #     # Return path to saved file
-    #     return Path(next(iter(saved_files.values())))
-
-    # def _format_keyword_results(
-    #     self, results: KeywordAnalysisResult
-    # ) -> pd.DataFrame:
-    #     """Format keyword results for Excel."""
-    #     rows = []
-    #     for kw in results.keywords:
-    #         rows.append(
-    #             {
-    #                 "Keyword": kw.keyword,
-    #                 "Score": f"{kw.score:.2f}",
-    #                 "Domain": kw.domain or "",
-    #                 "Compound Parts": (
-    #                     ", ".join(kw.compound_parts)
-    #                     if kw.compound_parts
-    #                     else ""
-    #                 ),
-    #             }
-    #         )
-    #     return pd.DataFrame(rows)
-
-    # def _format_theme_results(
-    #     self, results: ThemeAnalysisResult
-    # ) -> pd.DataFrame:
-    #     """Format theme results for Excel."""
-    #     rows = []
-    #     for theme in results.themes:
-    #         rows.append(
-    #             {
-    #                 "Theme": theme.name,
-    #                 "Description": theme.description,
-    #                 "Confidence": f"{theme.confidence:.2f}",
-    #                 "Keywords": ", ".join(theme.keywords),
-    #                 "Parent Theme": theme.parent_theme or "",
-    #             }
-    #         )
-    #     return pd.DataFrame(rows)
-
-    # def _format_category_results(
-    #     self, results: CategoryAnalysisResult
-    # ) -> pd.DataFrame:
-    #     """Format category results for Excel."""
-    #     rows = []
-    #     for cat in results.matches:
-    #         rows.append(
-    #             {
-    #                 "Category": cat.name,
-    #                 "Confidence": f"{cat.confidence:.2f}",
-    #                 "Description": cat.description,
-    #                 "Evidence": "\n".join(e.text for e in cat.evidence),
-    #             }
-    #         )
-    #     return pd.DataFrame(rows)
-
-    # def _create_summary(self, results: CompleteAnalysisResult) -> pd.DataFrame:
-    #     """Create summary sheet for Excel output."""
-    #     return pd.DataFrame(
-    #         [
-    #             {
-    #                 "Language": results.language,
-    #                 "Success": results.success,
-    #                 "Error": results.error or "",
-    #                 "Processing Time": f"{results.processing_time:.2f}s",
-    #                 "Keywords Found": len(results.keywords.keywords),
-    #                 "Themes Found": len(results.themes.themes),
-    #                 "Categories Found": len(results.categories.matches),
-    #             }
-    #         ]
-    #     )
 
     async def analyze_batch(
         self,

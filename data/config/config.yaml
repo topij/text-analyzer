@@ -1,11 +1,11 @@
 # Project settings
 project_name: "semantic-text-analyzer"
 version: "0.4.5"
-environment: "development"
+environment: "production"
 
 # Logging configuration
 logging:
-  level: "DEBUG"
+  level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "app.log" # "data/logs/app.log"
@@ -16,8 +16,8 @@ csv_delimiter: ";"
 encoding: "utf-8"
 quoting: 0  # csv.QUOTE_MINIMAL
 include_timestamp: true
-logging_level: "INFO"
-disable_logging: false
+# logging_level: "INFO"
+# disable_logging: false
 
 ## FileUtils settings
 # Directory structure

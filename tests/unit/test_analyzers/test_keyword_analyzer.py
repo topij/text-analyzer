@@ -8,7 +8,7 @@ from pathlib import Path
 from langchain_core.language_models import BaseChatModel
 from FileUtils import FileUtils
 
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 from src.core.language_processing import create_text_processor
 from src.core.config import AnalyzerConfig
 

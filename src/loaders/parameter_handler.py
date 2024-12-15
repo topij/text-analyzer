@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 
 from src.loaders.parameter_config import (
     ParameterConfigurations,

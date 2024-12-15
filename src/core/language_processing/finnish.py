@@ -478,7 +478,7 @@ class FinnishTextProcessor(BaseTextProcessor):
 
             # Load stopwords from file
             stopwords_path = (
-                self.get_data_path("configurations") / "stop_words" / "fi.txt"
+                self.get_data_path("config") / "stop_words" / "fi.txt"
             )
             if stopwords_path.exists():
                 with open(stopwords_path, "r", encoding="utf-8") as f:

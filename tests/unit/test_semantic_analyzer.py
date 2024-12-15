@@ -10,7 +10,7 @@ import pandas as pd
 from langchain_core.language_models import BaseChatModel
 from FileUtils import FileUtils, OutputFileType
 
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 from src.core.language_processing import create_text_processor
 
 # from src.core.llm.factory import create_llm

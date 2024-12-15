@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from src.core.config_management import ConfigManager, ModelConfig
+from src.config.manager import ConfigManager, ModelConfig
 from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)

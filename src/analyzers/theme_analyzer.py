@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough, RunnableSequence
 from pydantic import BaseModel, Field
 
-from src.core.config_management import ConfigManager
+from src.config.manager import ConfigManager
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
 

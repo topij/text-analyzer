@@ -135,7 +135,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             stop_words.update(nltk_stops)
 
             # 2. Load additional stopwords from file
-            config_dir = self.get_data_path("configurations")
+            config_dir = self.get_data_path("config")
             stop_words_path = config_dir / "stop_words" / "en.txt"
 
             if stop_words_path.exists():

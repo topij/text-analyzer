@@ -184,29 +184,43 @@ class TextProcessorFactory:
         logger.debug("Cleared processor cache")
 
 
-# Convenience function
 def create_text_processor(
     language: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
-    file_utils: Optional[FileUtils] = None,
+    file_utils: Optional[
+        FileUtils
+    ] = None,  # Remove this parameter as it's not used
 ) -> BaseTextProcessor:
     """Create text processor instance."""
-    factory = TextProcessorFactory()
-
-    # Load main config if not provided
-    if config is None and file_utils:
-        try:
-            main_config = file_utils.load_yaml(Path("config.yaml"))
-            lang_config = main_config.get("languages", {}).get(
-                language or "en", {}
-            )
-
-            if config:  # Merge if config was provided
-                lang_config.update(config)
-            config = lang_config
-        except Exception as e:
-            logger.debug(f"Could not load language config: {e}")
-            config = config or {}
-
-    logger.debug(f"Creating text processor for language: {language}")
+    factory = TextProcessorFactory(
+        config_path=None
+    )  # TextProcessorFactory only takes config_path
     return factory.create_processor(language=language, config=config)
+
+
+# # Convenience function
+# def create_text_processor(
+#     language: Optional[str] = None,
+#     config: Optional[Dict[str, Any]] = None,
+#     file_utils: Optional[FileUtils] = None,
+# ) -> BaseTextProcessor:
+#     """Create text processor instance."""
+#     factory = TextProcessorFactory()
+
+#     # Load main config if not provided
+#     if config is None and file_utils:
+#         try:
+#             main_config = file_utils.load_yaml(Path("config.yaml"))
+#             lang_config = main_config.get("languages", {}).get(
+#                 language or "en", {}
+#             )
+
+#             if config:  # Merge if config was provided
+#                 lang_config.update(config)
+#             config = lang_config
+#         except Exception as e:
+#             logger.debug(f"Could not load language config: {e}")
+#             config = config or {}
+
+#     logger.debug(f"Creating text processor for language: {language}")
+#     return factory.create_processor(language=language, config=config)

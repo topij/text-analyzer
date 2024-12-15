@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from src.core.config_management import ConfigManager, LoggingConfig
+from src.config.manager import ConfigManager, LoggingConfig
 from src.core.config import AnalyzerConfig
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel

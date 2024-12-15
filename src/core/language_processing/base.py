@@ -236,7 +236,7 @@ class BaseTextProcessor(ABC):
 #         """Load stop words for the language."""
 #         try:
 #             # Use FileUtils to get the config path
-#             config_dir = self.file_utils.get_data_path("configurations")
+#             config_dir = self.file_utils.get_data_path("config")
 #             stop_words_path = config_dir / "stop_words" / f"{self.language}.txt"
 
 #             if stop_words_path.exists():
