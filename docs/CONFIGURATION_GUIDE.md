@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This guide covers all configuration options for the Semantic Text Analyzer, including model settings, analysis parameters, and integration options.
+This guide covers the implemented configuration options for the Semantic Text Analyzer.
 
 ## Configuration Methods
 
@@ -8,113 +8,97 @@ The analyzer supports multiple configuration methods in order of precedence:
 
 1. Runtime parameters
 2. Environment variables
-3. Configuration files (YAML)
-4. Default values
+3. Configuration files
+   - `config.yaml` (base configuration)
+   - `config.dev.yaml` (development overrides)
 
-## Core Configuration File
+## Core Configuration Files
 
-The main configuration file (`config.yaml`):
+### Base Configuration (`config.yaml`)
 
 ```yaml
 # Project settings
 project_name: "semantic-text-analyzer"
-version: "1.0.0"
+version: "0.4.5"
 environment: "development"
 
 # Logging configuration
 logging:
-  level: "DEBUG"
+  level: "INFO"  # Default logging level
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
-  file_path: "logs/app.log"
-  disable_existing_loggers: false
+  file_path: "app.log"
+  disable_existing_loggers: true
 
 # Model settings
 models:
-  default_provider: "azure"
+  default_provider: "openai"  # or "azure" or "anthropic"
   default_model: "gpt-4o-mini"
   parameters:
     temperature: 0.0
     max_tokens: 1000
     top_p: 1.0
-    frequency_penalty: 0.0
-    presence_penalty: 0.0
   
   providers:
+    openai:
+      available_models:
+        gpt-4o-mini:
+          description: "Fast and cost-effective for simpler tasks"
+          max_tokens: 4096
+          supports_functions: true
+      api_type: "open_ai"
+      
     azure:
       available_models:
         gpt-4o-mini:
-          description: "Fast and cost-effective model"
+          description: "Azure OpenAI GPT-4o-mini deployment"
           deployment_name: "gpt-4o-mini"
           max_tokens: 4096
           supports_functions: true
-      api_type: "azure"
+      api_type: "openai"
       api_version: "2024-02-15-preview"
-      
-    anthropic:
-      available_models:
-        claude-3-sonnet:
-          description: "Balanced performance model"
-          max_tokens: 200000
-          supports_functions: false
 
-# Analysis configurations
-analysis:
-  keywords:
-    max_keywords: 10
-    min_keyword_length: 3
-    include_compounds: true
-    min_confidence: 0.3
-    use_statistical: true
-    compound_word_bonus: 0.2
-    weights:
-      statistical: 0.4
-      llm: 0.6
+# Language-specific settings
+languages:
+  fi:
+    min_word_length: 3
+    excluded_patterns: 
+      - "^\\d+$"
+      - "^[^a-zA-ZäöåÄÖÅ0-9]+$"
+    voikko:
+      paths:
+        win32:
+          lib_path: "C:/scripts/Voikko/libvoikko-1.dll"
+          dict_path: "C:/scripts/Voikko"
+        linux:
+          lib_path: "/usr/lib/x86_64-linux-gnu/libvoikko.so.1"
+          dict_path: "/usr/lib/voikko"
+    preserve_compounds: true
+```
 
-  themes:
-    max_themes: 3
-    min_confidence: 0.5
-    include_hierarchy: true
-    require_evidence: true
-    min_theme_length: 10
+### Development Configuration (`config.dev.yaml`)
 
-  categories:
-    max_categories: 3
-    min_confidence: 0.3
-    require_evidence: true
-    allow_overlap: true
-    hierarchical: true
+```yaml
+# Override main settings for development
+environment: "development"
 
-# Feature flags
-features:
-  use_caching: true
-  use_async: true
-  use_batching: true
-  enable_finnish_support: true
-  enable_compound_detection: true
-  enable_spell_check: false
+# Enhanced logging for development
+logging:
+  level: "DEBUG"
+  format: "%(asctime)s - %(name)s - %(levelname)s [%(filename)s:  %(lineno)d] - %(message)s"
 
-# Processing settings
-processing:
-  batch_size: 100
-  max_retries: 3
-  retry_delay: 1.0
-  timeout: 30.0
-  max_workers: 4
-  chunk_size: 1000
-
-# Cache settings
-caching:
-  enabled: true
-  ttl: 3600  # 1 hour
-  max_size: 1000
-  backend: "memory"
-  compression: true
+# Development-specific analyzer settings
+analyzer:
+  models:
+    default_model: "gpt-4o-mini"
+    parameters:
+      temperature: 0.0
+      max_tokens: 2000  # Increased for debugging
 ```
 
 ## Environment Variables
 
-Important environment variables:
+Currently implemented environment variables:
 
 ```bash
 # LLM Provider Keys
@@ -126,17 +110,8 @@ ANTHROPIC_API_KEY=your-key-here
 AZURE_OPENAI_ENDPOINT=your-endpoint
 AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
 
-# Language Support
-VOIKKO_PATH=/path/to/voikko
-
-# Analysis Configuration
-SEMANTIC_ANALYZER_MAX_KEYWORDS=10
-SEMANTIC_ANALYZER_MIN_CONFIDENCE=0.3
-SEMANTIC_ANALYZER_BATCH_SIZE=100
-
-# Feature Flags
-SEMANTIC_ANALYZER_USE_CACHING=true
-SEMANTIC_ANALYZER_USE_ASYNC=true
+# Environment Selection
+ENV=development  # or production
 ```
 
 ## Runtime Configuration
@@ -144,180 +119,75 @@ SEMANTIC_ANALYZER_USE_ASYNC=true
 ### Analyzer Initialization
 
 ```python
+from src.semantic_analyzer import SemanticAnalyzer
+from FileUtils import FileUtils
+from src.config import ConfigManager
+
+# Initialize shared components
+file_utils = FileUtils()
+config_manager = ConfigManager(file_utils=file_utils)
+
+# Create analyzer with shared components
 analyzer = SemanticAnalyzer(
-    config={
-        "max_keywords": 5,
-        "min_confidence": 0.3,
-        "analysis": {
-            "keywords": {
-                "include_compounds": True,
-                "weights": {
-                    "statistical": 0.4,
-                    "llm": 0.6
-                }
-            },
-            "themes": {
-                "max_themes": 3,
-                "min_confidence": 0.5
-            }
-        }
-    }
+    parameter_file="parameters_en.xlsx",  # or parameters_fi.xlsx
+    file_utils=file_utils,
+    config_manager=config_manager
 )
-```
-
-### Language Processing Configuration
-
-```python
-# English configuration
-en_config = {
-    "min_word_length": 3,
-    "excluded_patterns": [
-        r"^\d+$",
-        r"^[^a-zA-Z0-9]+$"
-    ],
-    "processing_options": {
-        "use_pos_tagging": True,
-        "handle_contractions": True
-    }
-}
-
-# Finnish configuration
-fi_config = {
-    "min_word_length": 3,
-    "excluded_patterns": [
-        r"^\d+$",
-        r"^[^a-zA-ZäöåÄÖÅ0-9]+$"
-    ],
-    "voikko": {
-        "paths": {
-            "win32": {
-                "lib_path": "C:/scripts/Voikko/libvoikko-1.dll",
-                "dict_path": "C:/scripts/Voikko"
-            },
-            "linux": {
-                "lib_path": "/usr/lib/libvoikko.so.1",
-                "dict_path": "/usr/lib/voikko"
-            }
-        }
-    }
-}
 ```
 
 ## Category Configuration
 
-Define custom categories in Excel or YAML:
+Categories are defined in Excel parameter files with the following structure:
 
-```yaml
-categories:
-  technical:
-    description: "Technical content"
-    keywords: ["software", "api", "data"]
-    threshold: 0.6
-    parent: null
-  
-  business:
-    description: "Business content"
-    keywords: ["revenue", "growth", "market"]
-    threshold: 0.6
-    parent: null
 ```
-
-## Advanced Configuration 
-
-### Caching Configuration (testing needed)
-
-```python
-caching_config = {
-    "enabled": True,
-    "backend": "redis",
-    "ttl": 3600,
-    "redis_config": {
-        "host": "localhost",
-        "port": 6379,
-        "db": 0
-    }
-}
-```
-
-### FileUtils Configuration (testing needed)
-
-```python
-file_utils_config = {
-    "storage_type": "azure",
-    "azure_connection_string": "your-connection-string",
-    "container_name": "your-container",
-    "local_cache": True,
-    "cache_dir": "cache"
-}
-```
-
-### Logging Configuration
-
-```python
-logging_config = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "standard": {
-            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        }
-    },
-    "handlers": {
-        "default": {
-            "level": "INFO",
-            "formatter": "standard",
-            "class": "logging.StreamHandler",
-        }
-    },
-    "loggers": {
-        "": {
-            "handlers": ["default"],
-            "level": "INFO",
-            "propagate": True
-        }
-    }
-}
+Sheet: Categories
+Columns:
+- category: Category name
+- description: Detailed description
+- keywords: Comma-separated keywords
+- threshold: Confidence threshold (0.0-1.0)
+- parent: Optional parent category
 ```
 
 ## Best Practices
 
-1. **Configuration Organization**
-   - Use YAML for static configuration
-   - Use environment variables for credentials
-   - Use runtime config for dynamic settings
+1. **Configuration Management**
+   - Use `config.yaml` for base settings
+   - Use `config.dev.yaml` for development overrides
+   - Use environment variables for credentials and environment selection
 
-2. **Security**
-   - Never commit API keys to version control
-   - Use environment variables for sensitive data
-   - Implement proper access controls
+2. **Component Sharing**
+   - Initialize FileUtils once and share the instance
+   - Use ConfigManager for centralized configuration
+   - Pass shared components to analyzers
 
-3. **Performance**
-   - Enable caching for repeated analyses
-   - Configure appropriate batch sizes
-   - Set reasonable timeouts
+3. **Logging**
+   - Configure logging through ConfigManager
+   - Use appropriate logging levels for different environments
+   - Keep log messages informative but concise
 
-4. **Monitoring**
-   - Enable appropriate logging levels
-   - Configure error tracking
-   - Set up performance monitoring
+4. **Security**
+   - Store credentials in environment variables
+   - Never commit sensitive data to version control
+   - Use secure credential management in production
 
 ## Troubleshooting
 
 Common configuration issues:
 
-1. **Invalid Configuration**
-   - Check YAML syntax
-   - Verify environment variables
-   - Validate parameter types
+1. **Logging Level Issues**
+   - Check the `logging.level` setting in your config files
+   - Verify `ENV` environment variable is set correctly
+   - Ensure logging is configured before other operations
 
-2. **Performance Issues**
-   - Check batch sizes
-   - Verify caching configuration
-   - Monitor resource usage
+2. **Initialization Problems**
+   - Verify FileUtils is initialized only once
+   - Check ConfigManager initialization order
+   - Confirm parameter file paths are correct
 
-3. **Integration Problems**
-   - Verify API keys
-   - Check endpoint configurations
-   - Validate network settings
+3. **Model Settings**
+   - Verify API keys are set in environment
+   - Check model availability in provider config
+   - Confirm endpoint configurations for Azure
 
-For more troubleshooting help, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+For additional assistance, consult your system administrator or review the logs.
