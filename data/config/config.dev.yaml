@@ -39,6 +39,67 @@ analyzer:
     use_caching: false  # Disable cache for development
     enable_spell_check: true
 
+# Model settings
+models:
+  default_provider: "openai"
+  default_model: "gpt-4o-mini"
+  parameters:
+    temperature: 0.0
+    max_tokens: 1000
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+  
+  providers:
+    openai:
+      available_models:
+        gpt-4:
+          description: "Most capable model, best for complex tasks"
+          max_tokens: 8192
+          supports_functions: true
+        gpt-4-turbo:
+          description: "Faster GPT-4 variant"
+          max_tokens: 4096
+          supports_functions: true
+        gpt-4o-mini:
+          description: "Fast and cost-effective for simpler tasks"
+          max_tokens: 4096
+          supports_functions: true
+      api_type: "open_ai"
+      api_version: null
+      
+    azure:
+      available_models:
+        #gpt-4:
+        #  description: "Azure OpenAI GPT-4"
+        #  deployment_name: "gpt-4"
+        #  max_tokens: 8192
+        #  supports_functions: true
+        gpt-4o-mini:
+          description: "Azure OpenAI GPT-4o-mini deployment"
+          deployment_name: "gpt-4o-mini"
+          max_tokens: 4096
+          supports_functions: true
+      api_type: "openai"
+      api_version: "2024-08-01-preview"
+      
+    anthropic:
+      available_models:
+        claude-3-opus:
+          description: "Most capable Claude model"
+          max_tokens: 200000
+          supports_functions: false
+        claude-3-sonnet:
+          description: "Balanced performance and speed"
+          max_tokens: 200000
+          supports_functions: false
+        claude-3-haiku:
+          description: "Fastest Claude model"
+          max_tokens: 200000
+          supports_functions: false
+      api_type: "anthropic"
+      api_version: null
+
 # Development paths
 data_paths:
   raw: "data/dev/raw"

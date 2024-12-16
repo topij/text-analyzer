@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 class LoggingConfig(BaseModel):
     """Unified logging configuration."""
 
-    level: str = Field(default="INFO")
+    level: str = Field(default="DEBUG")
     format: str = Field(
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )

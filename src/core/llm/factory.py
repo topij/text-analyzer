@@ -90,29 +90,33 @@ def create_llm(
     **kwargs,
 ) -> BaseChatModel:
     """Create an LLM instance with specified configuration."""
+    logger.info(f"Creating LLM instance: {provider} {model}")
     try:
         # Get provider configuration
-        if config_manager:
-            # Get model config from ConfigManager
-            model_config = config_manager.get_model_config()
-            provider = provider or model_config.default_provider
-            model = model or model_config.default_model
-            provider_config = config_manager.get_provider_config(
-                provider, model
-            )
-        elif config:
+        if config:
             # Use AnalyzerConfig
             provider = provider or config.config["models"]["default_provider"]
             model = model or config.config["models"]["default_model"]
             provider_config = config.get_provider_config(provider, model)
+        elif config_manager:
+            # Use model config from ConfigManager
+            model_config = config_manager.get_model_config()
+            provider = provider or model_config.default_provider
+            model = model or model_config.default_model
+            # Create analyzer config with config_manager
+            analyzer_config = AnalyzerConfig(config_manager=config_manager)
+            provider_config = analyzer_config.get_provider_config(
+                provider, model
+            )
         else:
             # Create minimal config
             file_utils = FileUtils()
             config_manager = ConfigManager(file_utils=file_utils)
+            analyzer_config = AnalyzerConfig(config_manager=config_manager)
             model_config = config_manager.get_model_config()
             provider = provider or model_config.default_provider
             model = model or model_config.default_model
-            provider_config = config_manager.get_provider_config(
+            provider_config = analyzer_config.get_provider_config(
                 provider, model
             )
 
@@ -124,6 +128,10 @@ def create_llm(
 
         # Override with kwargs
         provider_config.update(kwargs)
+
+        # In create_llm function
+        logger.debug(f"Creating LLM with provider: {provider}, model: {model}")
+        logger.debug(f"Provider config: {provider_config}")
 
         # Create appropriate LLM instance
         if provider == "azure":

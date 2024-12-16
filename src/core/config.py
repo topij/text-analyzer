@@ -83,29 +83,26 @@ class AnalyzerConfig:
         """Get provider-specific configuration."""
         model_config = self.get_model_config()
         provider = provider or model_config.get("default_provider", "openai")
-        model = model or model_config.get(
-            "default_model", "gpt-4o-mini"
-        )  # Update default model
+        model = model or model_config.get("default_model", "gpt-4o-mini")
 
         # Get base configuration
         provider_config = (
             model_config.get("providers", {}).get(provider, {}).copy()
         )
+
+        # If empty, use defaults
         if not provider_config:
-            raise ValueError(f"Unsupported provider: {provider}")
+            provider_config = {
+                "model": model,
+                "temperature": 0.0,
+                "max_tokens": 1000,
+            }
 
         # Add model parameters
         provider_config.update(model_config.get("parameters", {}))
 
         # Add model name
         provider_config["model"] = model
-
-        # Add provider-specific model config if available
-        if (
-            "available_models" in provider_config
-            and model in provider_config["available_models"]
-        ):
-            provider_config.update(provider_config["available_models"][model])
 
         # Add credentials
         self._add_provider_credentials(provider_config, provider)

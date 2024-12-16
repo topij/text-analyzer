@@ -86,23 +86,68 @@ class ConfigManager:
         else:
             logger.debug("Using provided FileUtils instance")
 
+    # src/config/manager.py
+
     def load_configurations(self) -> None:
         """Load configurations from all sources."""
         try:
-            # Load base config
-            base_config = self.load_yaml("config.yaml", required=False) or {}
-            self._config = base_config
+            # Load base config from config.yaml
+            config_file = self.config_path / "config.yaml"
+            if config_file.exists():
+                base_config = self.file_utils.load_yaml(config_file)
+                logger.debug(f"Loaded base config from {config_file}")
+            else:
+                logger.warning(f"Base config file not found: {config_file}")
+                base_config = {}
+
+            # Start with default config
+            self._config = {
+                "environment": "development",
+                "models": {
+                    "default_provider": "openai",
+                    "default_model": "gpt-4o-mini",
+                    "providers": {
+                        "openai": {
+                            "model": "gpt-4o-mini",
+                            "temperature": 0.0,
+                            "max_tokens": 1000,
+                        },
+                        "anthropic": {
+                            "model": "claude-3-sonnet-20240229",
+                            "temperature": 0.0,
+                            "max_tokens": 1000,
+                        },
+                    },
+                    "parameters": {
+                        "temperature": 0.0,
+                        "max_tokens": 1000,
+                        "top_p": 1.0,
+                    },
+                },
+            }
+
+            # Merge base config
+            if base_config:
+                self._deep_merge(self._config, base_config)
+                logger.debug("Merged base configuration")
 
             # Load environment-specific config
             env = os.getenv("ENV", "development").lower()
             if env == "development":
-                dev_config = self.load_yaml("config.dev.yaml", required=False)
-                if dev_config:
-                    self._deep_merge(self._config, dev_config)
+                dev_config_file = self.config_path / "config.dev.yaml"
+                if dev_config_file.exists():
+                    dev_config = self.file_utils.load_yaml(dev_config_file)
+                    if dev_config:
+                        self._deep_merge(self._config, dev_config)
+                        logger.debug(
+                            f"Merged dev config from {dev_config_file}"
+                        )
 
             # Create and validate config object
             self.config = GlobalConfig(**self._config)
-            logger.debug("Configuration loaded and validated successfully")
+            logger.debug(
+                f"Configuration loaded and validated: {self.config.model_dump()}"
+            )
 
         except Exception as e:
             logger.error(f"Error loading configurations: {e}")

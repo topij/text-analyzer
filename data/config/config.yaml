@@ -5,7 +5,7 @@ environment: "production"
 
 # Logging configuration
 logging:
-  level: "WARNING "
+  level: "DEBUG "
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
   date_format: "%Y-%m-%d %H:%M:%S"
   file_path: "app.log" # "data/logs/app.log"
@@ -189,9 +189,9 @@ caching:
   compression: true
 
 # Development settings
-development:
-  debug_mode: false
-  profile_performance: false
-  log_llm_calls: true
-  mock_llm_responses: false
-  save_intermediates: false
+# development:
+#   debug_mode: true
+#   profile_performance: false
+#   log_llm_calls: true
+#   mock_llm_responses: false
+#   save_intermediates: false
