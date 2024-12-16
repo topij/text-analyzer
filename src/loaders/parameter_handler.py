@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 from src.config.manager import ConfigManager
+from src.core.config import AnalyzerConfig
 
 from src.loaders.parameter_config import (
     ParameterConfigurations,
@@ -29,22 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 class ParameterHandler:
-    def __init__(
-        self,
-        file_path: Optional[Union[str, Path]] = None,
-        file_utils: Optional[FileUtils] = None,
-    ):
-        self.file_utils = file_utils or FileUtils()
-        # Add analyzer config
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
-        # Rest of initialization...
-
-    def get_parameters(self) -> ParameterSet:
-        # Consider analyzer config when getting parameters
-        base_params = self.analyzer_config.config
-
-
-class ParameterHandler:
     """Unified parameter handling with validation."""
 
     REQUIRED_PARAMETERS = {
@@ -60,15 +45,25 @@ class ParameterHandler:
     ):
         """Initialize parameter handler."""
         self.file_utils = file_utils or FileUtils()
-        # Add analyzer config
-        self.analyzer_config = ConfigManager(file_utils=self.file_utils)
-        self.config = ParameterConfigurations()  # Initialize config
-        self.validator = ParameterValidation()  # Initialize validator
-        self.file_path = (
-            get_parameter_file_path(file_path, self.file_utils)
-            if file_path
-            else None
-        )
+        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
+        self.config = ParameterConfigurations()
+        self.validator = ParameterValidation()
+
+        # Convert file path to Path object if provided
+        # self.file_path = Path(file_path) if file_path else None
+
+        # Handle file path
+        if isinstance(file_path, (str, Path)):
+            self.file_path = Path(file_path)
+            if not self.file_path.exists():
+                raise FileNotFoundError(
+                    f"Parameter file not found: {self.file_path}"
+                )
+            logger.debug(f"Using parameter file: {self.file_path}")
+        else:
+            self.file_path = None
+            logger.debug("No parameter file specified, using defaults")
+
         self.language = self._detect_language()
         self._load_and_validate_parameters()
 
@@ -145,70 +140,186 @@ class ParameterHandler:
             )
 
     def _load_and_validate_parameters(self) -> None:
-        """Load and validate parameters from file."""
+        """Load and validate parameters from all sheets."""
         try:
             if not self.file_path or not self.file_path.exists():
                 logger.debug("No parameter file specified, using defaults")
                 default_config = self.config.DEFAULT_CONFIG.copy()
                 default_config["general"]["language"] = self.language
-                default_config["general"][
-                    "focus_on"
-                ] = "general content analysis"
                 self.parameters = ParameterSet(**default_config)
                 return
 
-            expected_sheet = ParameterSheets.get_sheet_name(
-                "general", self.language
-            )
+            # Load all sheets from Excel
             sheets = self.file_utils.load_excel_sheets(self.file_path)
+            config = {}
 
-            if expected_sheet not in sheets:
-                raise ValueError(
-                    f"Invalid parameter file: Required sheet '{expected_sheet}' not found. "
-                    f"Available sheets: {', '.join(sheets.keys())}"
-                )
-
-            df = sheets[expected_sheet]
-            if df.empty:
-                logger.debug("Empty parameter sheet, using defaults")
-                default_config = self.config.DEFAULT_CONFIG.copy()
-                default_config["general"]["language"] = self.language
-                default_config["general"][
-                    "focus_on"
-                ] = "general content analysis"
-                self.parameters = ParameterSet(**default_config)
-                return
-
-            column_names = ParameterSheets.get_column_names(
+            # Load General Parameters
+            general_sheet = ParameterSheets.get_sheet_name(
                 "general", self.language
             )
-            self._validate_mandatory_fields(df, column_names)
+            if general_sheet in sheets:
+                config["general"] = self._parse_general_parameters(
+                    sheets[general_sheet]
+                )
+            else:
+                logger.warning(f"Required sheet '{general_sheet}' not found")
+                raise ValueError(f"Required sheet '{general_sheet}' not found")
 
-            general_params = self._parse_general_parameters(df)
-            config = {
-                "general": general_params,
-                "categories": {},
-                "predefined_keywords": {},
-                "excluded_keywords": set(),
-                "analysis_settings": self.config.DEFAULT_CONFIG[
+            # Load Categories
+            categories_sheet = ParameterSheets.get_sheet_name(
+                "categories", self.language
+            )
+            if categories_sheet in sheets:
+                config["categories"] = self._parse_categories(
+                    sheets[categories_sheet]
+                )
+            else:
+                logger.debug(
+                    "No categories sheet found, using empty categories"
+                )
+                config["categories"] = {}
+
+            # Load Predefined Keywords
+            keywords_sheet = ParameterSheets.get_sheet_name(
+                "keywords", self.language
+            )
+            if keywords_sheet in sheets:
+                config["predefined_keywords"] = self._parse_keywords(
+                    sheets[keywords_sheet]
+                )
+            else:
+                logger.debug("No predefined keywords sheet found")
+                config["predefined_keywords"] = {}
+
+            # Load Excluded Keywords
+            excluded_sheet = ParameterSheets.get_sheet_name(
+                "excluded", self.language
+            )
+            if excluded_sheet in sheets:
+                config["excluded_keywords"] = self._parse_excluded_keywords(
+                    sheets[excluded_sheet]
+                )
+            else:
+                logger.debug("No excluded keywords sheet found")
+                config["excluded_keywords"] = set()
+
+            # Load Domain Context
+            domains_sheet = ParameterSheets.get_sheet_name(
+                "domains", self.language
+            )
+            if domains_sheet in sheets:
+                config["domain_context"] = self._parse_domains(
+                    sheets[domains_sheet]
+                )
+            else:
+                logger.debug("No domain context sheet found")
+                config["domain_context"] = {}
+
+            # Load Analysis Settings
+            settings_sheet = ParameterSheets.get_sheet_name(
+                "settings", self.language
+            )
+            if settings_sheet in sheets:
+                config["analysis_settings"] = self._parse_settings(
+                    sheets[settings_sheet]
+                )
+            else:
+                logger.debug("No settings sheet found, using defaults")
+                config["analysis_settings"] = self.config.DEFAULT_CONFIG[
                     "analysis_settings"
-                ],
-                "domain_context": {},
-            }
+                ]
 
-            # Don't override explicit values with defaults
-            if "language" not in general_params:
-                general_params["language"] = self.language
-            if "min_keyword_length" not in general_params:
-                general_params["min_keyword_length"] = 3
-            if "include_compounds" not in general_params:
-                general_params["include_compounds"] = True
+            # Don't override explicit values with defaults for general params
+            if "language" not in config["general"]:
+                config["general"]["language"] = self.language
+            if "min_keyword_length" not in config["general"]:
+                config["general"]["min_keyword_length"] = 3
+            if "include_compounds" not in config["general"]:
+                config["general"]["include_compounds"] = True
 
+            # Create ParameterSet with complete config
             self.parameters = ParameterSet(**config)
+            logger.debug(f"Loaded parameters from {self.file_path}")
+
+            # Validate loaded parameters using validator instance
+            is_valid, warnings, errors = self.validator.validate_parameters(
+                self.parameters.model_dump()
+            )
+            if not is_valid:
+                raise ValueError(f"Parameter validation failed: {errors}")
+            if warnings:
+                for warning in warnings:
+                    logger.warning(warning)
 
         except Exception as e:
             logger.error(f"Error loading parameters: {e}")
             raise ValueError(str(e))
+
+    # def _load_and_validate_parameters(self) -> None:
+    #     """Load and validate parameters from file."""
+    #     try:
+    #         if not self.file_path or not self.file_path.exists():
+    #             logger.debug("No parameter file specified, using defaults")
+    #             default_config = self.config.DEFAULT_CONFIG.copy()
+    #             default_config["general"]["language"] = self.language
+    #             default_config["general"][
+    #                 "focus_on"
+    #             ] = "general content analysis"
+    #             self.parameters = ParameterSet(**default_config)
+    #             return
+
+    #         expected_sheet = ParameterSheets.get_sheet_name(
+    #             "general", self.language
+    #         )
+    #         sheets = self.file_utils.load_excel_sheets(self.file_path)
+
+    #         if expected_sheet not in sheets:
+    #             raise ValueError(
+    #                 f"Invalid parameter file: Required sheet '{expected_sheet}' not found. "
+    #                 f"Available sheets: {', '.join(sheets.keys())}"
+    #             )
+
+    #         df = sheets[expected_sheet]
+    #         if df.empty:
+    #             logger.debug("Empty parameter sheet, using defaults")
+    #             default_config = self.config.DEFAULT_CONFIG.copy()
+    #             default_config["general"]["language"] = self.language
+    #             default_config["general"][
+    #                 "focus_on"
+    #             ] = "general content analysis"
+    #             self.parameters = ParameterSet(**default_config)
+    #             return
+
+    #         column_names = ParameterSheets.get_column_names(
+    #             "general", self.language
+    #         )
+    #         self._validate_mandatory_fields(df, column_names)
+
+    #         general_params = self._parse_general_parameters(df)
+    #         config = {
+    #             "general": general_params,
+    #             "categories": {},
+    #             "predefined_keywords": {},
+    #             "excluded_keywords": set(),
+    #             "analysis_settings": self.config.DEFAULT_CONFIG[
+    #                 "analysis_settings"
+    #             ],
+    #             "domain_context": {},
+    #         }
+
+    #         # Don't override explicit values with defaults
+    #         if "language" not in general_params:
+    #             general_params["language"] = self.language
+    #         if "min_keyword_length" not in general_params:
+    #             general_params["min_keyword_length"] = 3
+    #         if "include_compounds" not in general_params:
+    #             general_params["include_compounds"] = True
+
+    #         self.parameters = ParameterSet(**config)
+
+    #     except Exception as e:
+    #         logger.error(f"Error loading parameters: {e}")
+    #         raise ValueError(str(e))
 
     def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Parse general parameters with defaults for non-mandatory fields."""
@@ -320,6 +431,7 @@ class ParameterHandler:
         """Parse categories sheet."""
         categories = {}
         if df is None or df.empty:
+            logger.warning("No categories found in parameter file")
             return categories
 
         try:
@@ -327,6 +439,9 @@ class ParameterHandler:
                 "categories", self.language
             )
             cat_col = column_names["category"]
+            logger.debug(
+                f"Parsing categories with columns: {column_names}"
+            )  # Debug columns
 
             if cat_col not in df.columns:
                 logger.warning(
@@ -337,57 +452,107 @@ class ParameterHandler:
             for _, row in df.iterrows():
                 if pd.notna(row[cat_col]):
                     cat_name = str(row[cat_col]).strip()
-
-                    description = ""
-                    if (
-                        "description" in column_names
-                        and column_names["description"] in df.columns
-                    ):
-                        description = row.get(column_names["description"], "")
-
-                    keywords = []
-                    if (
-                        "keywords" in column_names
-                        and column_names["keywords"] in df.columns
-                    ):
-                        keywords = self._split_list(
+                    config = CategoryConfig(
+                        description=str(
+                            row.get(column_names["description"], "")
+                        ),
+                        keywords=self._split_list(
                             row.get(column_names["keywords"], "")
-                        )
-
-                    threshold = 0.5
-                    if (
-                        "threshold" in column_names
-                        and column_names["threshold"] in df.columns
-                    ):
-                        threshold = float(
+                        ),
+                        threshold=float(
                             row.get(column_names["threshold"], 0.5)
-                        )
-
-                    parent = None
-                    if (
-                        "parent" in column_names
-                        and column_names["parent"] in df.columns
-                    ):
-                        parent = (
+                        ),
+                        parent=(
                             row.get(column_names["parent"])
                             if pd.notna(row.get(column_names["parent"]))
                             else None
-                        )
-
-                    categories[cat_name] = CategoryConfig(
-                        description=description,
-                        keywords=keywords,
-                        threshold=threshold,
-                        parent=parent,
+                        ),
                     )
+                    categories[cat_name] = config
                     logger.debug(
-                        f"Added category: {cat_name} with {len(keywords)} keywords"
+                        f"Loaded category: {cat_name} with config: {config}"
                     )
+
+            return categories
 
         except Exception as e:
-            logger.error(f"Error parsing categories: {str(e)}")
+            logger.error(f"Error parsing categories: {str(e)}", exc_info=True)
+            return categories
 
-        return categories
+    # def _parse_categories(
+    #     self, df: Optional[pd.DataFrame]
+    # ) -> Dict[str, CategoryConfig]:
+    #     """Parse categories sheet."""
+    #     categories = {}
+    #     if df is None or df.empty:
+    #         return categories
+
+    #     try:
+    #         column_names = ParameterSheets.get_column_names(
+    #             "categories", self.language
+    #         )
+    #         cat_col = column_names["category"]
+
+    #         if cat_col not in df.columns:
+    #             logger.warning(
+    #                 f"Category column '{cat_col}' not found. Available columns: {df.columns.tolist()}"
+    #             )
+    #             return categories
+
+    #         for _, row in df.iterrows():
+    #             if pd.notna(row[cat_col]):
+    #                 cat_name = str(row[cat_col]).strip()
+
+    #                 description = ""
+    #                 if (
+    #                     "description" in column_names
+    #                     and column_names["description"] in df.columns
+    #                 ):
+    #                     description = row.get(column_names["description"], "")
+
+    #                 keywords = []
+    #                 if (
+    #                     "keywords" in column_names
+    #                     and column_names["keywords"] in df.columns
+    #                 ):
+    #                     keywords = self._split_list(
+    #                         row.get(column_names["keywords"], "")
+    #                     )
+
+    #                 threshold = 0.5
+    #                 if (
+    #                     "threshold" in column_names
+    #                     and column_names["threshold"] in df.columns
+    #                 ):
+    #                     threshold = float(
+    #                         row.get(column_names["threshold"], 0.5)
+    #                     )
+
+    #                 parent = None
+    #                 if (
+    #                     "parent" in column_names
+    #                     and column_names["parent"] in df.columns
+    #                 ):
+    #                     parent = (
+    #                         row.get(column_names["parent"])
+    #                         if pd.notna(row.get(column_names["parent"]))
+    #                         else None
+    #                     )
+
+    #                 categories[cat_name] = CategoryConfig(
+    #                     description=description,
+    #                     keywords=keywords,
+    #                     threshold=threshold,
+    #                     parent=parent,
+    #                 )
+    #                 logger.debug(
+    #                     f"Added category: {cat_name} with {len(keywords)} keywords"
+    #                 )
+
+    #     except Exception as e:
+    #         logger.error(f"Error parsing categories: {str(e)}")
+
+    #     return categories
 
     def _parse_domains(
         self, df: Optional[pd.DataFrame]

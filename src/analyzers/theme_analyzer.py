@@ -21,12 +21,12 @@ from src.schemas import ThemeInfo
 logger = logging.getLogger(__name__)
 
 
-class ThemePattern(BaseModel):
-    """Pattern for theme identification."""
+# class ThemePattern(BaseModel):
+#     """Pattern for theme identification."""
 
-    pattern: str
-    domain: Optional[str]
-    weight: float = 1.0
+#     pattern: str
+#     domain: Optional[str]
+#     weight: float = 1.0
 
 
 class ThemeEvidence(BaseModel):
@@ -48,61 +48,61 @@ class ThemeOutput(AnalyzerOutput):
 class ThemeAnalyzer(TextAnalyzer):
     """Analyzes text to identify main themes and topics with language support."""
 
-    # Domain-specific theme patterns
-    DOMAIN_PATTERNS = {
-        "technical": [
-            ThemePattern(
-                pattern="cloud|infrastructure|deployment",
-                domain="technical",
-                weight=1.2,
-            ),
-            ThemePattern(
-                pattern="api|integration|microservice",
-                domain="technical",
-                weight=1.1,
-            ),
-        ],
-        "business": [
-            ThemePattern(
-                pattern="revenue|growth|profit|market",
-                domain="business",
-                weight=1.2,
-            ),
-            ThemePattern(
-                pattern="customer|acquisition|retention",
-                domain="business",
-                weight=1.1,
-            ),
-        ],
-    }
+    # # Domain-specific theme patterns
+    # DOMAIN_PATTERNS = {
+    #     "technical": [
+    #         ThemePattern(
+    #             pattern="cloud|infrastructure|deployment",
+    #             domain="technical",
+    #             weight=1.2,
+    #         ),
+    #         ThemePattern(
+    #             pattern="api|integration|microservice",
+    #             domain="technical",
+    #             weight=1.1,
+    #         ),
+    #     ],
+    #     "business": [
+    #         ThemePattern(
+    #             pattern="revenue|growth|profit|market",
+    #             domain="business",
+    #             weight=1.2,
+    #         ),
+    #         ThemePattern(
+    #             pattern="customer|acquisition|retention",
+    #             domain="business",
+    #             weight=1.1,
+    #         ),
+    #     ],
+    # }
 
-    # Finnish domain patterns
-    FINNISH_DOMAIN_PATTERNS = {
-        "technical": [
-            ThemePattern(
-                pattern="pilvi|infrastruktuuri|käyttöönotto",
-                domain="technical",
-                weight=1.2,
-            ),
-            ThemePattern(
-                pattern="rajapinta|integraatio|mikropalvelu",
-                domain="technical",
-                weight=1.1,
-            ),
-        ],
-        "business": [
-            ThemePattern(
-                pattern="liikevaihto|kasvu|tuotto|markkina",
-                domain="business",
-                weight=1.2,
-            ),
-            ThemePattern(
-                pattern="asiakas|hankinta|pysyvyys",
-                domain="business",
-                weight=1.1,
-            ),
-        ],
-    }
+    # # Finnish domain patterns
+    # FINNISH_DOMAIN_PATTERNS = {
+    #     "technical": [
+    #         ThemePattern(
+    #             pattern="pilvi|infrastruktuuri|käyttöönotto",
+    #             domain="technical",
+    #             weight=1.2,
+    #         ),
+    #         ThemePattern(
+    #             pattern="rajapinta|integraatio|mikropalvelu",
+    #             domain="technical",
+    #             weight=1.1,
+    #         ),
+    #     ],
+    #     "business": [
+    #         ThemePattern(
+    #             pattern="liikevaihto|kasvu|tuotto|markkina",
+    #             domain="business",
+    #             weight=1.2,
+    #         ),
+    #         ThemePattern(
+    #             pattern="asiakas|hankinta|pysyvyys",
+    #             domain="business",
+    #             weight=1.1,
+    #         ),
+    #     ],
+    # }
 
     # def __init__(
     #     self,
@@ -185,51 +185,34 @@ class ThemeAnalyzer(TextAnalyzer):
         self.chain = self._create_chain()
         logger.debug("ThemeAnalyzer initialized with new configuration system")
 
-    def _initialize_patterns(self) -> Dict[str, List[ThemePattern]]:
-        """Initialize language-specific patterns."""
-        if self.language_processor and self.language_processor.language == "fi":
-            return self.FINNISH_DOMAIN_PATTERNS
-        return self.DOMAIN_PATTERNS
+    # def _initialize_patterns(self) -> Dict[str, List[ThemePattern]]:
+    #     """Initialize language-specific patterns."""
+    #     if self.language_processor and self.language_processor.language == "fi":
+    #         return self.FINNISH_DOMAIN_PATTERNS
+    #     return self.DOMAIN_PATTERNS
 
     def _create_chain(self) -> RunnableSequence:
-        """Create enhanced LangChain processing chain."""
         template = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    """You are a theme analysis expert. Analyze text to identify main themes,
-            their hierarchical relationships, and supporting evidence. Consider:
-            1. Main themes and subthemes
-            2. Evidence supporting each theme
-            3. Domain-specific context
-            4. Cross-theme relationships""",
+                    """You are a theme analysis expert. For the given text:
+            1. Identify specific themes that emerge from the actual content
+            2. Provide detailed descriptions based on text evidence
+            3. Calculate confidence scores based on supporting evidence
+            4. Extract relevant keywords that support each theme
+            
+            Focus on themes that are clearly supported by the text content.
+            Do not generate generic themes that could apply to any text.""",
                 ),
                 (
                     "human",
-                    """Analyze this text and identify themes:
+                    """Analyze this text to identify specific themes:
+            {text}
+            
             Language: {language}
-            Text: {text}
-            
-            Guidelines:
-            - Maximum themes: {max_themes}
-            - Focus area: {focus_area}
-            - Minimum confidence: {min_confidence}
-            
-            Return in this format:
-            {{
-                "themes": [
-                    {{
-                        "name": "theme_name",
-                        "description": "detailed description",
-                        "confidence": 0.95,
-                        "keywords": ["key1", "key2"],
-                        "parent_theme": "optional_parent"
-                    }}
-                ],
-                "theme_hierarchy": {{
-                    "parent_theme": ["child_theme1", "child_theme2"]
-                }}
-            }}""",
+            Required: Extract themes with descriptions, confidence scores, and supporting keywords.
+            Base all themes on actual content and evidence from the text.""",
                 ),
             ]
         )
@@ -237,19 +220,71 @@ class ThemeAnalyzer(TextAnalyzer):
         return (
             {
                 "text": RunnablePassthrough(),
-                "language": lambda _: (
-                    self.language_processor.language
-                    if self.language_processor
-                    else "en"
-                ),
-                "max_themes": lambda _: self.max_themes,
-                "focus_area": lambda _: self.focus_on,
-                "min_confidence": lambda _: self.min_confidence,
+                "language": lambda _: self._get_language(),
             }
             | template
-            | self.llm
-            | self._post_process_llm_output
+            | self.llm.with_structured_output(ThemeOutput)
         )
+
+    # def _create_chain(self) -> RunnableSequence:
+    #     """Create enhanced LangChain processing chain."""
+    #     template = ChatPromptTemplate.from_messages(
+    #         [
+    #             (
+    #                 "system",
+    #                 """You are a theme analysis expert. Analyze text to identify main themes,
+    #         their hierarchical relationships, and supporting evidence. Consider:
+    #         1. Main themes and subthemes
+    #         2. Evidence supporting each theme
+    #         3. Domain-specific context
+    #         4. Cross-theme relationships""",
+    #             ),
+    #             (
+    #                 "human",
+    #                 """Analyze this text and identify themes:
+    #         Language: {language}}
+    #         Text: {text}}
+
+    #         Guidelines:
+    #         - Maximum themes: {max_themes}}
+    #         - Focus area: {focus_area}}
+    #         - Minimum confidence: {min_confidence}}
+
+    #         Return in this format:
+    #         {{
+    #             "themes": [
+    #                 {{
+    #                     "name": "theme_name",
+    #                     "description": "detailed description",
+    #                     "confidence": 0.95,
+    #                     "keywords": ["key1", "key2"],
+    #                     "parent_theme": "optional_parent"
+    #                 }}
+    #             ],
+    #             "theme_hierarchy": {{
+    #                 "parent_theme": ["child_theme1", "child_theme2"]
+    #             }}
+    #         }}""",
+    #             ),
+    #         ]
+    #     )
+
+    #     return (
+    #         {
+    #             "text": RunnablePassthrough(),
+    #             "language": lambda _: (
+    #                 self.language_processor.language
+    #                 if self.language_processor
+    #                 else "en"
+    #             ),
+    #             "max_themes": lambda _: self.max_themes,
+    #             "focus_area": lambda _: self.focus_on,
+    #             "min_confidence": lambda _: self.min_confidence,
+    #         }
+    #         | template
+    #         | self.llm
+    #         | self._post_process_llm_output
+    #     )
 
     # def _create_chain(self) -> RunnableSequence:
     #     """Create LangChain processing chain."""
@@ -440,7 +475,7 @@ class ThemeAnalyzer(TextAnalyzer):
         return None
 
     async def analyze(self, text: str) -> ThemeOutput:
-        """Analyze text to identify themes with proper error handling."""
+        """Analyze text with structured output validation."""
         if text is None:
             raise ValueError("Input text cannot be None")
 
@@ -448,51 +483,90 @@ class ThemeAnalyzer(TextAnalyzer):
             return ThemeOutput(
                 themes=[],
                 theme_hierarchy={},
-                error="Empty input text",
-                success=False,
                 language=self._get_language(),
+                success=False,
+                error="Empty input text",
             )
 
         try:
-            # Get LLM analysis
-            response = await self.chain.ainvoke(text)
-            logger.debug("Got LLM response for theme analysis")
-
-            if not response or "themes" not in response:
-                return ThemeOutput(
-                    themes=[],
-                    theme_hierarchy={},
-                    error="Invalid response from LLM",
-                    success=False,
-                    language=self._get_language(),
-                )
+            result = await self.chain.ainvoke(text)
 
             # Filter themes by confidence
-            themes = [
-                ThemeInfo(**theme)
-                for theme in response["themes"]
-                if theme.get("confidence", 0) >= self.min_confidence
+            result.themes = [
+                theme
+                for theme in result.themes
+                if theme.confidence >= self.min_confidence
             ]
 
             # Limit number of themes
-            themes = themes[: self.max_themes]
+            result.themes = result.themes[: self.max_themes]
 
-            return ThemeOutput(
-                themes=themes,
-                theme_hierarchy=response.get("theme_hierarchy", {}),
-                language=response.get("language", self._get_language()),
-                success=True,
-            )
+            return result
 
         except Exception as e:
             logger.error(f"Theme analysis failed: {str(e)}")
             return ThemeOutput(
                 themes=[],
                 theme_hierarchy={},
-                error=str(e),
-                success=False,
                 language=self._get_language(),
+                success=False,
+                error=str(e),
             )
+
+    # async def analyze(self, text: str) -> ThemeOutput:
+    #     """Analyze text to identify themes with proper error handling."""
+    #     if text is None:
+    #         raise ValueError("Input text cannot be None")
+
+    #     if not text:
+    #         return ThemeOutput(
+    #             themes=[],
+    #             theme_hierarchy={},
+    #             error="Empty input text",
+    #             success=False,
+    #             language=self._get_language(),
+    #         )
+
+    #     try:
+    #         # Get LLM analysis
+    #         response = await self.chain.ainvoke(text)
+    #         logger.debug("Got LLM response for theme analysis")
+
+    #         if not response or "themes" not in response:
+    #             return ThemeOutput(
+    #                 themes=[],
+    #                 theme_hierarchy={},
+    #                 error="Invalid response from LLM",
+    #                 success=False,
+    #                 language=self._get_language(),
+    #             )
+
+    #         # Filter themes by confidence
+    #         themes = [
+    #             ThemeInfo(**theme)
+    #             for theme in response["themes"]
+    #             if theme.get("confidence", 0) >= self.min_confidence
+    #         ]
+
+    #         # Limit number of themes
+    #         themes = themes[: self.max_themes]
+
+    #         return ThemeOutput(
+    #             themes=themes,
+    #             theme_hierarchy=response.get("theme_hierarchy", {}),
+    #             language=response.get("language", self._get_language()),
+    #             success=True,
+    #         )
+
+    #     except Exception as e:
+    #         logger.error(f"Theme analysis failed: {str(e)}")
+    #         return ThemeOutput(
+    #             themes=[],
+    #             theme_hierarchy={},
+    #             error=str(e),
+    #             success=False,
+    #             language=self._get_language(),
+    #         )
 
     # async def analyze(self, text: Any) -> ThemeOutput:
     #     """Analyze text to identify themes with robust error handling."""

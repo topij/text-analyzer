@@ -203,27 +203,18 @@ class KeywordAnalyzer(TextAnalyzer):
         config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None,
     ):
-        """Initialize analyzer with new configuration system.
-
-        Args:
-            llm: Optional LLM instance (will create using factory if None)
-            config: Optional configuration dictionary
-            language_processor: Optional language processor instance
-        """
-        # Initialize analyzer config if not provided in config dict
+        """Initialize analyzer with structured output support."""
+        # Initialize analyzer config if not provided
         if llm is None:
             analyzer_config = AnalyzerConfig()
             llm = create_llm(config=analyzer_config)
 
-            # Merge analyzer config with provided config if any
+            # Merge analyzer config with provided config
             if config is None:
                 config = {}
             config = {**analyzer_config.config.get("analysis", {}), **config}
 
-        # Call parent init with LLM and config
         super().__init__(llm, config)
-
-        # Set up language processor
         self.language_processor = language_processor
 
         # Initialize components with config
@@ -231,51 +222,11 @@ class KeywordAnalyzer(TextAnalyzer):
         self.min_confidence = config.get("min_confidence", 0.3)
         self.max_keywords = config.get("max_keywords", 10)
 
-        # Create processing chain
+        # Create chain with structured output
         self.chain = self._create_chain()
         logger.debug(
             "KeywordAnalyzer initialized with new configuration system"
         )
-
-    # def __init__(
-    #     self,
-    #     llm: Optional[BaseChatModel] = None,
-    #     config: Optional[Dict] = None,
-    #     language_processor: Optional[BaseTextProcessor] = None,
-    # ):
-    #     """Initialize analyzer with configuration and language processing.
-
-    #     Args:
-    #         llm: Optional LLM instance (will create using factory if None)
-    #         config: Optional configuration dictionary
-    #         language_processor: Optional language processor instance
-    #     """
-    #     # Initialize analyzer config if not provided in config dict
-    #     if llm is None:
-    #         analyzer_config = ConfigManager()
-    #         llm = create_llm(config=analyzer_config)
-
-    #         # Merge analyzer config with provided config if any
-    #         if config is None:
-    #             config = {}
-    #         config = {**analyzer_config.config.get("analysis", {}), **config}
-
-    #     # Call parent init with LLM and config
-    #     super().__init__(llm, config)
-
-    #     # Set up language processor
-    #     self.language_processor = language_processor
-
-    #     # Initialize components with config
-    #     self.weights = self._initialize_weights(config)
-    #     self.clustering_config = self._initialize_clustering_config(config)
-
-    #     # Initialize internal state
-    #     self._frequency_cache = {}
-    #     self._current_text = ""
-
-    #     # Create processing chain
-    #     self.chain = self._create_chain()
 
     def _initialize_weights(self, config: Dict[str, Any]) -> Dict[str, float]:
         """Initialize and validate weights."""
@@ -298,23 +249,6 @@ class KeywordAnalyzer(TextAnalyzer):
             weights["llm"] /= source_sum
 
         return weights
-
-    # def _initialize_weights(self, config: Optional[Dict]) -> Dict[str, float]:
-    #     """Initialize and validate weights."""
-    #     weights = self.DEFAULT_WEIGHTS.copy()
-    #     if config and "weights" in config:
-    #         weights.update(config["weights"])
-
-    #     # Validate source weights sum to 1.0
-    #     source_sum = weights["statistical"] + weights["llm"]
-    #     if abs(source_sum - 1.0) > 0.001:
-    #         logger.warning(
-    #             f"Source weights sum to {source_sum}, normalizing..."
-    #         )
-    #         weights["statistical"] /= source_sum
-    #         weights["llm"] /= source_sum
-
-    #     return weights
 
     def _initialize_clustering_config(self, config: Optional[Dict]) -> Dict:
         """Initialize clustering configuration."""
@@ -340,42 +274,27 @@ class KeywordAnalyzer(TextAnalyzer):
         )
 
     def _create_chain(self) -> RunnableSequence:
-        """Create enhanced LangChain processing chain."""
         template = ChatPromptTemplate.from_messages(
             [
                 (
                     "system",
-                    """You are a keyword extraction expert. Extract keywords considering:
-            1. Technical and domain-specific terminology
-            2. Compound words and phrases
-            3. Business and technical context
-            Return results in JSON format.""",
+                    """You are a specialized keyword extraction expert. For the given text:
+            1. Extract highly specific keywords and phrases that appear in or are directly implied by the text
+            2. Calculate confidence scores based on how directly the keyword appears in text
+            3. Identify technical and business domains for each keyword
+            4. Detect compound words and their components
+            
+            Focus on extracting keywords that actually appear in or are strongly implied by the text.
+            Do not generate generic keywords that could apply to any text.""",
                 ),
                 (
                     "human",
-                    """Analyze this text and extract keywords:
-            Text: {text}
-            Guidelines:
-            - Maximum keywords: {max_keywords}
-            - Consider these key terms: {key_terms}
-            - Language: {language}
+                    """Analyze this text:
+            {text}
             
-            Return in this format:
-            {{
-                "keywords": [
-                    {{
-                        "keyword": "term",
-                        "score": 0.95,
-                        "domain": "technical/business",
-                        "compound_parts": ["part1", "part2"]
-                    }}
-                ],
-                "compound_words": ["word1", "word2"],
-                "domain_keywords": {{
-                    "technical": ["term1", "term2"],
-                    "business": ["term3", "term4"]
-                }}
-            }}""",
+            Language: {language}
+            Required: Extract specific keywords with confidence scores, domains, and compound word analysis.
+            Return only keywords that are actually present in or strongly implied by the text.""",
                 ),
             ]
         )
@@ -383,31 +302,23 @@ class KeywordAnalyzer(TextAnalyzer):
         return (
             {
                 "text": RunnablePassthrough(),
-                "max_keywords": lambda _: self.max_keywords,
-                "key_terms": self._get_key_terms,
-                "language": lambda _: (
-                    self.language_processor.language
-                    if self.language_processor
-                    else "en"
-                ),
+                "language": lambda _: self._get_language(),
             }
             | template
-            | self.llm
-            | self._post_process_llm_output
+            | self.llm.with_structured_output(KeywordOutput)
         )
 
     # def _create_chain(self) -> RunnableSequence:
-    #     """Create LangChain processing chain."""
+    #     """Create enhanced LangChain processing chain."""
     #     template = ChatPromptTemplate.from_messages(
     #         [
     #             (
     #                 "system",
-    #                 """You are a keyword extraction expert specialized in identifying
-    #         compound terms and technical concepts. Extract keywords with attention to:
-    #         1. Multi-word technical terms
-    #         2. Domain-specific compound phrases
-    #         3. Technical and business terminology
-    #         Return ONLY valid JSON format.""",
+    #                 """You are a keyword extraction expert. Extract keywords considering:
+    #         1. Technical and domain-specific terminology
+    #         2. Compound words and phrases
+    #         3. Business and technical context
+    #         Return results in JSON format.""",
     #             ),
     #             (
     #                 "human",
@@ -415,27 +326,24 @@ class KeywordAnalyzer(TextAnalyzer):
     #         Text: {text}
     #         Guidelines:
     #         - Maximum keywords: {max_keywords}
-    #         - Consider these statistical keywords: {statistical_keywords}
-    #         - Identify technical compound terms
-    #         - Classify by domain (technical/business)
+    #         - Consider these key terms: {key_terms}
+    #         - Language: {language}
 
-    #         Return in this exact format:
+    #         Return in this format:
     #         {{
     #             "keywords": [
     #                 {{
     #                     "keyword": "term",
     #                     "score": 0.95,
-    #                     "domain": "technical",
+    #                     "domain": "technical/business",
     #                     "compound_parts": ["part1", "part2"]
     #                 }}
     #             ],
-    #             "compound_phrases": [
-    #                 {{
-    #                     "phrase": "term",
-    #                     "parts": ["part1", "part2"],
-    #                     "domain": "technical"
-    #                 }}
-    #             ]
+    #             "compound_words": ["word1", "word2"],
+    #             "domain_keywords": {{
+    #                 "technical": ["term1", "term2"],
+    #                 "business": ["term3", "term4"]
+    #             }}
     #         }}""",
     #             ),
     #         ]
@@ -444,9 +352,12 @@ class KeywordAnalyzer(TextAnalyzer):
     #     return (
     #         {
     #             "text": RunnablePassthrough(),
-    #             "max_keywords": lambda _: self.config.get("max_keywords", 10),
-    #             "statistical_keywords": lambda x: ", ".join(
-    #                 self._get_statistical_keywords(x)
+    #             "max_keywords": lambda _: self.max_keywords,
+    #             "key_terms": self._get_key_terms,
+    #             "language": lambda _: (
+    #                 self.language_processor.language
+    #                 if self.language_processor
+    #                 else "en"
     #             ),
     #         }
     #         | template
@@ -475,13 +386,13 @@ class KeywordAnalyzer(TextAnalyzer):
             language=self._get_language(),
         )
 
-    async def analyze(self, text: str) -> KeywordAnalysisResult:
-        """Analyze text to extract keywords with proper error handling."""
+    async def analyze(self, text: str) -> KeywordOutput:
+        """Analyze text with structured output and error handling."""
         if text is None:
             raise ValueError("Input text cannot be None")
 
         if not text:
-            return KeywordAnalysisResult(
+            return KeywordOutput(
                 keywords=[],
                 compound_words=[],
                 domain_keywords={},
@@ -491,32 +402,25 @@ class KeywordAnalyzer(TextAnalyzer):
             )
 
         try:
-            # Get LLM analysis
-            response = await self.chain.ainvoke(text)
-            logger.debug("Got LLM response for keyword analysis")
+            # Get LLM analysis with validated structured output
+            result = await self.chain.ainvoke(text)
 
-            # Ensure we get compound_words from the response or build them from compound_parts
-            compound_words = response.get("compound_words", [])
-            if not compound_words and response.get("keywords"):
-                # If no explicit compound words, build from compound_parts
-                compound_words = [
-                    kw["keyword"]
-                    for kw in response["keywords"]
-                    if kw.get("compound_parts")
-                ]
+            # Filter keywords by confidence
+            result.keywords = [
+                kw for kw in result.keywords if kw.score >= self.min_confidence
+            ]
 
-            # Process response into KeywordAnalysisResult
-            return KeywordAnalysisResult(
-                keywords=response.get("keywords", []),
-                compound_words=compound_words,  # Use the resolved compound_words
-                domain_keywords=response.get("domain_keywords", {}),
-                language=response.get("language", self._get_language()),
-                success=True,
-            )
+            # Limit number of keywords
+            result.keywords = result.keywords[: self.max_keywords]
+
+            # Update domain keywords
+            result.domain_keywords = self._group_by_domain(result.keywords)
+
+            return result
 
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}")
-            return KeywordAnalysisResult(
+            return KeywordOutput(
                 keywords=[],
                 compound_words=[],
                 domain_keywords={},
@@ -524,111 +428,6 @@ class KeywordAnalyzer(TextAnalyzer):
                 success=False,
                 error=str(e),
             )
-
-    # async def analyze(self, text: str) -> KeywordAnalysisResult:
-    #     """Analyze text to extract keywords with proper error handling."""
-    #     if text is None:
-    #         raise ValueError("Input text cannot be None")
-
-    #     if not text:
-    #         return KeywordAnalysisResult(
-    #             keywords=[],
-    #             compound_words=[],
-    #             domain_keywords={},
-    #             language=self._get_language(),
-    #             success=False,
-    #             error="Empty input text",
-    #         )
-
-    #     try:
-    #         # Get LLM analysis
-    #         response = await self.chain.ainvoke(text)
-    #         logger.debug("Got LLM response for keyword analysis")
-
-    #         # Process response into KeywordAnalysisResult
-    #         return KeywordAnalysisResult(
-    #             keywords=response.get("keywords", []),
-    #             compound_words=response.get("compound_words", []),
-    #             domain_keywords=response.get("domain_keywords", {}),
-    #             language=response.get("language", self._get_language()),
-    #             success=True,
-    #         )
-
-    #     except Exception as e:
-    #         logger.error(f"Analysis failed: {str(e)}")
-    #         return KeywordAnalysisResult(
-    #             keywords=[],
-    #             compound_words=[],
-    #             domain_keywords={},
-    #             language=self._get_language(),
-    #             success=False,
-    #             error=str(e),
-    #         )
-
-    # async def analyze(self, text: str) -> KeywordOutput:
-    #     """Analyze text to extract keywords with proper error handling."""
-    #     try:
-    #         # Validate input first
-    #         if text is None:
-    #             raise ValueError("Input text cannot be None")
-
-    #         # Validate other input conditions
-    #         if error := self._validate_input(text):
-    #             return KeywordOutput(
-    #                 keywords=[],
-    #                 compound_words=[],
-    #                 domain_keywords={},
-    #                 error=error,
-    #                 success=False,
-    #                 language=self._get_language(),
-    #             )
-
-    #         # Get LLM analysis
-    #         logger.debug(f"Starting keyword analysis for text: {text[:100]}...")
-    #         response = await self.chain.ainvoke(text)
-
-    #         # Process response
-    #         if response is None:
-    #             return KeywordOutput(
-    #                 keywords=[],
-    #                 compound_words=[],
-    #                 domain_keywords={},
-    #                 error="No response from LLM",
-    #                 success=False,
-    #                 language=self._get_language(),
-    #             )
-
-    #         # Extract compound words from keywords with compound parts
-    #         compound_words = [
-    #             kw.get("keyword")
-    #             for kw in response.get("keywords", [])
-    #             if kw.get("compound_parts")
-    #         ] or response.get(
-    #             "compound_words", []
-    #         )  # Fallback to explicit compound_words if provided
-
-    #         # Create output
-    #         return KeywordOutput(
-    #             keywords=response.get("keywords", []),
-    #             compound_words=compound_words,  # Use extracted compound words
-    #             domain_keywords=response.get("domain_keywords", {}),
-    #             language=response.get("language", self._get_language()),
-    #             success=True,
-    #         )
-
-    #     except ValueError as e:
-    #         # Re-raise ValueError for input validation
-    #         raise
-    #     except Exception as e:
-    #         logger.error(f"Analysis failed: {e}", exc_info=True)
-    #         return KeywordOutput(
-    #             keywords=[],
-    #             compound_words=[],
-    #             domain_keywords={},
-    #             error=str(e),
-    #             success=False,
-    #             language=self._get_language(),
-    #         )
 
     def _validate_input(self, text: str) -> Optional[str]:
         """Validate input text."""
@@ -921,19 +720,6 @@ class KeywordAnalyzer(TextAnalyzer):
             logger.error(f"Error processing LLM output: {e}")
             return {"keywords": [], "compound_phrases": []}
 
-    # def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-    #     """Process LLM output with logging."""
-    #     logger.debug(f"Processing LLM output type {type(output)}: {output}")
-    #     try:
-    #         content = output.content if hasattr(output, "content") else output
-    #         logger.debug(f"Extracted content: {content}")
-    #         result = json.loads(content)
-    #         logger.debug(f"Parsed JSON result: {result}")
-    #         return result
-    #     except Exception as e:
-    #         logger.error(f"Error processing output: {e}")
-    #         raise
-
     def _calculate_score(
         self,
         keyword: str,
@@ -1004,86 +790,6 @@ class KeywordAnalyzer(TextAnalyzer):
 
         return None
 
-    # def _get_compound_parts(self, word: str) -> Optional[List[str]]:
-    #     """Get compound word parts with strict Finnish compound rules."""
-    #     if not self.language_processor:
-    #         return None
-
-    #     if "-" in word:
-    #         parts = [p.strip() for p in word.split("-") if p.strip()]
-    #         return parts if len(parts) > 1 else None
-
-    #     if self.language_processor.language == "fi" and hasattr(
-    #         self.language_processor, "voikko"
-    #     ):
-    #         # Check if it's just a generic term
-    #         if word.lower() in self.GENERIC_TERMS.get(
-    #             self.language_processor.language, set()
-    #         ):
-    #             return None
-
-    #         try:
-    #             analyses = self.language_processor.voikko.analyze(word)
-    #             if not analyses:
-    #                 return None
-
-    #             for analysis in analyses:
-    #                 structure = analysis.get("STRUCTURE", "")
-    #                 wordbases = analysis.get("WORDBASES", "")
-
-    #                 # Skip if not a compound structure
-    #                 if "=" not in structure[1:]:
-    #                     continue
-
-    #                 # Skip derivational forms
-    #                 if "+" not in wordbases or "+(" in wordbases:
-    #                     continue
-
-    #                 parts = []
-    #                 for part in wordbases.split("+"):
-    #                     if "(" in part and not part.startswith("+"):
-    #                         base = part.split("(")[0].strip()
-    #                         if len(base) > 2:
-    #                             parts.append(base)
-
-    #                 if len(parts) > 1:
-    #                     return parts
-
-    #             return None
-
-    #         except Exception as e:
-    #             logger.debug(f"Voikko analysis failed for {word}: {e}")
-    #             return None
-
-    #     elif self.language_processor.language == "en":
-    #         # English handling remains the same
-    #         patterns = {
-    #             "base": ["cloud", "data", "web", "api", "micro", "dev"],
-    #             "suffix": [
-    #                 "based",
-    #                 "driven",
-    #                 "oriented",
-    #                 "aware",
-    #                 "ready",
-    #                 "ops",
-    #             ],
-    #         }
-    #         word_lower = word.lower()
-
-    #         for base in patterns["base"]:
-    #             for suffix in patterns["suffix"]:
-    #                 if (
-    #                     word_lower == f"{base}{suffix}"
-    #                     or word_lower == f"{base}-{suffix}"
-    #                 ):
-    #                     return [base, suffix]
-
-    #         if " " in word:
-    #             parts = word.split()
-    #             return parts if len(parts) > 1 else None
-
-    #     return None
-
     def _combine_keywords(
         self, statistical: List[KeywordInfo], llm: List[KeywordInfo]
     ) -> List[KeywordInfo]:
@@ -1111,14 +817,6 @@ class KeywordAnalyzer(TextAnalyzer):
             if kw.domain:
                 domains[kw.domain].append(kw.keyword)
         return dict(domains)
-
-    # def _get_language(self) -> str:
-    #     """Get current language."""
-    #     return (
-    #         self.language_processor.language
-    #         if self.language_processor
-    #         else "unknown"
-    #     )
 
     def _get_language(self) -> str:
         """Get current language."""

@@ -1,9 +1,11 @@
+# src.analyzer.base.py
+
+
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-# src.analyzer.base.py
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
@@ -167,43 +169,55 @@ class TextAnalyzer(ABC):
         return sections
 
     def _post_process_llm_output(self, output: Any) -> Dict[str, Any]:
-        """Process raw LLM output into dictionary format.
-
-        Args:
-            output: Raw LLM output
-
-        Returns:
-            Dict[str, Any]: Processed output
-        """
+        """Process raw LLM output into dictionary format."""
         try:
+            logger.debug(f"Raw LLM output type: {type(output)}")
+            logger.debug(f"Raw LLM output content: {output}")
+
             # Extract content from different output types
             if hasattr(output, "content"):
                 content = output.content
+                logger.debug(f"Extracted content: {content}")
             elif isinstance(output, str):
                 content = output
             elif isinstance(output, dict):
                 return output
             else:
-                self.logger.error(f"Unexpected output type: {type(output)}")
+                logger.error(f"Unexpected output type: {type(output)}")
                 return {}
 
             # Clean and parse JSON
             try:
-                import json
-
                 # Remove any potential prefix/suffix text
                 content = content.strip()
                 if content.startswith("```json"):
                     content = content[7:]
                 if content.endswith("```"):
                     content = content[:-3]
+                if not content:
+                    logger.error("Empty content after cleanup")
+                    return {}
 
+                logger.debug(f"Cleaned content for parsing: {content}")
                 return json.loads(content)
 
             except json.JSONDecodeError as e:
-                self.logger.error(f"JSON parse error: {e}\nContent: {content}")
+                logger.error(f"JSON parse error: {e}\nContent: {content}")
+                # Try to extract data if it's embedded in text
+                try:
+                    # Look for JSON-like structure
+                    start = content.find("{")
+                    end = content.rfind("}") + 1
+                    if start >= 0 and end > start:
+                        json_str = content[start:end]
+                        logger.debug(
+                            f"Attempting to parse extracted JSON: {json_str}"
+                        )
+                        return json.loads(json_str)
+                except:
+                    pass
                 return {}
 
         except Exception as e:
-            self.logger.error(f"Error processing LLM output: {e}")
+            logger.error(f"Error processing LLM output: {e}")
             return {}

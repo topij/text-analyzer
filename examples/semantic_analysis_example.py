@@ -24,6 +24,10 @@ from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 
+# logging.basicConfig(level=logging.DEBUG)
+# logging.getLogger("httpx").setLevel(logging.WARNING)
+# logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 class AnalysisEnvironment:
     """Environment manager for semantic analysis."""
@@ -138,8 +142,8 @@ class SemanticAnalysisRunner:
             # Initialize analyzer with shared instances
             analyzer = SemanticAnalyzer(
                 parameter_file=parameter_file,
-                file_utils=self.file_utils,  # This is correct
-                config_manager=self.config_manager,  # This is correct
+                file_utils=self.file_utils,
+                config_manager=self.config_manager,
             )
 
             # Process rows with progress bar
@@ -201,10 +205,10 @@ async def main():
 
         # Run analysis
         await runner.run_analysis(
-            input_file="test_content_fi.xlsx",
+            input_file="test_content_short.xlsx",
             output_file="analysis_results_fi.xlsx",
             parameter_file="parameters_fi.xlsx",
-            detail_level=OutputDetail.MINIMAL,
+            detail_level=OutputDetail.DEBUG,
             show_scores=True,
         )
 
