@@ -15,9 +15,12 @@ from src.analyzers.theme_analyzer import ThemeAnalyzer
 from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
 
-from src.loaders.parameter_handler import (  # get_parameter_file_path,
+from src.loaders.parameter_handler import (
     ParameterHandler,
 )
+
+from src.loaders.models import CategoryConfig
+
 from src.schemas import (
     CategoryAnalysisResult,
     CategoryOutput,
@@ -308,25 +311,16 @@ class SemanticAnalyzer:
         parameter_file: Optional[Union[str, Path]] = None,
         file_utils: Optional[FileUtils] = None,
         llm: Optional[BaseChatModel] = None,
-        config_manager: Optional[ConfigManager] = None,
+        categories: Optional[
+            Dict[str, CategoryConfig]
+        ] = None,  # Add categories parameter
         **kwargs,
     ):
-        """Initialize analyzer with parameters and components.
-
-        Args:
-            parameter_file: Path to parameter file (optional)
-            file_utils: Optional FileUtils instance
-            llm: Optional LLM instance
-            config_manager: Optional ConfigManager instance
-            **kwargs: Additional configuration options
-        """
-        # Initialize core components
+        """Initialize analyzer with parameters and components."""
         self.file_utils = file_utils or FileUtils()
 
         # Initialize configuration management
-        self.config_manager = config_manager or ConfigManager(
-            file_utils=self.file_utils
-        )
+        self.config_manager = ConfigManager(file_utils=self.file_utils)
         self.analyzer_config = AnalyzerConfig(
             file_utils=self.file_utils, config_manager=self.config_manager
         )
@@ -347,6 +341,9 @@ class SemanticAnalyzer:
         # Initialize with parameters
         self.parameter_handler = ParameterHandler(parameter_file)
         self.parameters = self.parameter_handler.get_parameters()
+
+        # Store categories
+        self.categories = categories
 
         # Initialize analyzers with proper configuration
         self._init_analyzers()
@@ -370,7 +367,6 @@ class SemanticAnalyzer:
             language=language,
             config=processor_config,
         )
-        logger.debug(f"Created language processor for {language}")
 
         # Get base config from analyzer config
         base_config = self.analyzer_config.get_analyzer_config("base")
@@ -385,36 +381,136 @@ class SemanticAnalyzer:
         # Initialize analyzers with proper config
         self.keyword_analyzer = KeywordAnalyzer(
             llm=self.llm,
-            config={
-                **base_config,
-                "max_keywords": self.parameters.general.max_keywords,
-                "min_keyword_length": self.parameters.general.min_keyword_length,
-                "include_compounds": self.parameters.general.include_compounds,
-                "weights": self.parameters.analysis_settings.weights.model_dump(),
-            },
+            config=base_config,
             language_processor=self.language_processor,
         )
-        logger.debug("Initialized keyword analyzer")
 
         self.theme_analyzer = ThemeAnalyzer(
-            llm=self.llm,
-            config={
-                **base_config,
-                "max_themes": self.parameters.general.max_themes,
-            },
-            language_processor=self.language_processor,
-        )
-        logger.debug("Initialized theme analyzer")
-
-        self.category_analyzer = CategoryAnalyzer(
-            categories=self.parameters.categories,
             llm=self.llm,
             config=base_config,
             language_processor=self.language_processor,
         )
-        logger.debug(
-            f"Initialized category analyzer with {len(self.parameters.categories)} categories"
+
+        # Pass categories to CategoryAnalyzer
+        self.category_analyzer = CategoryAnalyzer(
+            llm=self.llm,
+            config=base_config,
+            language_processor=self.language_processor,
+            categories=self.categories or {},  # Pass stored categories here
         )
+
+    # def __init__(
+    #     self,
+    #     parameter_file: Optional[Union[str, Path]] = None,
+    #     file_utils: Optional[FileUtils] = None,
+    #     llm: Optional[BaseChatModel] = None,
+    #     config_manager: Optional[ConfigManager] = None,
+    #     **kwargs,
+    # ):
+    #     """Initialize analyzer with parameters and components.
+
+    #     Args:
+    #         parameter_file: Path to parameter file (optional)
+    #         file_utils: Optional FileUtils instance
+    #         llm: Optional LLM instance
+    #         config_manager: Optional ConfigManager instance
+    #         **kwargs: Additional configuration options
+    #     """
+    #     # Initialize core components
+    #     self.file_utils = file_utils or FileUtils()
+
+    #     # Initialize configuration management
+    #     self.config_manager = config_manager or ConfigManager(
+    #         file_utils=self.file_utils
+    #     )
+    #     self.analyzer_config = AnalyzerConfig(
+    #         file_utils=self.file_utils, config_manager=self.config_manager
+    #     )
+
+    #     # Get model configuration
+    #     model_config = self.config_manager.get_model_config()
+
+    #     # Create LLM if not provided
+    #     self.llm = llm or create_llm(
+    #         config_manager=self.config_manager,
+    #         provider=model_config.default_provider,
+    #         model=model_config.default_model,
+    #     )
+
+    #     # Store base parameter file path
+    #     self._base_parameter_file = parameter_file
+
+    #     # Initialize with parameters
+    #     self.parameter_handler = ParameterHandler(parameter_file)
+    #     self.parameters = self.parameter_handler.get_parameters()
+
+    #     # Initialize analyzers with proper configuration
+    #     self._init_analyzers()
+    #     logger.info("Semantic analyzer initialization complete")
+
+    # def _init_analyzers(self) -> None:
+    #     """Initialize analyzers with correct language and parameters."""
+    #     # Get language configuration
+    #     language = self.parameters.general.language
+    #     language_config = self.config_manager.get_language_config()
+
+    #     # Build config dict for language processor
+    #     processor_config = {
+    #         "min_word_length": self.parameters.general.min_keyword_length,
+    #         "include_compounds": self.parameters.general.include_compounds,
+    #         **language_config.languages.get(language, {}),
+    #     }
+
+    #     # Create language processor
+    #     self.language_processor = create_text_processor(
+    #         language=language,
+    #         config=processor_config,
+    #     )
+    #     logger.debug(f"Created language processor for {language}")
+
+    #     # Get base config from analyzer config
+    #     base_config = self.analyzer_config.get_analyzer_config("base")
+    #     base_config.update(
+    #         {
+    #             "language": language,
+    #             "min_confidence": self.parameters.general.min_confidence,
+    #             "focus_on": self.parameters.general.focus_on,
+    #         }
+    #     )
+
+    #     # Initialize analyzers with proper config
+    #     self.keyword_analyzer = KeywordAnalyzer(
+    #         llm=self.llm,
+    #         config={
+    #             **base_config,
+    #             "max_keywords": self.parameters.general.max_keywords,
+    #             "min_keyword_length": self.parameters.general.min_keyword_length,
+    #             "include_compounds": self.parameters.general.include_compounds,
+    #             "weights": self.parameters.analysis_settings.weights.model_dump(),
+    #         },
+    #         language_processor=self.language_processor,
+    #     )
+    #     logger.debug("Initialized keyword analyzer")
+
+    #     self.theme_analyzer = ThemeAnalyzer(
+    #         llm=self.llm,
+    #         config={
+    #             **base_config,
+    #             "max_themes": self.parameters.general.max_themes,
+    #         },
+    #         language_processor=self.language_processor,
+    #     )
+    #     logger.debug("Initialized theme analyzer")
+
+    #     self.category_analyzer = CategoryAnalyzer(
+    #         categories=self.parameters.categories,
+    #         llm=self.llm,
+    #         config=base_config,
+    #         language_processor=self.language_processor,
+    #     )
+    #     logger.debug(
+    #         f"Initialized category analyzer with {len(self.parameters.categories)} categories"
+    #     )
 
     def set_language(self, language: str) -> None:
         """Update analyzer configuration for new language."""

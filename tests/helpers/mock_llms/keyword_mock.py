@@ -1,8 +1,6 @@
-# tests/helpers/mock_llms/keyword_mock.py
-
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import BaseMessage
 
@@ -67,7 +65,10 @@ class KeywordMockLLM(BaseMockLLM):
                             "domain": "technical",
                         },
                     ],
-                    "compound_words": ["machine learning", "neural network"],
+                    "compound_words": [
+                        "machine learning",
+                        "neural network",
+                    ],  # Explicitly include compound words
                     "domain_keywords": {
                         "technical": [
                             "machine learning",
@@ -96,7 +97,10 @@ class KeywordMockLLM(BaseMockLLM):
                             "compound_parts": ["market", "share"],
                         },
                     ],
-                    "compound_words": ["revenue growth", "market share"],
+                    "compound_words": [
+                        "revenue growth",
+                        "market share",
+                    ],  # Explicitly include compound words
                     "domain_keywords": {
                         "business": ["revenue growth", "market share"]
                     },
@@ -105,121 +109,64 @@ class KeywordMockLLM(BaseMockLLM):
                 }
             )
 
-    def _get_mock_response(self, messages: List[BaseMessage]) -> str:
-        """Get keyword-specific mock response with call tracking."""
-        last_message = messages[-1].content if messages else ""
-        self._call_history.append(last_message)
-
-        if not last_message:
+    def _get_finnish_response(self, content_type: str) -> str:
+        """Get Finnish keyword response."""
+        if content_type == "technical":
             return json.dumps(
                 {
-                    "keywords": [],
-                    "compound_words": [],
-                    "domain_keywords": {},
-                    "success": False,
-                    "error": "Empty input text",
-                    "language": "en",
+                    "keywords": [
+                        {
+                            "keyword": "koneoppimismalli",
+                            "score": 0.9,
+                            "domain": "technical",
+                            "compound_parts": ["kone", "oppimis", "malli"],
+                        },
+                        {
+                            "keyword": "neuroverkko",
+                            "score": 0.85,
+                            "domain": "technical",
+                            "compound_parts": ["neuro", "verkko"],
+                        },
+                    ],
+                    "compound_words": [
+                        "koneoppimismalli",
+                        "neuroverkko",
+                    ],  # Include Finnish compound words
+                    "domain_keywords": {
+                        "technical": ["koneoppimismalli", "neuroverkko"]
+                    },
+                    "success": True,
+                    "language": "fi",
                 }
             )
-
-        language, content_type = self._detect_content_type(last_message)
-
-        if language == "fi":
-            if (
-                "liikevaihdo" in last_message.lower()
-                or "markkina" in last_message.lower()
-            ):
-                return json.dumps(
-                    {
-                        "keywords": [
-                            {
-                                "keyword": "liikevaihdon kasvu",
-                                "score": 0.9,
-                                "domain": "business",
-                                "compound_parts": ["liike", "vaihto", "kasvu"],
-                            },
-                            {
-                                "keyword": "markkinaosuus",
-                                "score": 0.85,
-                                "domain": "business",
-                                "compound_parts": ["markkina", "osuus"],
-                            },
-                        ],
-                        "compound_words": ["liikevaihto", "markkinaosuus"],
-                        "domain_keywords": {
-                            "business": ["liikevaihdon kasvu", "markkinaosuus"]
+        else:  # business
+            return json.dumps(
+                {
+                    "keywords": [
+                        {
+                            "keyword": "liikevaihdon kasvu",
+                            "score": 0.9,
+                            "domain": "business",
+                            "compound_parts": ["liike", "vaihto", "kasvu"],
                         },
-                        "success": True,
-                        "language": "fi",
-                    }
-                )
-            elif "järjestelmä" in last_message.lower():
-                return json.dumps(
-                    {
-                        "keywords": [
-                            {
-                                "keyword": "tietokantajärjestelmä",
-                                "score": 0.9,
-                                "domain": "technical",
-                                "compound_parts": [
-                                    "tieto",
-                                    "kanta",
-                                    "järjestelmä",
-                                ],
-                            },
-                            {
-                                "keyword": "koneoppimisalgoritmi",
-                                "score": 0.85,
-                                "domain": "technical",
-                                "compound_parts": [
-                                    "kone",
-                                    "oppia",
-                                    "algoritmi",
-                                ],
-                            },
-                        ],
-                        "compound_words": [
-                            "tietokantajärjestelmä",
-                            "koneoppimisalgoritmi",
-                        ],
-                        "domain_keywords": {
-                            "technical": [
-                                "tietokantajärjestelmä",
-                                "koneoppimisalgoritmi",
-                            ]
+                        {
+                            "keyword": "markkinaosuus",
+                            "score": 0.85,
+                            "domain": "business",
+                            "compound_parts": ["markkina", "osuus"],
                         },
-                        "success": True,
-                        "language": "fi",
-                    }
-                )
-            else:
-                # Default Finnish technical response
-                return json.dumps(
-                    {
-                        "keywords": [
-                            {
-                                "keyword": "koneoppimismalli",
-                                "score": 0.9,
-                                "domain": "technical",
-                                "compound_parts": ["kone", "oppimis", "malli"],
-                            },
-                            {
-                                "keyword": "neuroverkko",
-                                "score": 0.85,
-                                "domain": "technical",
-                                "compound_parts": ["neuro", "verkko"],
-                            },
-                        ],
-                        "compound_words": ["koneoppimismalli", "neuroverkko"],
-                        "domain_keywords": {
-                            "technical": ["koneoppimismalli", "neuroverkko"]
-                        },
-                        "success": True,
-                        "language": "fi",
-                    }
-                )
-
-        return self._get_english_response(content_type)
+                    ],
+                    "compound_words": [
+                        "liikevaihdon kasvu",
+                        "markkinaosuus",
+                    ],  # Include Finnish compound words
+                    "domain_keywords": {
+                        "business": ["liikevaihdon kasvu", "markkinaosuus"]
+                    },
+                    "success": True,
+                    "language": "fi",
+                }
+            )
 
     def get_calls(self) -> List[str]:
         """Get list of recorded calls."""

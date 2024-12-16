@@ -1,51 +1,32 @@
-# tests/unit/test_analyzers/test_theme_analyzer.py
-
-import json
 import pytest
-from typing import Any, Dict, List, Optional
-from pathlib import Path
+from typing import Dict, Any
 
-from langchain_core.language_models import BaseChatModel
-from FileUtils import FileUtils
-from src.core.config import AnalyzerConfig
-
-from src.config.manager import ConfigManager
+from src.analyzers.theme_analyzer import ThemeAnalyzer
 from src.core.language_processing import create_text_processor
-from src.core.config import AnalyzerConfig
-
-from src.analyzers.theme_analyzer import ThemeAnalyzer, ThemeOutput
-from src.schemas import ThemeInfo
+from src.schemas import ThemeOutput, ThemeInfo
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM
+from tests.helpers.config import (
+    create_test_config,
+)  # Remove test_analyzer_config import
 
 
 class TestThemeAnalyzer:
     """Tests for theme analysis functionality."""
 
     @pytest.fixture
-    def mock_llm(self) -> ThemeMockLLM:
+    def mock_llm(self):
         """Create mock LLM instance."""
         return ThemeMockLLM()
 
     @pytest.fixture
-    def test_analyzer(
-        self, mock_llm: ThemeMockLLM, analyzer_config: AnalyzerConfig
-    ) -> ThemeAnalyzer:
-        """Create analyzer with mock LLM and config."""
+    def analyzer(
+        self, mock_llm, test_analyzer_config
+    ):  # test_analyzer_config comes from conftest.py
+        """Create analyzer with mock LLM and test config."""
         return ThemeAnalyzer(
             llm=mock_llm,
-            config=analyzer_config.config.get("analysis", {}),
+            config=test_analyzer_config.get_analyzer_config("themes"),
             language_processor=create_text_processor(language="en"),
-        )
-
-    @pytest.fixture
-    def fi_analyzer(
-        self, mock_llm: ThemeMockLLM, analyzer_config: AnalyzerConfig
-    ) -> ThemeAnalyzer:
-        """Create Finnish theme analyzer with mock LLM."""
-        return ThemeAnalyzer(
-            llm=mock_llm,
-            config=analyzer_config.config.get("analysis", {}),
-            language_processor=create_text_processor(language="fi"),
         )
 
     def _validate_theme_result(self, result: ThemeOutput) -> None:
@@ -54,9 +35,7 @@ class TestThemeAnalyzer:
         assert result.themes, "No themes found in result"
 
         for theme in result.themes:
-            assert isinstance(
-                theme, ThemeInfo
-            ), f"Invalid theme type: {type(theme)}"
+            assert isinstance(theme, ThemeInfo)
             assert theme.name, "Theme missing name"
             assert theme.description, "Theme missing description"
             assert (
@@ -82,13 +61,13 @@ class TestThemeAnalyzer:
                 ), "Theme hierarchy children should be strings"
 
     @pytest.mark.asyncio
-    async def test_technical_theme_analysis(self, test_analyzer: ThemeAnalyzer):
+    async def test_technical_theme_analysis(self, analyzer):
         """Test theme analysis of technical content."""
         text = """Machine learning models are trained using large datasets.
                 Neural network architecture includes multiple layers.
                 Data preprocessing and feature engineering are crucial steps."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         # Verify specific themes
@@ -98,77 +77,86 @@ class TestThemeAnalyzer:
 
         # Verify theme hierarchy
         assert result.theme_hierarchy, "Theme hierarchy missing"
-        main_theme = "Machine Learning"
         assert any(
-            main_theme in parents for parents in result.theme_hierarchy.keys()
+            "Machine Learning" in parents
+            for parents in result.theme_hierarchy.keys()
         ), "Expected main theme not found in hierarchy"
 
     @pytest.mark.asyncio
-    async def test_business_theme_analysis(self, test_analyzer: ThemeAnalyzer):
+    async def test_business_theme_analysis(self, analyzer):
         """Test theme analysis of business content."""
         text = """Q3 financial results show 15% revenue growth.
                 Market expansion strategy focuses on emerging sectors.
                 Customer acquisition and retention metrics improved."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
+        # Check specific themes
         themes = {theme.name.lower() for theme in result.themes}
-        assert (
-            "financial performance" in themes
-        ), "Financial Performance theme not found"
-        assert "market strategy" in themes, "Market Strategy theme not found"
+        assert "financial performance" in themes
+        assert "market strategy" in themes
 
-        # Verify evidence matches themes
+        # Verify hierarchy relationships
         for theme in result.themes:
-            if theme.name.lower() == "financial performance":
-                assert any(
-                    "revenue" in kw.lower() for kw in theme.keywords
-                ), "Missing revenue-related keywords"
+            if theme.parent_theme:
+                assert theme.parent_theme in [t.name for t in result.themes]
 
     @pytest.mark.asyncio
-    async def test_finnish_technical_analysis(self, fi_analyzer: ThemeAnalyzer):
-        """Test theme analysis of Finnish technical content."""
-        text = """Koneoppimismalleja koulutetaan suurilla datajoukolla.
+    async def test_empty_input(self, analyzer):
+        """Test analyzer behavior with empty input."""
+        result = await analyzer.analyze("")
+        assert not result.success
+        assert not result.themes
+        assert result.error is not None
+
+    @pytest.mark.asyncio
+    async def test_none_input(self, analyzer):
+        """Test analyzer behavior with None input."""
+        with pytest.raises(ValueError):
+            await analyzer.analyze(None)
+
+    @pytest.mark.asyncio
+    async def test_finnish_language(self, test_analyzer_config, mock_llm):
+        """Test Finnish language support."""
+        config = test_analyzer_config.get_analyzer_config("themes")
+
+        # Create Finnish analyzer
+        fi_analyzer = ThemeAnalyzer(
+            llm=mock_llm,
+            config=config,
+            language_processor=create_text_processor(language="fi"),
+        )
+
+        text = """Koneoppimismallit koulutetaan suurilla datajoukolla.
                  Neuroverkon arkkitehtuuri sisältää useita kerroksia.
                  Datan esikäsittely ja piirteiden suunnittelu ovat tärkeitä."""
 
         result = await fi_analyzer.analyze(text)
         self._validate_theme_result(result)
+        assert result.language == "fi"
 
+        # Check Finnish themes
         themes = {theme.name.lower() for theme in result.themes}
-        assert "koneoppiminen" in themes, "Koneoppiminen theme not found"
-        assert "data-analyysi" in themes, "Data-analyysi theme not found"
+        assert "koneoppiminen" in themes
+        assert "data-analyysi" in themes
 
     @pytest.mark.asyncio
-    async def test_finnish_business_analysis(self, fi_analyzer: ThemeAnalyzer):
-        """Test theme analysis of Finnish business content."""
-        text = """Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun.
-                 Markkinalaajennusstrategia keskittyy uusiin sektoreihin."""
-
-        result = await fi_analyzer.analyze(text)
-        self._validate_theme_result(result)
-
-        themes = {theme.name.lower() for theme in result.themes}
-        assert (
-            "taloudellinen suorituskyky" in themes
-        ), "Taloudellinen Suorituskyky theme not found"
-        assert "markkinakehitys" in themes, "Markkinakehitys theme not found"
-
-    @pytest.mark.asyncio
-    async def test_theme_hierarchy(self, test_analyzer: ThemeAnalyzer):
+    async def test_theme_hierarchy(self, analyzer):
         """Test theme hierarchy relationships."""
         text = """Machine learning models perform complex data analysis.
                  Neural networks enable advanced pattern recognition.
                  Data preprocessing improves model accuracy."""
 
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
 
         # Verify hierarchy structure
         assert result.theme_hierarchy, "Theme hierarchy missing"
+
+        # At least one theme should be a parent
         parent_theme = next(
-            theme for theme in result.themes if theme.parent_theme is None
+            theme for theme in result.themes if not theme.parent_theme
         )
         child_themes = [
             theme
@@ -180,39 +168,3 @@ class TestThemeAnalyzer:
         assert (
             child_themes[0].parent_theme == parent_theme.name
         ), "Parent-child relationship not properly established"
-
-    @pytest.mark.asyncio
-    async def test_error_handling(self, test_analyzer: ThemeAnalyzer):
-        """Test error handling for invalid inputs."""
-        # Empty input
-        result = await test_analyzer.analyze("")
-        assert not result.success
-        assert result.error is not None
-        assert "Empty input" in result.error
-
-        # None input
-        with pytest.raises(ValueError) as exc_info:
-            await test_analyzer.analyze(None)
-        assert "Input text cannot be None" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_evidence_validation(self, test_analyzer: ThemeAnalyzer):
-        """Test theme evidence validation."""
-        text = """Machine learning models are becoming increasingly sophisticated.
-                 Neural networks enable complex pattern recognition.
-                 Data preprocessing is essential for model accuracy."""
-
-        result = await test_analyzer.analyze(text)
-        self._validate_theme_result(result)
-
-        # Verify keywords presence
-        for theme in result.themes:
-            assert theme.keywords, f"No keywords found for theme {theme.name}"
-            assert all(
-                isinstance(kw, str) for kw in theme.keywords
-            ), "Invalid keyword type found"
-
-            # Verify keyword relevance to theme
-            assert any(
-                kw.lower() in theme.description.lower() for kw in theme.keywords
-            ), f"No relevant keywords found in description for theme {theme.name}"

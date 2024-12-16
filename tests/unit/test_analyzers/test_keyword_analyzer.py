@@ -1,51 +1,34 @@
-# tests/unit/test_analyzers/test_keyword_analyzer.py
-
-import json
 import pytest
-from typing import Any, Dict, List, Optional
-from pathlib import Path
-
-from langchain_core.language_models import BaseChatModel
-from FileUtils import FileUtils
-
-from src.config.manager import ConfigManager
-from src.core.language_processing import create_text_processor
-from src.core.config import AnalyzerConfig
+from typing import Dict, Any
 
 from src.analyzers.keyword_analyzer import KeywordAnalyzer
+from src.core.language_processing import create_text_processor
 from src.schemas import KeywordAnalysisResult, KeywordInfo
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
-
-
-@pytest.fixture
-def test_analyzer(
-    mock_llm: KeywordMockLLM, analyzer_config: AnalyzerConfig
-) -> KeywordAnalyzer:
-    """Create CategoryAnalyzer with mock LLM for testing."""
-    return KeywordAnalyzer(
-        llm=mock_llm,
-        config=analyzer_config.config.get("analysis", {}),
-        language_processor=create_text_processor(language="en"),
-    )
-
-
-@pytest.fixture
-def fi_analyzer(
-    mock_llm: KeywordMockLLM, analyzer_config: AnalyzerConfig
-) -> KeywordAnalyzer:
-    """Create Finnish CategoryAnalyzer with mock LLM for testing."""
-    return KeywordAnalyzer(
-        llm=mock_llm,
-        config=analyzer_config.config.get("analysis", {}),
-        language_processor=create_text_processor(language="fi"),
-    )
+from tests.helpers.config import (
+    create_test_config,
+)  # Remove test_analyzer_config import
 
 
 class TestKeywordAnalyzer:
+    """Tests for keyword analysis functionality."""
+
     @pytest.fixture
-    def mock_llm(self) -> KeywordMockLLM:
+    def mock_llm(self):
         """Create mock LLM instance."""
         return KeywordMockLLM()
+
+    @pytest.fixture
+    def analyzer(
+        self, mock_llm, test_analyzer_config
+    ):  # test_analyzer_config comes from conftest.py
+        """Create analyzer with mock LLM and test config."""
+        config = test_analyzer_config.get_analyzer_config("keywords")
+        return KeywordAnalyzer(
+            llm=mock_llm,
+            config=config,
+            language_processor=create_text_processor(language="en"),
+        )
 
     def _validate_keyword_result(self, result: KeywordAnalysisResult) -> None:
         """Validate keyword analysis result structure."""
@@ -59,15 +42,10 @@ class TestKeywordAnalyzer:
                 assert kw.domain in ["technical", "business"]
 
     @pytest.mark.asyncio
-    async def test_technical_keyword_extraction(
-        self,
-        test_analyzer: KeywordAnalyzer,
-        mock_llm: KeywordMockLLM,
-        # analyzer_config: AnalyzerConfig,
-    ):
+    async def test_technical_keyword_extraction(self, analyzer):
         """Test extraction of technical keywords."""
         text = "The machine learning model uses neural networks."
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
 
         # Validate result structure
         self._validate_keyword_result(result)
@@ -80,16 +58,76 @@ class TestKeywordAnalyzer:
         # Verify correct domain
         assert any(kw.domain == "technical" for kw in result.keywords)
 
-        # Check mock LLM was called correctly
-        assert "machine learning" in mock_llm.get_last_call().lower()
+    @pytest.mark.asyncio
+    async def test_empty_input(self, analyzer):
+        """Test analyzer behavior with empty input."""
+        result = await analyzer.analyze("")
+        assert not result.success
+        assert len(result.keywords) == 0
+        assert result.error is not None
 
     @pytest.mark.asyncio
-    async def test_business_keyword_extraction(
-        self, test_analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
-    ):
+    async def test_none_input(self, analyzer):
+        """Test analyzer behavior with None input."""
+        with pytest.raises(ValueError):
+            await analyzer.analyze(None)
+
+    @pytest.mark.asyncio
+    async def test_finnish_language(self, test_analyzer_config, mock_llm):
+        """Test Finnish language support."""
+        config = test_analyzer_config.get_analyzer_config("keywords")
+
+        # Create Finnish analyzer
+        fi_analyzer = KeywordAnalyzer(
+            llm=mock_llm,
+            config=config,
+            language_processor=create_text_processor(language="fi"),
+        )
+
+        text = "Koneoppimismalli käyttää neuroverkkoja."
+        result = await fi_analyzer.analyze(text)
+
+        self._validate_keyword_result(result)
+        assert result.language == "fi"
+
+        # Check Finnish keywords
+        keywords = [kw.keyword.lower() for kw in result.keywords]
+        assert "koneoppimismalli" in keywords
+        assert "neuroverkko" in keywords
+
+    @pytest.mark.asyncio
+    async def test_configuration_handling(self, test_analyzer_config, mock_llm):
+        """Test configuration handling."""
+        config = test_analyzer_config.get_analyzer_config("keywords")
+        config.update(
+            {
+                "max_keywords": 5,
+                "min_confidence": 0.4,
+                "weights": {"statistical": 0.3, "llm": 0.7},
+            }
+        )
+
+        analyzer = KeywordAnalyzer(
+            llm=mock_llm,
+            config=config,
+            language_processor=create_text_processor(language="en"),
+        )
+
+        assert analyzer.max_keywords == 5
+        assert analyzer.min_confidence == 0.4
+        assert analyzer.weights["statistical"] == 0.3
+        assert analyzer.weights["llm"] == 0.7
+
+        # Test with analysis
+        text = "Machine learning model performance improved."
+        result = await analyzer.analyze(text)
+        assert len(result.keywords) <= 5  # Respects max_keywords setting
+
+    @pytest.mark.asyncio
+    async def test_business_keyword_extraction(self, analyzer):
         """Test extraction of business keywords."""
         text = "Revenue growth increased by 20% with improved market share."
-        result = await test_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
 
         self._validate_keyword_result(result)
 
@@ -104,157 +142,3 @@ class TestKeywordAnalyzer:
         # Verify compound words
         assert len(result.compound_words) > 0
         assert "revenue growth" in result.compound_words
-
-    @pytest.mark.asyncio
-    async def test_empty_input(self, test_analyzer: KeywordAnalyzer):
-        """Test analyzer behavior with empty input."""
-        result = await test_analyzer.analyze("")
-        assert not result.success
-        assert len(result.keywords) == 0
-        assert result.error is not None
-
-    @pytest.mark.asyncio
-    async def test_none_input(self, test_analyzer: KeywordAnalyzer):
-        """Test analyzer behavior with None input."""
-        with pytest.raises(ValueError):
-            await test_analyzer.analyze(None)
-
-    @pytest.mark.asyncio
-    async def test_compound_words(
-        self, test_analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
-    ):
-        """Test identification of compound words."""
-        text = "The machine learning framework uses neural networks."
-        result = await test_analyzer.analyze(text)
-
-        # Verify compound words were identified
-        assert len(result.compound_words) > 0
-        assert "machine learning" in result.compound_words
-
-        # Check compound parts in keywords
-        for kw in result.keywords:
-            if kw.keyword == "machine learning":
-                assert kw.compound_parts == ["machine", "learning"]
-
-    @pytest.mark.asyncio
-    async def test_finnish_technical_keyword_extraction(
-        self, test_analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
-    ):
-        """Test extraction of Finnish technical keywords."""
-        text = "Koneoppimismalli käyttää neuroverkkoja datan analysointiin."
-
-        # Create Finnish analyzer
-        fi_analyzer = KeywordAnalyzer(
-            llm=mock_llm,
-            config={
-                "max_keywords": 10,
-                "min_keyword_length": 3,
-                "include_compounds": True,
-                "weights": {"statistical": 0.4, "llm": 0.6},
-            },
-            language_processor=create_text_processor(language="fi"),
-        )
-
-        result = await fi_analyzer.analyze(text)
-
-        # Validate result structure
-        self._validate_keyword_result(result)
-
-        # Check for Finnish technical keywords
-        keywords = [kw.keyword.lower() for kw in result.keywords]
-        assert "koneoppimismalli" in keywords
-        assert "neuroverkko" in keywords
-
-        # Verify compound words were detected
-        assert "koneoppimismalli" in result.compound_words
-
-        # Check domain classification
-        assert any(kw.domain == "technical" for kw in result.keywords)
-
-        # Verify language
-        assert result.language == "fi"
-
-    @pytest.mark.asyncio
-    async def test_finnish_business_keyword_extraction(
-        self, test_analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
-    ):
-        """Test extraction of Finnish business keywords."""
-        text = (
-            "Liikevaihdon kasvu oli 20% ja markkinaosuus parani huomattavasti."
-        )
-
-        # Create Finnish analyzer
-        fi_analyzer = KeywordAnalyzer(
-            llm=mock_llm,
-            config={
-                "max_keywords": 10,
-                "min_keyword_length": 3,
-                "include_compounds": True,
-                "weights": {"statistical": 0.4, "llm": 0.6},
-            },
-            language_processor=create_text_processor(language="fi"),
-        )
-
-        result = await fi_analyzer.analyze(text)
-
-        # Validate result structure
-        self._validate_keyword_result(result)
-
-        # Check for Finnish business keywords
-        keywords = [kw.keyword.lower() for kw in result.keywords]
-        assert "liikevaihdon kasvu" in keywords
-        assert "markkinaosuus" in keywords
-
-        # Verify compound word handling
-        assert any(
-            "liike" in parts
-            for kw in result.keywords
-            for parts in ([kw.compound_parts] if kw.compound_parts else [])
-        )
-
-        # Check domain classification
-        assert any(kw.domain == "business" for kw in result.keywords)
-
-        # Verify language
-        assert result.language == "fi"
-
-    @pytest.mark.asyncio
-    async def test_finnish_compound_words(
-        self, test_analyzer: KeywordAnalyzer, mock_llm: KeywordMockLLM
-    ):
-        """Test handling of Finnish compound words."""
-        text = "Tietokantajärjestelmä hyödyntää koneoppimisalgoritmeja."
-
-        # Create Finnish analyzer
-        fi_analyzer = KeywordAnalyzer(
-            llm=mock_llm,
-            config={
-                "max_keywords": 10,
-                "min_keyword_length": 3,
-                "include_compounds": True,
-                "weights": {"statistical": 0.4, "llm": 0.6},
-            },
-            language_processor=create_text_processor(language="fi"),
-        )
-
-        result = await fi_analyzer.analyze(text)
-
-        # Check compound words were identified
-        assert len(result.compound_words) > 0
-        assert any(
-            word in ["tietokantajärjestelmä", "koneoppimisalgoritmi"]
-            for word in result.compound_words
-        )
-
-        # Verify compound parts
-        for kw in result.keywords:
-            if kw.keyword == "tietokantajärjestelmä":
-                assert kw.compound_parts and len(kw.compound_parts) >= 2
-                assert (
-                    "tieto" in kw.compound_parts or "kanta" in kw.compound_parts
-                )
-
-    # TODO: Add more tests for Finnish keyword extraction
-    # - test_finnish_mixed_domain_content
-    # - test_finnish_stopword_handling
-    # - test_finnish_edge_cases

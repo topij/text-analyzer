@@ -1,132 +1,185 @@
 # tests/conftest.py
 
-import asyncio
-import os
-import sys
-import warnings
-from pathlib import Path
-from typing import Dict, Generator, Any
-from dotenv import load_dotenv
-import logging
-
 import pytest
+import logging
+import os
+from pathlib import Path
+from typing import Dict, Any
 
-from src.config.manager import ConfigManager, LoggingConfig
 from src.core.config import AnalyzerConfig
-from src.core.llm.factory import create_llm
-from langchain_core.language_models import BaseChatModel
+from src.config.manager import ConfigManager
 from FileUtils import FileUtils
 
-# Add project root to Python path
-PROJECT_ROOT = Path(__file__).parent.parent.absolute()
-sys.path.insert(0, str(PROJECT_ROOT))
 
-# Filter deprecation warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-warnings.filterwarnings("ignore", category=pytest.PytestDeprecationWarning)
+TEST_DIRECTORY_STRUCTURE = {
+    "data": ["raw", "processed", "config", "parameters"],
+    "logs": [],
+    "reports": [],
+    "models": [],
+}
 
-logger = logging.getLogger(__name__)
-
-
-# Load environment variables at the start of test session
-def pytest_sessionstart(session):
-    """Load environment variables before test session starts."""
-    project_root = Path(__file__).parent.parent
-    env_path = project_root / ".env"
-    if env_path.exists():
-        load_dotenv(str(env_path))
-        logger.info(f"Loaded environment from {env_path}")
-
-
-@pytest.fixture(scope="session")
-def project_path() -> Path:
-    """Get project root path."""
-    return Path(__file__).parent.parent
-
-
-@pytest.fixture(scope="session")
-def file_utils(project_path: Path) -> FileUtils:
-    """Create FileUtils instance."""
-    return FileUtils(project_root=project_path)
-
-
-@pytest.fixture(scope="session")
-def config_manager(file_utils: FileUtils) -> ConfigManager:
-    """Create ConfigManager instance for testing."""
-    return ConfigManager(file_utils=file_utils, config_dir="config")
-
-
-@pytest.fixture(scope="session")
-def analyzer_config(config_manager: ConfigManager) -> AnalyzerConfig:
-    """Create AnalyzerConfig instance for testing."""
-    if not os.getenv("OPENAI_API_KEY"):
-        raise ValueError("OPENAI_API_KEY not found in environment")
-
-    config = AnalyzerConfig(
-        file_utils=config_manager.file_utils, config_manager=config_manager
-    )
-
-    # Override test-specific settings
-    config.config["models"]["default_model"] = "gpt-4o-mini"
-    return config
-
-
-@pytest.fixture(scope="session")
-def test_config() -> Dict[str, Any]:
-    """Basic test configuration."""
-    return {
-        "language": "en",
-        "min_confidence": 0.3,
-        "focus_on": "test content",
-        "max_keywords": 10,
-        "min_keyword_length": 3,
-        "include_compounds": True,
-        "max_themes": 3,
-    }
-
-
-@pytest.fixture(scope="session")
-def mock_llm(analyzer_config: AnalyzerConfig) -> BaseChatModel:
-    """Create mock LLM instance."""
-    return create_llm(config=analyzer_config)
+# Test environment variables
+TEST_ENV_VARS = {
+    "OPENAI_API_KEY": "sk-test-key-123",
+    "ANTHROPIC_API_KEY": "anthro-test-key-123",
+    "AZURE_OPENAI_API_KEY": "azure-test-key-123",
+    "AZURE_OPENAI_ENDPOINT": "https://test-endpoint.azure.com",
+    "AZURE_OPENAI_DEPLOYMENT_NAME": "test-deployment",
+}
 
 
 def pytest_configure(config):
-    """Configure pytest."""
+    """Configure pytest with environment setup."""
+    # Set up test environment variables
+    for key, value in TEST_ENV_VARS.items():
+        os.environ[key] = value
+
+    # Configure test markers
     config.addinivalue_line("markers", "asyncio: mark test as async")
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+def file_utils(tmp_path_factory) -> FileUtils:
+    """Create FileUtils instance for testing."""
+    tmp_path = tmp_path_factory.mktemp("test_data")
+    return FileUtils(
+        project_root=tmp_path,
+        directory_structure=TEST_DIRECTORY_STRUCTURE,
+        create_directories=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def test_config_manager(
+    tmp_path_factory, file_utils: FileUtils
+) -> ConfigManager:
+    """Create ConfigManager with test configuration."""
+    # Create test config directory
+    tmp_path = tmp_path_factory.mktemp("test_config")
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+
+    # Create test config file
+    config_file = config_dir / "config.yaml"
+    config_content = """
+logging:
+    level: INFO
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+models:
+    default_provider: openai
+    default_model: gpt-4o-mini
+    parameters:
+        temperature: 0.0
+        max_tokens: 1000
+languages:
+    default_language: en
+    languages:
+        en:
+            min_word_length: 3
+        fi:
+            min_word_length: 3
+            voikko_path: null
+features:
+    use_caching: true
+    batch_processing: true
+analysis:
+    keywords:
+        max_keywords: 10
+        min_confidence: 0.3
+        weights:
+            statistical: 0.4
+            llm: 0.6
+    themes:
+        max_themes: 3
+        min_confidence: 0.3
+    categories:
+        min_confidence: 0.3
+    """
+    config_file.write_text(config_content)
+
+    # Create .env file in test config directory
+    env_file = config_dir / ".env"
+    env_content = "\n".join(
+        f"{key}={value}" for key, value in TEST_ENV_VARS.items()
+    )
+    env_file.write_text(env_content)
+
+    # Initialize config manager with test setup
+    config_manager = ConfigManager(
+        file_utils=file_utils,
+        config_dir=str(config_dir),
+        project_root=tmp_path,
+        custom_directory_structure=TEST_DIRECTORY_STRUCTURE,
+    )
+
+    return config_manager
+
+
+@pytest.fixture(scope="session")
+def test_analyzer_config(test_config_manager: ConfigManager) -> AnalyzerConfig:
+    """Create AnalyzerConfig for testing."""
+    return AnalyzerConfig(config_manager=test_config_manager)
+
+
+@pytest.fixture
+def test_parameters() -> Dict[str, Any]:
+    """Provide test parameter configurations."""
+    return {
+        "general": {
+            "max_keywords": 8,
+            "min_keyword_length": 3,
+            "language": "en",
+            "focus_on": "technical content",
+            "include_compounds": True,
+            "max_themes": 3,
+            "min_confidence": 0.3,
+            "column_name_to_analyze": "content",
+        },
+        "categories": {
+            "technical": {
+                "description": "Technical content",
+                "keywords": ["software", "api", "data"],
+                "threshold": 0.6,
+            },
+            "business": {
+                "description": "Business content",
+                "keywords": ["revenue", "growth", "market"],
+                "threshold": 0.6,
+            },
+        },
+        "analysis_settings": {
+            "theme_analysis": {"enabled": True, "min_confidence": 0.5},
+            "weights": {"statistical": 0.4, "llm": 0.6},
+        },
+    }
+
+
+@pytest.fixture(scope="session")
+def event_loop():
     """Create event loop for async tests."""
+    import asyncio
+
     policy = asyncio.get_event_loop_policy()
     loop = policy.new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="session")
-def project_path() -> Path:
-    """Get project root path."""
-    return PROJECT_ROOT
+@pytest.fixture(autouse=True)
+def setup_test_env():
+    """Automatically set up test environment variables for each test."""
+    # Store original environment variables
+    original_env = {key: os.environ.get(key) for key in TEST_ENV_VARS}
 
+    # Set test environment variables
+    for key, value in TEST_ENV_VARS.items():
+        os.environ[key] = value
 
-@pytest.fixture(scope="session")
-def file_utils(project_path: Path) -> FileUtils:
-    """Create FileUtils instance."""
-    return FileUtils(project_root=project_path)
+    yield
 
-
-@pytest.fixture(scope="session")
-def test_content() -> Dict[str, Dict[str, str]]:
-    """Provide test content."""
-    return {
-        "en": {
-            "technical": """Machine learning models are trained using large datasets.
-                        Neural network architecture includes multiple layers.
-                        Data preprocessing and feature engineering are crucial.""",
-            "business": """Q3 financial results show 15% revenue growth.
-                        Customer acquisition costs decreased while retention improved.
-                        Market expansion strategy focuses on emerging sectors.""",
-        },
-    }
+    # Restore original environment variables
+    for key, value in original_env.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from FileUtils import FileUtils
-from src.config import (
-    ConfigManager,
+from src.config.manager import ConfigManager
+from src.config.models import (
     GlobalConfig,
     LoggingConfig,
     ModelConfig,

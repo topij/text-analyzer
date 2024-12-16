@@ -1,4 +1,5 @@
-# src/core/config/models.py
+# src/config/models.py
+
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,8 +27,8 @@ class LoggingConfig(BaseModel):
 class ModelConfig(BaseModel):
     """LLM model configuration."""
 
-    default_provider: str = Field(default="azure")
-    default_model: str = Field(default="gpt-4o-mini")
+    default_provider: str = Field(default="openai")
+    default_model: str = Field(default="gpt-4o-mini")  # Updated default model
     parameters: Dict[str, Any] = Field(default_factory=dict)
     providers: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 

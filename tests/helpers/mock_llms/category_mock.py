@@ -31,16 +31,23 @@ class CategoryMockLLM(BaseMockLLM):
                 "neuroverko",
                 "datan",
                 "piirteiden",
+                "järjestelmä",
+                "rajapinta",
+                "käsittelee",
+                "tiedon",
+                "tehokkaasti",
+                # Business terms in Finnish
                 "taloudellinen",
                 "liikevaihto",
                 "markkinalaaje",
             ]
         )
 
-        # Score-based classification
+        # Score-based classification with updated Finnish technical terms
         technical_score = sum(
             1
             for term in [
+                # English technical terms
                 "machine learning",
                 "neural network",
                 "data",
@@ -49,6 +56,9 @@ class CategoryMockLLM(BaseMockLLM):
                 "architecture",
                 "model",
                 "layers",
+                "api",
+                "system",
+                "software",
                 # Finnish technical terms
                 "koneoppimis",
                 "neuroverko",
@@ -57,6 +67,12 @@ class CategoryMockLLM(BaseMockLLM):
                 "piirteiden",
                 "arkkitehtuuri",
                 "malli",
+                "järjestelmä",
+                "rajapinta",
+                "validointi",
+                "käsittelee",
+                "analysoivat",
+                "tehokkaasti",
             ]
             if term in message
         )
@@ -64,6 +80,7 @@ class CategoryMockLLM(BaseMockLLM):
         business_score = sum(
             1
             for term in [
+                # English business terms
                 "financial",
                 "revenue",
                 "market",
@@ -83,24 +100,37 @@ class CategoryMockLLM(BaseMockLLM):
             if term in message
         )
 
-        # Determine content type based on scores
+        # Determine content type based on scores with logging
         language = "fi" if is_finnish else "en"
-        if technical_score > business_score:
-            content_type = "technical"
-        elif business_score > 0:
-            content_type = "business"
-        else:
-            content_type = (
-                "technical"  # Default to technical if no clear signal
-            )
-
         logger.debug(
             f"Content detection - Technical score: {technical_score}, Business score: {business_score}"
         )
+
+        if technical_score > business_score:
+            content_type = "technical"
+        elif business_score > technical_score:
+            content_type = "business"
+        else:
+            # Default based on text characteristics
+            content_type = (
+                "technical"
+                if any(
+                    tech_term in message
+                    for tech_term in [
+                        "data",
+                        "datan",
+                        "system",
+                        "järjestelmä",
+                        "api",
+                        "rajapinta",
+                    ]
+                )
+                else "business"
+            )
+
         logger.debug(
             f"Selected content type: {content_type}, Language: {language}"
         )
-
         return language, content_type
 
     def _get_mock_response(self, messages: List[BaseMessage]) -> str:
@@ -148,7 +178,7 @@ class CategoryMockLLM(BaseMockLLM):
         """Get default response when category parsing fails."""
         categories = [
             {
-                "category": (
+                "name": (
                     "Technical" if content_type == "technical" else "Business"
                 ),
                 "confidence": 0.85,
@@ -280,31 +310,28 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "category": "Machine Learning",
+                            "name": "Technical",  # Changed to match test categories
                             "confidence": 0.9,
-                            "explanation": "Machine learning and AI content",
+                            "explanation": "Technical content with focus on machine learning and data",
                             "evidence": [
                                 {
                                     "text": "Machine learning models are trained using large datasets",
                                     "relevance": 0.9,
                                 }
                             ],
-                            "themes": ["AI Technology", "Neural Networks"],
+                            "themes": ["Machine Learning", "Data Processing"],
                         },
                         {
-                            "category": "Data Science",
-                            "confidence": 0.85,
-                            "explanation": "Data processing and analysis",
+                            "name": "Educational",  # Added Educational as child of Technical
+                            "confidence": 0.75,
+                            "explanation": "Learning and training aspects of technical content",
                             "evidence": [
                                 {
-                                    "text": "Data preprocessing and feature engineering",
-                                    "relevance": 0.8,
+                                    "text": "Models are trained using datasets",
+                                    "relevance": 0.7,
                                 }
                             ],
-                            "themes": [
-                                "Data Processing",
-                                "Feature Engineering",
-                            ],
+                            "themes": ["Technical Learning", "Training"],
                         },
                     ],
                     "success": True,
@@ -316,32 +343,17 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "category": "Financial Analysis",  # Note different category
+                            "name": "Business",  # Changed to match test categories
                             "confidence": 0.9,
-                            "explanation": "Financial metrics and performance analysis",
+                            "explanation": "Business metrics and performance content",
                             "evidence": [
                                 {
-                                    "text": "Q3 financial results show 15% revenue growth",
+                                    "text": "Revenue growth and market performance indicators",
                                     "relevance": 0.9,
                                 }
                             ],
-                            "themes": [
-                                "Financial Performance",
-                                "Growth Metrics",
-                            ],
-                        },
-                        {
-                            "category": "Market Strategy",  # Business focused category
-                            "confidence": 0.85,
-                            "explanation": "Market and business strategy analysis",
-                            "evidence": [
-                                {
-                                    "text": "Market expansion strategy focuses on emerging sectors",
-                                    "relevance": 0.85,
-                                }
-                            ],
-                            "themes": ["Market Expansion", "Business Strategy"],
-                        },
+                            "themes": ["Business Performance"],
+                        }
                     ],
                     "success": True,
                     "language": "en",
@@ -355,31 +367,35 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "category": "Machine Learning",
+                            "name": "Technical",  # Changed to match test categories
                             "confidence": 0.9,
-                            "explanation": "Koneoppimisen ja tekoälyn teknologia",
+                            "explanation": "Tekninen sisältö ohjelmistojen ja rajapintojen osalta",
                             "evidence": [
                                 {
                                     "text": "Koneoppimismalleja koulutetaan suurilla datajoukolla",
                                     "relevance": 0.9,
-                                }
-                            ],
-                            "themes": ["Tekoäly", "Neuroverkot"],
-                        },
-                        {
-                            "category": "Data Science",
-                            "confidence": 0.85,
-                            "explanation": "Datan käsittely ja analysointi",
-                            "evidence": [
+                                },
                                 {
-                                    "text": "Datan esikäsittely ja piirteiden suunnittelu",
-                                    "relevance": 0.8,
-                                }
+                                    "text": "Järjestelmän rajapinta käsittelee tiedon validoinnin",
+                                    "relevance": 0.85,
+                                },
                             ],
                             "themes": [
-                                "Datan käsittely",
-                                "Piirteiden suunnittelu",
+                                "Ohjelmistokehitys",
+                                "Tietojenkäsittely",
                             ],
+                        },
+                        {
+                            "name": "Educational",
+                            "confidence": 0.75,
+                            "explanation": "Teknisen sisällön opetus- ja koulutusnäkökulmat",
+                            "evidence": [
+                                {
+                                    "text": "Malleja koulutetaan datajoukkojen avulla",
+                                    "relevance": 0.7,
+                                }
+                            ],
+                            "themes": ["Tekninen Oppiminen", "Koulutus"],
                         },
                     ],
                     "success": True,
@@ -391,29 +407,20 @@ class CategoryMockLLM(BaseMockLLM):
                 {
                     "categories": [
                         {
-                            "category": "Financial Analysis",
+                            "name": "Business",  # Changed to match test categories
                             "confidence": 0.9,
-                            "explanation": "Taloudelliset tulokset ja mittarit",
+                            "explanation": "Liiketoiminnan mittarit ja suorituskykyanalyysi",
                             "evidence": [
                                 {
-                                    "text": "Q3 taloudelliset tulokset osoittavat liikevaihdon kasvun",
+                                    "text": "Liikevaihdon kasvu ja markkinasuorituksen indikaattorit",
                                     "relevance": 0.9,
                                 }
                             ],
-                            "themes": ["Taloudellinen Suorituskyky", "Kasvu"],
-                        },
-                        {
-                            "category": "Market Strategy",
-                            "confidence": 0.85,
-                            "explanation": "Markkinoiden ja liiketoiminnan strategia",
-                            "evidence": [
-                                {
-                                    "text": "Markkinalaajennusstrategia keskittyy uusiin sektoreihin",
-                                    "relevance": 0.85,
-                                }
+                            "themes": [
+                                "Liiketoiminnan Suorituskyky",
+                                "Markkina-analyysi",
                             ],
-                            "themes": ["Markkinakehitys", "Strategia"],
-                        },
+                        }
                     ],
                     "success": True,
                     "language": "fi",
