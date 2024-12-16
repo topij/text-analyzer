@@ -62,8 +62,8 @@ class ConfigManager:
 
     def init_paths(self) -> None:
         """Initialize project paths."""
-        self.config_path = self.project_root / self.config_dir
         self.data_dir = self.project_root / "data"
+        self.config_path = self.data_dir / self.config_dir
         self.logs_dir = self.data_dir / "logs"
 
         # Create essential directories
