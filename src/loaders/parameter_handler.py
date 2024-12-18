@@ -108,55 +108,55 @@ class ParameterHandler:
             # Return minimal valid parameter set
             return ParameterSet(general={"language": self.language})
 
-    def _validate_mandatory_fields(
-        self, df: pd.DataFrame, column_names: Dict[str, str]
-    ) -> None:
-        """Validate presence of mandatory parameters."""
-        param_col = column_names["parameter"]
-        value_col = column_names["value"]
+    # def _validate_mandatory_fields(
+    #     self, df: pd.DataFrame, column_names: Dict[str, str]
+    # ) -> None:
+    #     """Validate presence of mandatory parameters."""
+    #     param_col = column_names["parameter"]
+    #     value_col = column_names["value"]
 
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ][self.language]
-        mandatory_fields = {
-            "max_keywords",
-            "focus_on",
-            "column_name_to_analyze",
-        }
+    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+    #         "parameters"
+    #     ][self.language]
+    #     mandatory_fields = {
+    #         "max_keywords",
+    #         "focus_on",
+    #         "column_name_to_analyze",
+    #     }
 
-        # Map internal names to Excel names
-        excel_names = {
-            excel_name
-            for excel_name, internal_name in param_mappings.items()
-            if internal_name in mandatory_fields
-        }
+    #     # Map internal names to Excel names
+    #     excel_names = {
+    #         excel_name
+    #         for excel_name, internal_name in param_mappings.items()
+    #         if internal_name in mandatory_fields
+    #     }
 
-        # Get actual parameters from DataFrame
-        found_params = set()
-        for idx, row in df.iterrows():
-            param_name = row[param_col]
-            internal_name = next(
-                (
-                    internal
-                    for excel, internal in param_mappings.items()
-                    if excel == param_name
-                ),
-                None,
-            )
-            if internal_name:
-                found_params.add(internal_name)
+    #     # Get actual parameters from DataFrame
+    #     found_params = set()
+    #     for idx, row in df.iterrows():
+    #         param_name = row[param_col]
+    #         internal_name = next(
+    #             (
+    #                 internal
+    #                 for excel, internal in param_mappings.items()
+    #                 if excel == param_name
+    #             ),
+    #             None,
+    #         )
+    #         if internal_name:
+    #             found_params.add(internal_name)
 
-        # Check for missing mandatory fields
-        missing = mandatory_fields - found_params
-        if missing:
-            missing_excel = {
-                excel_name
-                for excel_name, internal_name in param_mappings.items()
-                if internal_name in missing
-            }
-            raise ValueError(
-                f"Missing mandatory parameters: {', '.join(missing_excel)}"
-            )
+    #     # Check for missing mandatory fields
+    #     missing = mandatory_fields - found_params
+    #     if missing:
+    #         missing_excel = {
+    #             excel_name
+    #             for excel_name, internal_name in param_mappings.items()
+    #             if internal_name in missing
+    #         }
+    #         raise ValueError(
+    #             f"Missing mandatory parameters: {', '.join(missing_excel)}"
+    #         )
 
     # def _validate_mandatory_fields(
     #     self, df: pd.DataFrame, column_names: Dict[str, str]
@@ -189,8 +189,80 @@ class ParameterHandler:
     #             f"Missing mandatory parameters: {', '.join(missing)}"
     #         )
 
+    # def _load_and_validate_parameters(self) -> None:
+    #     """Load and validate parameters from all sheets."""
+    #     try:
+    #         if not self.file_path or not self.file_path.exists():
+    #             logger.debug("No parameter file specified, using defaults")
+    #             default_config = self.config.DEFAULT_CONFIG.copy()
+    #             default_config["general"]["language"] = self.language
+    #             self.parameters = ParameterSet(**default_config)
+    #             return
+
+    #         # Load all sheets from Excel
+    #         sheets = self.file_utils.load_excel_sheets(self.file_path)
+    #         config = {}
+
+    #         # Load General Parameters
+    #         general_sheet = ParameterSheets.get_sheet_name(
+    #             "general", self.language
+    #         )
+    #         if general_sheet in sheets:
+    #             config["general"] = self._parse_general_parameters(
+    #                 sheets[general_sheet]
+    #             )
+    #         else:
+    #             logger.warning(f"Required sheet '{general_sheet}' not found")
+    #             raise ValueError(f"Required sheet '{general_sheet}' not found")
+
+    def _validate_mandatory_fields(
+        self, df: pd.DataFrame, column_names: Dict[str, str]
+    ) -> None:
+        """Validate presence of mandatory parameters with stricter checking."""
+        param_col = column_names["parameter"]
+
+        # Map Excel parameter names to internal names
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+            "parameters"
+        ][self.language]
+        mandatory_fields = {
+            "column_name_to_analyze",  # These are the internal names
+            "focus_on",
+            "max_keywords",
+        }
+
+        # Create reverse mapping from Excel names to internal names
+        excel_to_internal = {
+            excel: internal for excel, internal in param_mappings.items()
+        }
+
+        # Get actual parameters from DataFrame
+        found_params = set()
+        for _, row in df.iterrows():
+            excel_param = row[param_col]
+            if excel_param in excel_to_internal:
+                internal_name = excel_to_internal[excel_param]
+                found_params.add(internal_name)
+
+        # Find missing mandatory fields
+        missing = mandatory_fields - found_params
+        if missing:
+            # Get Excel names for missing fields
+            missing_excel = []
+            for internal in missing:
+                excel_names = [
+                    excel
+                    for excel, int_name in param_mappings.items()
+                    if int_name == internal
+                ]
+                missing_excel.extend(excel_names)
+
+            raise ValueError(
+                f"Missing mandatory parameters: {', '.join(missing_excel)}"
+            )
+
     def _load_and_validate_parameters(self) -> None:
-        """Load and validate parameters from all sheets."""
+        """Load and validate parameters with mandatory field checking."""
         try:
             if not self.file_path or not self.file_path.exists():
                 logger.debug("No parameter file specified, using defaults")
@@ -208,13 +280,18 @@ class ParameterHandler:
                 "general", self.language
             )
             if general_sheet in sheets:
+                # First validate mandatory fields
+                self._validate_mandatory_fields(
+                    sheets[general_sheet],
+                    ParameterSheets.get_column_names("general", self.language),
+                )
+                # Then parse parameters
                 config["general"] = self._parse_general_parameters(
                     sheets[general_sheet]
                 )
             else:
                 logger.warning(f"Required sheet '{general_sheet}' not found")
                 raise ValueError(f"Required sheet '{general_sheet}' not found")
-
             # Load Categories
             categories_sheet = ParameterSheets.get_sheet_name(
                 "categories", self.language
@@ -301,6 +378,12 @@ class ParameterHandler:
                 for warning in warnings:
                     logger.warning(warning)
 
+        # except Exception as e:
+        #     logger.error(f"Error loading parameters: {e}")
+        #     raise ValueError(str(e))
+        except ValueError as e:
+            # Re-raise ValueError directly to maintain the correct exception type
+            raise
         except Exception as e:
             logger.error(f"Error loading parameters: {e}")
             raise ValueError(str(e))
@@ -372,7 +455,7 @@ class ParameterHandler:
     #         raise ValueError(str(e))
 
     def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Parse general parameters with defaults for non-mandatory fields."""
+        """Parse general parameters with validation."""
         params = {}
         column_names = ParameterSheets.get_column_names(
             "general", self.language
@@ -380,10 +463,10 @@ class ParameterHandler:
         param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
             "parameters"
         ][self.language]
-
         param_col = column_names["parameter"]
         value_col = column_names["value"]
 
+        # This validation now happens before we get here
         excel_mappings = {
             excel: internal for excel, internal in param_mappings.items()
         }
@@ -395,6 +478,31 @@ class ParameterHandler:
                 params[internal_name] = self._convert_value(row[value_col])
 
         return params
+
+    # def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
+    #     """Parse general parameters with defaults for non-mandatory fields."""
+    #     params = {}
+    #     column_names = ParameterSheets.get_column_names(
+    #         "general", self.language
+    #     )
+    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+    #         "parameters"
+    #     ][self.language]
+
+    #     param_col = column_names["parameter"]
+    #     value_col = column_names["value"]
+
+    #     excel_mappings = {
+    #         excel: internal for excel, internal in param_mappings.items()
+    #     }
+
+    #     for _, row in df.iterrows():
+    #         excel_name = row[param_col]
+    #         if excel_name in excel_mappings:
+    #             internal_name = excel_mappings[excel_name]
+    #             params[internal_name] = self._convert_value(row[value_col])
+
+    #     return params
 
     def _parse_keywords(
         self, df: Optional[pd.DataFrame]

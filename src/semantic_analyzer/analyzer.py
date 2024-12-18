@@ -522,6 +522,10 @@ class SemanticAnalyzer:
         """Run analysis pipeline."""
         start_time = datetime.now()
 
+        if "categories" in analysis_types:
+            logger.debug(f"Available categories: {self.categories}")  # Add this
+            logger.debug(f"Using llm type: {type(self.llm)}")  # Add this
+
         try:
             # Update language if specified
             if language:
