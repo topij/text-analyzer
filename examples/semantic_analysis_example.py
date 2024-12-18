@@ -132,13 +132,6 @@ class SemanticAnalysisRunner:
             )
             formatter = ExcelAnalysisFormatter(self.file_utils, config)
 
-            # # Initialize analyzer with shared instances
-            # analyzer = SemanticAnalyzer(
-            #     parameter_file=parameter_file,
-            #     file_utils=self.file_utils,
-            #     config_manager=self.config_manager,
-            # )
-
             # Initialize analyzer with shared instances
             analyzer = SemanticAnalyzer(
                 parameter_file=parameter_file,
@@ -205,10 +198,10 @@ async def main():
 
         # Run analysis
         await runner.run_analysis(
-            input_file="test_content_short.xlsx",
-            output_file="analysis_results_fi.xlsx",
-            parameter_file="parameters_fi.xlsx",
-            detail_level=OutputDetail.DEBUG,
+            input_file="test_content_short_en.xlsx",
+            output_file="analysis_results_en.xlsx",
+            parameter_file="parameters_en.xlsx",
+            detail_level=OutputDetail.MINIMAL,
             show_scores=True,
         )
 

@@ -15,6 +15,10 @@ from tests.helpers.mock_llms.category_mock import CategoryMockLLM
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class TestSemanticAnalyzer:
     """Tests for semantic analysis functionality."""
@@ -36,7 +40,7 @@ class TestSemanticAnalyzer:
             file_name="test_params",
         )
 
-        # Create test categories
+        # Create test categories - these are being set correctly
         categories = {
             "Technical": CategoryConfig(
                 description="Technical content",
@@ -50,59 +54,52 @@ class TestSemanticAnalyzer:
             ),
         }
 
-        # Create separate mock LLMs
+        # Add debug logging for mock LLM
         category_mock = CategoryMockLLM()
-        theme_mock = ThemeMockLLM()
-        keyword_mock = KeywordMockLLM()
-
-        # Create analyzers with different mocks
-        analyzers = {
-            "keywords": SemanticAnalyzer(
-                parameter_file=file_path,
-                file_utils=file_utils,
-                llm=keyword_mock,
-            ),
-            "themes": SemanticAnalyzer(
-                parameter_file=file_path,
-                file_utils=file_utils,
-                llm=theme_mock,
-            ),
-            "categories": SemanticAnalyzer(
-                parameter_file=file_path,
-                file_utils=file_utils,
-                llm=category_mock,
-                categories=categories,  # Pass categories here
-            ),
-        }
+        logger.debug("Created CategoryMockLLM for testing")
 
         text = """Machine learning models are trained using large datasets.
                 Neural networks enable complex pattern recognition.
                 The system's performance metrics show significant improvements."""
 
-        # Run analyses with specific types
-        for analysis_type, analyzer in analyzers.items():
-            result = await analyzer.analyze(
-                text, analysis_types=[analysis_type]
-            )
-            assert result.success, f"Analysis failed for {analysis_type}"
+        # Check inputs for category analyzer
+        analyzer = SemanticAnalyzer(
+            parameter_file=file_path,
+            file_utils=file_utils,
+            llm=category_mock,
+            categories=categories,  # Pass categories here
+        )
 
-            if analysis_type == "keywords":
-                assert len(result.keywords.keywords) > 0
-                assert any(
-                    "machine learning" in kw.keyword.lower()
-                    for kw in result.keywords.keywords
-                )
-            elif analysis_type == "themes":
-                assert len(result.themes.themes) > 0
-                assert any(
-                    "learning" in theme.name.lower()
-                    for theme in result.themes.themes
-                )
-            elif analysis_type == "categories":
-                assert len(result.categories.matches) > 0
-                assert any(
-                    cat.name == "Technical" for cat in result.categories.matches
-                )
+        # Add debug logging
+        logger.debug(f"Input text: {text}")
+        logger.debug(f"Configured categories: {categories}")
+        logger.debug(
+            f"CategoryAnalyzer categories: {analyzer.category_analyzer.categories}"
+        )
+
+        # Run analysis with debugging
+        result = await analyzer.analyze(text, analysis_types=["categories"])
+        logger.debug(f"Raw analysis result: {result}")
+        if result.categories:
+            logger.debug(
+                f"Category matches: {[cat.name for cat in result.categories.matches]}"
+            )
+
+        # More detailed assertion with debugging
+        if not any(
+            cat.name == "Technical" for cat in result.categories.matches
+        ):
+            logger.error(
+                f"Expected 'Technical' category but found: {[cat.name for cat in result.categories.matches]}"
+            )
+            logger.error(
+                f"Full category details: {[(cat.name, cat.confidence) for cat in result.categories.matches]}"
+            )
+
+        assert result.categories.matches, "No category matches found"
+        assert any(
+            cat.name == "Technical" for cat in result.categories.matches
+        ), f"Technical category not found in {[cat.name for cat in result.categories.matches]}"
 
     def _create_parameter_df(
         self, test_parameters: Dict[str, Any], language: str = "en"

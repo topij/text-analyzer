@@ -315,7 +315,7 @@ class SemanticAnalyzer:
         """Initialize analyzer with parameters and components."""
         self.file_utils = file_utils or FileUtils()
 
-        # Load and validate parameters first
+        # Resolve parameter file path
         if parameter_file:
             param_path = (
                 Path(parameter_file)
@@ -323,52 +323,57 @@ class SemanticAnalyzer:
                 else self.file_utils.get_data_path("parameters")
                 / parameter_file
             )
+            logger.debug(f"Using parameter file: {param_path}")
             if not param_path.exists():
                 raise FileNotFoundError(
                     f"Parameter file not found: {param_path}"
                 )
-            self.parameter_handler = ParameterHandler(param_path)
-            self.parameters = self.parameter_handler.get_parameters()
-            logger.debug(f"Loaded parameters from {param_path}")
         else:
-            logger.debug("Using default parameters")
-            self.parameter_handler = ParameterHandler()
-            self.parameters = self.parameter_handler.get_parameters()
+            logger.warning("No parameter file specified, will use defaults")
+            param_path = None
 
-        # Initialize categories with explicit priority
-        self.categories = categories
-        if not self.categories:
-            self.categories = self.parameters.categories
-            if not self.categories:
-                logger.warning(
-                    "No categories available from parameters or explicit input"
-                )
-                self.categories = (
-                    {}
-                )  # Ensure we have an empty dict rather than None
-
-        # Initialize config and LLM
+        # Initialize configuration management
         self.config_manager = ConfigManager(file_utils=self.file_utils)
         self.analyzer_config = AnalyzerConfig(
             file_utils=self.file_utils, config_manager=self.config_manager
         )
+
+        # Get model configuration
+        model_config = self.config_manager.get_model_config()
+
+        # Create LLM if not provided
         self.llm = llm or create_llm(
             config_manager=self.config_manager,
-            provider=self.analyzer_config.config.get("models", {}).get(
-                "default_provider"
-            ),
-            model=self.analyzer_config.config.get("models", {}).get(
-                "default_model"
-            ),
+            provider=model_config.default_provider,
+            model=model_config.default_model,
         )
 
-        # Initialize analyzers
+        # Initialize with parameters
+        self.parameter_handler = ParameterHandler(param_path)
+        self.parameters = self.parameter_handler.get_parameters()
+
+        logger.debug(f"Loaded parameter file: {param_path}")
+        logger.debug(f"Parameter contents: {self.parameters}")
+
+        # Store categories (from params or explicit)
+        self.categories = categories or self.parameters.categories
+        if not self.categories:
+            logger.warning(
+                "No categories available from parameters or explicit input"
+            )
+
+        # Initialize analyzers with proper configuration
         self._init_analyzers()
 
     def _init_analyzers(self) -> None:
         """Initialize analyzers with correct language and parameters."""
         language = self.parameters.general.language
         language_config = self.config_manager.get_language_config()
+
+        logger.debug(f"Parameters loaded: {self.parameters}")  # Debug log
+        logger.debug(
+            f"Categories from parameters: {self.parameters.categories}"
+        )
 
         # Build config dict for language processor
         processor_config = {
@@ -401,28 +406,27 @@ class SemanticAnalyzer:
             config=base_config,
             language_processor=self.language_processor,
         )
+        logger.debug("Keyword analyzer initialized")
 
         self.theme_analyzer = ThemeAnalyzer(
             llm=self.llm,
             config=base_config,
             language_processor=self.language_processor,
         )
+        logger.debug("Theme analyzer initialized")
 
-        # Ensure categories are properly initialized
-        if not self.categories:
-            logger.warning("No categories available for analysis")
-            self.categories = {}
+        # Use categories from parameters or explicitly provided oneses
+        categories = self.categories or self.parameters.categories
+        logger.debug(f"Using categories for analyzer: {categories}")
 
-        # Pass categories at initialization time
         self.category_analyzer = CategoryAnalyzer(
             llm=self.llm,
             config=base_config,
             language_processor=self.language_processor,
-            categories=self.categories,  # Pass categories here
+            categories=categories,
         )
-
         logger.debug(
-            f"Category analyzer initialized with categories: {self.categories}"
+            f"Category analyzer initialized with {len(categories)} categories"
         )
 
         # Log successful initialization
@@ -518,27 +522,19 @@ class SemanticAnalyzer:
         """Run analysis pipeline."""
         start_time = datetime.now()
 
-        # Add debug logs for categories
-        if "categories" in (analysis_types or []):
-            logger.debug(
-                f"Category analyzer categories: {self.category_analyzer.categories}"
-            )
+        if "categories" in analysis_types:
+            logger.debug(f"Available categories: {self.categories}")  # Add this
+            logger.debug(f"Using llm type: {type(self.llm)}")  # Add this
 
         try:
+            # Update language if specified
+            if language:
+                self.set_language(language)
+
             types_to_run = self._validate_analysis_types(analysis_types)
             tasks = []
 
             for analysis_type in types_to_run:
-                # Skip category analysis if no categories configured
-                if (
-                    analysis_type == "categories"
-                    and not self.category_analyzer.categories
-                ):
-                    logger.warning(
-                        "Skipping category analysis - no categories configured"
-                    )
-                    continue
-
                 coro = await self._create_analysis_task(
                     analysis_type, text, **kwargs
                 )
@@ -617,8 +613,6 @@ class SemanticAnalyzer:
 
             # Get type-specific parameters from kwargs
             type_params = kwargs.get(param_key, {})
-
-            # Categories are already set in analyzer initialization
             return analyzer.analyze(text, **type_params)
 
         except Exception as e:
@@ -876,10 +870,7 @@ class SemanticAnalyzer:
         processed = {}
 
         for analysis_type, result in zip(types, results):
-            logger.debug(f"Processing {analysis_type} result: {result}")
-
             if isinstance(result, Exception):
-                logger.error(f"Error in {analysis_type} analysis: {result}")
                 processed[analysis_type] = self._create_error_result_by_type(
                     analysis_type
                 )
@@ -903,36 +894,14 @@ class SemanticAnalyzer:
                         success=result.success,
                         error=result.error,
                     )
-                # elif analysis_type == "categories":
-                #     processed[analysis_type] = CategoryAnalysisResult(
-                #         matches=result.categories,  # Map categories to matches
-                #         language=result.language
-                #         or self.parameters.general.language,
-                #         success=result.success,
-                #         error=result.error,
-                #     )
                 elif analysis_type == "categories":
-                    logger.debug(f"Raw categories result: {result}")
-                    # Ensure we're correctly mapping categories to matches
-                    if hasattr(result, "categories"):
-                        processed[analysis_type] = CategoryAnalysisResult(
-                            matches=result.categories,  # This is where categories become matches
-                            language=result.language
-                            or self.parameters.general.language,
-                            success=result.success,
-                            error=result.error,
-                        )
-                        logger.debug(
-                            f"Processed categories result: {processed[analysis_type]}"
-                        )
-                    else:
-                        logger.error(
-                            f"Invalid category result structure: {result}"
-                        )
-                        processed[analysis_type] = (
-                            self._create_error_result_by_type("categories")
-                        )
-
+                    processed[analysis_type] = CategoryAnalysisResult(
+                        matches=result.categories,  # Map categories to matches
+                        language=result.language
+                        or self.parameters.general.language,
+                        success=result.success,
+                        error=result.error,
+                    )
         return processed
 
     def _process_batch_results(

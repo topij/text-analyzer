@@ -55,6 +55,15 @@ class CategoryAnalyzer(TextAnalyzer):
     # temporary fix for the test failure
     async def analyze(self, text: str) -> CategoryOutput:
         """Analyze text with AIMessage handling."""
+
+        if not self.categories:
+            logger.warning("No categories available for analysis")
+            return CategoryOutput(
+                categories=[],
+                language=self._get_language(),
+                success=False,
+                error="No categories configured",
+            )
         if text is None:
             raise ValueError("Input text cannot be None")
 
@@ -68,7 +77,13 @@ class CategoryAnalyzer(TextAnalyzer):
 
         try:
             logger.debug("CategoryAnalyzer.analyze: Starting analysis")
+            logger.debug(
+                f"Input text: {text[:100]}..."
+            )  # Log first 100 chars of input
+            logger.debug(f"Available categories: {self.categories}")
+
             result = await self.chain.ainvoke(text)
+
             logger.debug(
                 f"CategoryAnalyzer.analyze: Chain result type: {type(result)}"
             )

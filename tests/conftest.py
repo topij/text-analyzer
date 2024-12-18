@@ -63,7 +63,7 @@ def test_config_manager(
     config_file = config_dir / "config.yaml"
     config_content = """
 logging:
-    level: INFO
+    level: DEBUG
     format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 models:
     default_provider: openai
