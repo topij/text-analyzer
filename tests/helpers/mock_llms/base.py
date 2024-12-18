@@ -2,17 +2,31 @@
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
 class BaseMockLLM(BaseChatModel):
-    """Base class for all mock LLMs with simplified implementation."""
+    """Base class for all mock LLMs with structured output support."""
+
+    def __init__(self):
+        super().__init__()
+        self._call_history = []
+        self._current_output_class: Optional[Type[BaseModel]] = None
+
+    def with_structured_output(
+        self, output_class: Type[BaseModel]
+    ) -> "BaseMockLLM":
+        """Configure for structured output to match real LLM behavior."""
+        logger.debug(f"Setting up structured output for class: {output_class}")
+        self._current_output_class = output_class
+        return self
 
     def _generate(
         self,
@@ -21,35 +35,47 @@ class BaseMockLLM(BaseChatModel):
         run_manager: Optional[Any] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """Generate mock response."""
+        """Generate mock response matching LangChain's expected flow."""
         try:
-            logger.debug(
-                f"MockLLM received message: {messages[-1].content[:100]}..."
-            )
-            content = self._get_mock_response(messages)
-            logger.debug(
-                f"MockLLM returning content: {content[:100] if len(content) > 100 else content}"
-            )
+            # Get mock response
+            mock_response = self._get_mock_response(messages)
 
-            message = AIMessage(content=content)
-            generation = ChatGeneration(message=message)
-            return ChatResult(generations=[generation])
+            # Convert to dict if needed
+            if isinstance(mock_response, BaseModel):
+                content = mock_response.model_dump()
+            elif isinstance(mock_response, str):
+                content = json.loads(mock_response)
+            elif isinstance(mock_response, dict):
+                content = mock_response
+            else:
+                raise ValueError(
+                    f"Unexpected response type: {type(mock_response)}"
+                )
+
+            # Convert to JSON string - this matches what a real LLM returns
+            json_str = json.dumps(content)
+
+            # Create AIMessage with JSON string
+            message = AIMessage(content=json_str)
+
+            # Return ChatResult as LangChain expects
+            return ChatResult(generations=[ChatGeneration(message=message)])
+
         except Exception as e:
-            logger.error(f"Error in mock LLM: {e}")
+            logger.error(f"Error in mock LLM generation: {e}", exc_info=True)
             raise
 
     def _detect_content_type(self, message: str) -> Tuple[str, str]:
         """Detect language and content type from message."""
         message = message.lower()
 
-        # Language detection - Finnish indicators
+        # Language detection
         is_finnish = any(
             term in message
             for term in [
                 "koneoppimis",
                 "neuroverko",
                 "datan",
-                "piirteiden",
                 "taloudellinen",
                 "liikevaihto",
             ]
@@ -59,11 +85,9 @@ class BaseMockLLM(BaseChatModel):
         is_technical = any(
             term in message
             for term in [
-                # English technical terms
                 "machine learning",
                 "neural",
                 "data",
-                # Finnish technical terms
                 "koneoppimis",
                 "neuroverko",
                 "datan",
@@ -73,12 +97,9 @@ class BaseMockLLM(BaseChatModel):
         is_business = any(
             term in message
             for term in [
-                # English business terms
                 "financial",
                 "revenue",
                 "market",
-                "profit",
-                # Finnish business terms
                 "liikevaihto",
                 "tulos",
                 "markkina",
@@ -94,16 +115,14 @@ class BaseMockLLM(BaseChatModel):
 
         return language, content_type
 
-    def _get_mock_response(self, messages: List[BaseMessage]) -> str:
+    def _get_mock_response(self, messages: List[BaseMessage]) -> Any:
         """Abstract method to be implemented by specific mock LLMs."""
         raise NotImplementedError
 
     @property
     def _llm_type(self) -> str:
-        """Return identifier for this LLM."""
         return "mock"
 
     @property
     def _identifying_params(self) -> Dict[str, Any]:
-        """Get identifying parameters."""
         return {"mock_type": self.__class__.__name__}

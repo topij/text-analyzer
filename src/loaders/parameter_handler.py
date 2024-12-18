@@ -131,13 +131,63 @@ class ParameterHandler:
             if internal_name in mandatory_fields
         }
 
-        found_params = set(df[param_col].values)
-        missing = excel_names - found_params
-
-        if missing:
-            raise ValueError(
-                f"Missing mandatory parameters: {', '.join(missing)}"
+        # Get actual parameters from DataFrame
+        found_params = set()
+        for idx, row in df.iterrows():
+            param_name = row[param_col]
+            internal_name = next(
+                (
+                    internal
+                    for excel, internal in param_mappings.items()
+                    if excel == param_name
+                ),
+                None,
             )
+            if internal_name:
+                found_params.add(internal_name)
+
+        # Check for missing mandatory fields
+        missing = mandatory_fields - found_params
+        if missing:
+            missing_excel = {
+                excel_name
+                for excel_name, internal_name in param_mappings.items()
+                if internal_name in missing
+            }
+            raise ValueError(
+                f"Missing mandatory parameters: {', '.join(missing_excel)}"
+            )
+
+    # def _validate_mandatory_fields(
+    #     self, df: pd.DataFrame, column_names: Dict[str, str]
+    # ) -> None:
+    #     """Validate presence of mandatory parameters."""
+    #     param_col = column_names["parameter"]
+    #     value_col = column_names["value"]
+
+    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
+    #         "parameters"
+    #     ][self.language]
+    #     mandatory_fields = {
+    #         "max_keywords",
+    #         "focus_on",
+    #         "column_name_to_analyze",
+    #     }
+
+    #     # Map internal names to Excel names
+    #     excel_names = {
+    #         excel_name
+    #         for excel_name, internal_name in param_mappings.items()
+    #         if internal_name in mandatory_fields
+    #     }
+
+    #     found_params = set(df[param_col].values)
+    #     missing = excel_names - found_params
+
+    #     if missing:
+    #         raise ValueError(
+    #             f"Missing mandatory parameters: {', '.join(missing)}"
+    #         )
 
     def _load_and_validate_parameters(self) -> None:
         """Load and validate parameters from all sheets."""

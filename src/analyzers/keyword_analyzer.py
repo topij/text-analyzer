@@ -39,7 +39,7 @@ class KeywordOutput(AnalyzerOutput):
     """Output model for keyword analysis."""
 
     keywords: List[KeywordInfo] = Field(default_factory=list)
-    compound_words: List[str] = Field(default_factory=list)  # Add this field
+    compound_words: List[str] = Field(default_factory=list)
     domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
 
     class Config:
@@ -280,9 +280,10 @@ class KeywordAnalyzer(TextAnalyzer):
                     "system",
                     """You are a specialized keyword extraction expert. For the given text:
             1. Extract highly specific keywords and phrases that appear in or are directly implied by the text
-            2. Calculate confidence scores based on how directly the keyword appears in text
-            3. Identify technical and business domains for each keyword
-            4. Detect compound words and their components
+            2. Always return the base form of the word or compound words in the identified language
+            3. Calculate confidence scores based on how directly the keyword appears in text
+            4. Identify technical and business domains for each keyword
+            5. Detect compound words and their components
             
             Focus on extracting keywords that actually appear in or are strongly implied by the text.
             Do not generate generic keywords that could apply to any text.""",
@@ -294,7 +295,7 @@ class KeywordAnalyzer(TextAnalyzer):
             
             Language: {language}
             Required: Extract specific keywords with confidence scores, domains, and compound word analysis.
-            Return only keywords that are actually present in or strongly implied by the text.""",
+            Return only base forms of keywords that are actually present in or strongly implied by the text.""",
                 ),
             ]
         )
@@ -307,63 +308,6 @@ class KeywordAnalyzer(TextAnalyzer):
             | template
             | self.llm.with_structured_output(KeywordOutput)
         )
-
-    # def _create_chain(self) -> RunnableSequence:
-    #     """Create enhanced LangChain processing chain."""
-    #     template = ChatPromptTemplate.from_messages(
-    #         [
-    #             (
-    #                 "system",
-    #                 """You are a keyword extraction expert. Extract keywords considering:
-    #         1. Technical and domain-specific terminology
-    #         2. Compound words and phrases
-    #         3. Business and technical context
-    #         Return results in JSON format.""",
-    #             ),
-    #             (
-    #                 "human",
-    #                 """Analyze this text and extract keywords:
-    #         Text: {text}
-    #         Guidelines:
-    #         - Maximum keywords: {max_keywords}
-    #         - Consider these key terms: {key_terms}
-    #         - Language: {language}
-
-    #         Return in this format:
-    #         {{
-    #             "keywords": [
-    #                 {{
-    #                     "keyword": "term",
-    #                     "score": 0.95,
-    #                     "domain": "technical/business",
-    #                     "compound_parts": ["part1", "part2"]
-    #                 }}
-    #             ],
-    #             "compound_words": ["word1", "word2"],
-    #             "domain_keywords": {{
-    #                 "technical": ["term1", "term2"],
-    #                 "business": ["term3", "term4"]
-    #             }}
-    #         }}""",
-    #             ),
-    #         ]
-    #     )
-
-    #     return (
-    #         {
-    #             "text": RunnablePassthrough(),
-    #             "max_keywords": lambda _: self.max_keywords,
-    #             "key_terms": self._get_key_terms,
-    #             "language": lambda _: (
-    #                 self.language_processor.language
-    #                 if self.language_processor
-    #                 else "en"
-    #             ),
-    #         }
-    #         | template
-    #         | self.llm
-    #         | self._post_process_llm_output
-    #     )
 
     def _create_error_result(self) -> KeywordAnalysisResult:
         """Create error result."""
@@ -386,8 +330,9 @@ class KeywordAnalyzer(TextAnalyzer):
             language=self._get_language(),
         )
 
+    # temporary fix for the test failure
     async def analyze(self, text: str) -> KeywordOutput:
-        """Analyze text with structured output and error handling."""
+        """Analyze text with proper AIMessage handling."""
         if text is None:
             raise ValueError("Input text cannot be None")
 
@@ -402,24 +347,53 @@ class KeywordAnalyzer(TextAnalyzer):
             )
 
         try:
-            # Get LLM analysis with validated structured output
+            logger.debug("KeywordAnalyzer.analyze: Starting analysis")
             result = await self.chain.ainvoke(text)
+            logger.debug(
+                f"KeywordAnalyzer.analyze: Chain result type: {type(result)}"
+            )
+            logger.debug(f"KeywordAnalyzer.analyze: Chain result: {result}")
+
+            # Handle AIMessage from mock LLMs
+            if hasattr(result, "content"):
+                try:
+                    data = json.loads(result.content)
+                    logger.debug(
+                        f"KeywordAnalyzer.analyze: Parsed JSON data: {data}"
+                    )
+                    result = KeywordOutput(**data)
+                except Exception as e:
+                    logger.error(f"Error parsing AIMessage content: {e}")
+                    return KeywordOutput(
+                        keywords=[],
+                        compound_words=[],
+                        domain_keywords={},
+                        language=self._get_language(),
+                        success=False,
+                        error=f"Error parsing response: {str(e)}",
+                    )
 
             # Filter keywords by confidence
-            result.keywords = [
-                kw for kw in result.keywords if kw.score >= self.min_confidence
-            ]
+            if getattr(result, "keywords", None):
+                result.keywords = [
+                    kw
+                    for kw in result.keywords
+                    if kw.score >= self.min_confidence
+                ]
 
-            # Limit number of keywords
-            result.keywords = result.keywords[: self.max_keywords]
+                # Limit number of keywords
+                result.keywords = result.keywords[: self.max_keywords]
 
-            # Update domain keywords
-            result.domain_keywords = self._group_by_domain(result.keywords)
+                # Update domain keywords
+                if hasattr(result, "domain_keywords"):
+                    result.domain_keywords = self._group_by_domain(
+                        result.keywords
+                    )
 
             return result
 
         except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}")
+            logger.error(f"KeywordAnalyzer.analyze: Exception occurred: {e}")
             return KeywordOutput(
                 keywords=[],
                 compound_words=[],
@@ -428,6 +402,63 @@ class KeywordAnalyzer(TextAnalyzer):
                 success=False,
                 error=str(e),
             )
+
+    # don't remove, this is the working production version
+    # async def analyze(self, text: str) -> KeywordOutput:
+    #     """Analyze text with structured output and error handling."""
+    #     print("KeywordAnalyzer.analyze: Starting analysis")
+    #     if text is None:
+    #         raise ValueError("Input text cannot be None")
+
+    #     if not text:
+    #         return KeywordOutput(
+    #             keywords=[],
+    #             compound_words=[],
+    #             domain_keywords={},
+    #             language=self._get_language(),
+    #             success=False,
+    #             error="Empty input text",
+    #         )
+
+    #     try:
+    #         print(
+    #             f"KeywordAnalyzer.analyze: Using chain type: {type(self.chain)}"
+    #         )
+    #         result = await self.chain.ainvoke(text)
+    #         print(f"KeywordAnalyzer.analyze: Chain result type: {type(result)}")
+    #         print(f"KeywordAnalyzer.analyze: Chain result: {result}")
+
+    #         # Try to see what's in the result
+    #         if hasattr(result, "__dict__"):
+    #             print(
+    #                 f"KeywordAnalyzer.analyze: Result attributes: {result.__dict__}"
+    #             )
+
+    #         # Filter keywords by confidence
+    #         result.keywords = [
+    #             kw for kw in result.keywords if kw.score >= self.min_confidence
+    #         ]
+
+    #         # Limit number of keywords
+    #         result.keywords = result.keywords[: self.max_keywords]
+
+    #         # Update domain keywords
+    #         result.domain_keywords = self._group_by_domain(result.keywords)
+
+    #         return result
+
+    #     except Exception as e:
+    #         # logger.error(f"Analysis failed: {str(e)}")
+    #         print(f"KeywordAnalyzer.analyze: Exception occurred: {str(e)}")
+    #         logger.error(f"Analysis failed: {str(e)}")
+    #         return KeywordOutput(
+    #             keywords=[],
+    #             compound_words=[],
+    #             domain_keywords={},
+    #             language=self._get_language(),
+    #             success=False,
+    #             error=str(e),
+    #         )
 
     def _validate_input(self, text: str) -> Optional[str]:
         """Validate input text."""

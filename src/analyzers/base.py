@@ -1,5 +1,25 @@
 # src.analyzer.base.py
 
+# src/analyzers/base.py
+
+# TODO(test-infrastructure): Current analyzer implementations modify production code to handle
+# mock LLM responses. This should be refactored to handle the mock responses in the test code
+# instead. Potential approaches:
+#
+# 1. Create mock LLMs that better match real LLM behavior by returning the correct types
+# 2. Add a testing-specific adapter layer to transform mock responses
+# 3. Investigate if LangChain provides better testing utilities
+#
+# The current implementation works but mixes test requirements with production code.
+#
+# Current workarounds:
+# - analyzer.analyze() methods include AIMessage handling
+# - Mock LLM responses are converted to structured output in the analyzer
+# - Test framework includes response transformation utilities
+#
+# Priority: Medium
+# Impact: Test maintainability and production code clarity
+
 
 import logging
 from abc import ABC, abstractmethod

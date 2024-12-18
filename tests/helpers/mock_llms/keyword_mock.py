@@ -1,9 +1,13 @@
-import json
+# tests/helpers/mock_llms/keyword_mock.py
+
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+import json
+from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import BaseMessage
+from pydantic import BaseModel
 
+from src.schemas import KeywordInfo, KeywordOutput
 from .base import BaseMockLLM
 
 logger = logging.getLogger(__name__)
@@ -12,170 +16,136 @@ logger = logging.getLogger(__name__)
 class KeywordMockLLM(BaseMockLLM):
     """Mock LLM for keyword analysis testing."""
 
-    def __init__(self):
-        """Initialize with call tracking."""
-        super().__init__()
-        self._call_history = []
-
-    def _get_mock_response(self, messages: List[BaseMessage]) -> str:
-        """Get keyword-specific mock response with call tracking."""
+    def _get_mock_response(
+        self, messages: List[BaseMessage]
+    ) -> str:  # Change return type to str
+        """Get keyword-specific mock response as JSON string."""
         last_message = messages[-1].content if messages else ""
-        self._call_history.append(last_message)
 
         if not last_message:
+            # Return directly as JSON string
             return json.dumps(
                 {
                     "keywords": [],
                     "compound_words": [],
                     "domain_keywords": {},
+                    "language": "en",
                     "success": False,
                     "error": "Empty input text",
-                    "language": "en",
                 }
             )
 
         language, content_type = self._detect_content_type(last_message)
-        return (
+
+        # Get appropriate response
+        response = (
             self._get_finnish_response(content_type)
             if language == "fi"
             else self._get_english_response(content_type)
         )
 
-    def _get_english_response(self, content_type: str) -> str:
+        # Return JSON string
+        return (
+            response.model_dump_json()
+            if isinstance(response, BaseModel)
+            else json.dumps(response)
+        )
+
+    def _get_english_response(self, content_type: str) -> KeywordOutput:
         """Get English keyword response."""
         if content_type == "technical":
-            return json.dumps(
-                {
-                    "keywords": [
-                        {
-                            "keyword": "machine learning",
-                            "score": 0.9,
-                            "domain": "technical",
-                            "compound_parts": ["machine", "learning"],
-                        },
-                        {
-                            "keyword": "neural network",
-                            "score": 0.85,
-                            "domain": "technical",
-                            "compound_parts": ["neural", "network"],
-                        },
-                        {
-                            "keyword": "data",
-                            "score": 0.8,
-                            "domain": "technical",
-                        },
-                    ],
-                    "compound_words": [
-                        "machine learning",
-                        "neural network",
-                    ],  # Explicitly include compound words
-                    "domain_keywords": {
-                        "technical": [
-                            "machine learning",
-                            "neural network",
-                            "data",
-                        ]
-                    },
-                    "success": True,
-                    "language": "en",
-                }
+            return KeywordOutput(
+                keywords=[
+                    KeywordInfo(
+                        keyword="machine learning",
+                        score=0.9,
+                        domain="technical",
+                        compound_parts=["machine", "learning"],
+                    ),
+                    KeywordInfo(
+                        keyword="neural network",
+                        score=0.85,
+                        domain="technical",
+                        compound_parts=["neural", "network"],
+                    ),
+                    KeywordInfo(keyword="data", score=0.8, domain="technical"),
+                ],
+                compound_words=["machine learning", "neural network"],
+                domain_keywords={
+                    "technical": ["machine learning", "neural network", "data"]
+                },
+                language="en",
+                success=True,
             )
-        else:  # business
-            return json.dumps(
-                {
-                    "keywords": [
-                        {
-                            "keyword": "revenue growth",
-                            "score": 0.9,
-                            "domain": "business",
-                            "compound_parts": ["revenue", "growth"],
-                        },
-                        {
-                            "keyword": "market share",
-                            "score": 0.85,
-                            "domain": "business",
-                            "compound_parts": ["market", "share"],
-                        },
-                    ],
-                    "compound_words": [
-                        "revenue growth",
-                        "market share",
-                    ],  # Explicitly include compound words
-                    "domain_keywords": {
-                        "business": ["revenue growth", "market share"]
-                    },
-                    "success": True,
-                    "language": "en",
-                }
+        else:  # business content
+            return KeywordOutput(
+                keywords=[
+                    KeywordInfo(
+                        keyword="revenue growth",
+                        score=0.9,
+                        domain="business",
+                        compound_parts=["revenue", "growth"],
+                    ),
+                    KeywordInfo(
+                        keyword="market share",
+                        score=0.85,
+                        domain="business",
+                        compound_parts=["market", "share"],
+                    ),
+                ],
+                compound_words=["revenue growth", "market share"],
+                domain_keywords={
+                    "business": ["revenue growth", "market share"]
+                },
+                language="en",
+                success=True,
             )
 
-    def _get_finnish_response(self, content_type: str) -> str:
+    def _get_finnish_response(self, content_type: str) -> KeywordOutput:
         """Get Finnish keyword response."""
         if content_type == "technical":
-            return json.dumps(
-                {
-                    "keywords": [
-                        {
-                            "keyword": "koneoppimismalli",
-                            "score": 0.9,
-                            "domain": "technical",
-                            "compound_parts": ["kone", "oppimis", "malli"],
-                        },
-                        {
-                            "keyword": "neuroverkko",
-                            "score": 0.85,
-                            "domain": "technical",
-                            "compound_parts": ["neuro", "verkko"],
-                        },
-                    ],
-                    "compound_words": [
-                        "koneoppimismalli",
-                        "neuroverkko",
-                    ],  # Include Finnish compound words
-                    "domain_keywords": {
-                        "technical": ["koneoppimismalli", "neuroverkko"]
-                    },
-                    "success": True,
-                    "language": "fi",
-                }
+            return KeywordOutput(
+                keywords=[
+                    KeywordInfo(
+                        keyword="koneoppimismalli",
+                        score=0.9,
+                        domain="technical",
+                        compound_parts=["kone", "oppimis", "malli"],
+                    ),
+                    KeywordInfo(
+                        keyword="neuroverkko",
+                        score=0.85,
+                        domain="technical",
+                        compound_parts=["neuro", "verkko"],
+                    ),
+                ],
+                compound_words=["koneoppimismalli", "neuroverkko"],
+                domain_keywords={
+                    "technical": ["koneoppimismalli", "neuroverkko"]
+                },
+                language="fi",
+                success=True,
             )
-        else:  # business
-            return json.dumps(
-                {
-                    "keywords": [
-                        {
-                            "keyword": "liikevaihdon kasvu",
-                            "score": 0.9,
-                            "domain": "business",
-                            "compound_parts": ["liike", "vaihto", "kasvu"],
-                        },
-                        {
-                            "keyword": "markkinaosuus",
-                            "score": 0.85,
-                            "domain": "business",
-                            "compound_parts": ["markkina", "osuus"],
-                        },
-                    ],
-                    "compound_words": [
-                        "liikevaihdon kasvu",
-                        "markkinaosuus",
-                    ],  # Include Finnish compound words
-                    "domain_keywords": {
-                        "business": ["liikevaihdon kasvu", "markkinaosuus"]
-                    },
-                    "success": True,
-                    "language": "fi",
-                }
+        else:  # business content
+            return KeywordOutput(
+                keywords=[
+                    KeywordInfo(
+                        keyword="liikevaihdon kasvu",
+                        score=0.9,
+                        domain="business",
+                        compound_parts=["liike", "vaihto", "kasvu"],
+                    ),
+                    KeywordInfo(
+                        keyword="markkinaosuus",
+                        score=0.85,
+                        domain="business",
+                        compound_parts=["markkina", "osuus"],
+                    ),
+                ],
+                compound_words=["liikevaihdon kasvu", "markkinaosuus"],
+                domain_keywords={
+                    "business": ["liikevaihdon kasvu", "markkinaosuus"]
+                },
+                language="fi",
+                success=True,
             )
-
-    def get_calls(self) -> List[str]:
-        """Get list of recorded calls."""
-        return self._call_history
-
-    def get_last_call(self) -> Optional[str]:
-        """Get the last recorded call."""
-        return self._call_history[-1] if self._call_history else None
-
-    def reset_calls(self) -> None:
-        """Reset call history."""
-        self._call_history = []
