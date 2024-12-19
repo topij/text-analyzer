@@ -2,7 +2,7 @@
 
 Complete API documentation for the Semantic Text Analyzer.
 
-## Core Components
+## Core Classes
 
 ### SemanticAnalyzer
 
@@ -15,47 +15,45 @@ class SemanticAnalyzer:
         parameter_file: Optional[Union[str, Path]] = None,
         file_utils: Optional[FileUtils] = None,
         llm: Optional[BaseChatModel] = None,
+        categories: Optional[Dict[str, CategoryConfig]] = None,
         **kwargs
     ) -> None
+
+    async def analyze(
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+        timeout: float = 60.0,
+        **kwargs
+    ) -> CompleteAnalysisResult:
+        """Analyze text with specified analysis types."""
+
+    async def analyze_batch(
+        self,
+        texts: List[str],
+        batch_size: int = 3,
+        timeout: float = 30.0,
+        **kwargs
+    ) -> List[CompleteAnalysisResult]:
+        """Process multiple texts with controlled concurrency."""
+
+    def save_results(
+        self,
+        results: CompleteAnalysisResult,
+        output_file: str,
+        output_type: str = "processed"
+    ) -> Path:
+        """Save analysis results to file."""
+
+    @classmethod
+    def from_excel(
+        cls,
+        content_file: Union[str, Path],
+        parameter_file: Union[str, Path],
+        **kwargs
+    ) -> 'ExcelSemanticAnalyzer':
+        """Create Excel-aware analyzer instance."""
 ```
-
-**Parameters:**
-- `parameter_file`: Path to Excel parameter file
-- `file_utils`: Optional FileUtils instance
-- `llm`: Optional language model instance
-- `**kwargs`: Additional configuration options
-
-**Methods:**
-
-```python
-async def analyze(
-    self,
-    text: str,
-    analysis_types: Optional[List[str]] = None,
-    timeout: float = 60.0,
-    **kwargs
-) -> CompleteAnalysisResult
-```
-Performs complete text analysis.
-
-**Parameters:**
-- `text`: Input text to analyze
-- `analysis_types`: List of analysis types (["keywords", "themes", "categories"])
-- `timeout`: Maximum execution time in seconds
-- `**kwargs`: Additional analysis parameters
-
-**Returns:** `CompleteAnalysisResult`
-
-```python
-async def analyze_batch(
-    self,
-    texts: List[str],
-    batch_size: int = 3,
-    timeout: float = 30.0,
-    **kwargs
-) -> List[CompleteAnalysisResult]
-```
-Process multiple texts with controlled concurrency.
 
 ### KeywordAnalyzer
 
@@ -64,17 +62,13 @@ class KeywordAnalyzer:
     def __init__(
         self,
         llm: Optional[BaseChatModel] = None,
-        config: Optional[Dict] = None,
+        config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
     )
-```
 
-**Methods:**
-
-```python
-async def analyze(self, text: str) -> KeywordOutput
+    async def analyze(self, text: str) -> KeywordOutput:
+        """Extract keywords from text."""
 ```
-Extracts keywords from text.
 
 ### ThemeAnalyzer
 
@@ -83,17 +77,13 @@ class ThemeAnalyzer:
     def __init__(
         self,
         llm: Optional[BaseChatModel] = None,
-        config: Optional[Dict] = None,
+        config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
     )
-```
 
-**Methods:**
-
-```python
-async def analyze(self, text: str) -> ThemeOutput
+    async def analyze(self, text: str) -> ThemeOutput:
+        """Identify themes in text."""
 ```
-Identifies themes in text.
 
 ### CategoryAnalyzer
 
@@ -103,17 +93,13 @@ class CategoryAnalyzer:
         self,
         categories: Dict[str, CategoryConfig],
         llm: Optional[BaseChatModel] = None,
-        config: Optional[Dict] = None,
+        config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
     )
-```
 
-**Methods:**
-
-```python
-async def analyze(self, text: str) -> CategoryOutput
+    async def analyze(self, text: str) -> CategoryOutput:
+        """Classify text into categories."""
 ```
-Classifies text into categories.
 
 ## Data Models
 
@@ -174,142 +160,63 @@ class BaseTextProcessor(ABC):
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None
     )
+
+    @abstractmethod
+    def get_base_form(self, word: str) -> str:
+        """Get base form of a word."""
+
+    @abstractmethod
+    def tokenize(self, text: str) -> List[str]:
+        """Tokenize text into words."""
+
+    @abstractmethod
+    def is_compound_word(self, word: str) -> bool:
+        """Check if word is a compound word."""
 ```
-
-**Abstract Methods:**
-```python
-@abstractmethod
-def get_base_form(self, word: str) -> str:
-    """Get base form of a word."""
-    pass
-
-@abstractmethod
-def tokenize(self, text: str) -> List[str]:
-    """Tokenize text into words."""
-    pass
-
-@abstractmethod
-def is_compound_word(self, word: str) -> bool:
-    """Check if word is a compound word."""
-    pass
-
-@abstractmethod
-def get_compound_parts(self, word: str) -> Optional[List[str]]:
-    """Get parts of compound word."""
-    pass
-```
-
-### EnglishTextProcessor
-
-Implements `BaseTextProcessor` for English language.
-
-### FinnishTextProcessor
-
-Implements `BaseTextProcessor` for Finnish language with Voikko support.
 
 ## Configuration
 
-### AnalyzerConfig
+### ConfigManager
 
 ```python
-class AnalyzerConfig:
+class ConfigManager:
     def __init__(
         self,
-        file_utils: Optional[FileUtils] = None
+        file_utils: Optional[FileUtils] = None,
+        config_dir: str = "config",
+        project_root: Optional[Path] = None,
+        custom_directory_structure: Optional[Dict[str, Any]] = None
     )
-```
 
-**Methods:**
+    def get_config(self) -> GlobalConfig:
+        """Get complete configuration."""
 
-```python
-def get_provider_config(
-    self,
-    provider: Optional[str] = None,
-    model: Optional[str] = None
-) -> Dict[str, Any]
+    def get_model_config(self) -> ModelConfig:
+        """Get model-specific configuration."""
+
+    def get_analyzer_config(self, analyzer_type: str) -> Dict[str, Any]:
+        """Get configuration for specific analyzer type."""
 ```
 
 ## File Operations
 
-### FileUtils
+All file operations should use the FileUtils class:
 
 ```python
-class FileUtils:
-    @classmethod
-    def create_azure_utils(
-        cls,
-        connection_string: str,
-        **kwargs
-    ) -> 'FileUtils'
-```
+from FileUtils import FileUtils
 
-**Methods:**
+file_utils = FileUtils()
 
-```python
-def save_data_to_storage(
-    self,
-    data: Dict[str, Any],
-    output_filetype: OutputFileType,
-    file_name: str,
-    output_type: str = "processed",
-    include_timestamp: bool = True,
-    **kwargs
-) -> Tuple[Dict[str, Path], Optional[str]]
-```
+# Load file
+data = file_utils.load_single_file(file_path)
 
-## Utility Functions
-
-```python
-def create_text_processor(
-    language: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
-    file_utils: Optional[FileUtils] = None
-) -> BaseTextProcessor
-```
-
-```python
-def create_llm(
-    provider: Optional[str] = None,
-    model: Optional[str] = None,
-    **kwargs
-) -> BaseChatModel
-```
-
-## Exceptions
-
-```python
-class ValidationError(Exception):
-    def __init__(self, message: str, details: Dict[str, Any]):
-        self.message = message
-        self.details = details
-        super().__init__(message)
-```
-
-## Constants
-
-```python
-VALID_ANALYSIS_TYPES = {"keywords", "themes", "categories"}
-
-DEFAULT_CONFIG = {
-    "default_language": "en",
-    "content_column": "content",
-    "models": {
-        "default_provider": "azure",
-        "default_model": "gpt-4o-mini"
-    }
-}
-```
-
-## Type Hints
-
-```python
-from typing import (
-    Dict, List, Optional, Set, Union, Any, Tuple,
-    TypeVar, Generic, Callable, Awaitable
+# Save file
+saved_files, _ = file_utils.save_data_to_storage(
+    data=data,
+    output_filetype="xlsx",
+    output_type="processed",
+    file_name="output"
 )
-
-TextProcessor = TypeVar('TextProcessor', bound=BaseTextProcessor)
-LLMType = TypeVar('LLMType', bound=BaseChatModel)
 ```
 
-For more examples and usage patterns, see [EXAMPLES.md](EXAMPLES.md).
+For complete examples and usage patterns, see [EXAMPLES.md](EXAMPLES.md).

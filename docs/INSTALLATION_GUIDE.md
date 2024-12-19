@@ -1,16 +1,16 @@
 # Installation Guide
 
-This guide covers installing the Semantic Text Analyzer from GitHub and setting up all required dependencies.
+Complete installation instructions for the Semantic Text Analyzer.
 
 ## Prerequisites
 
-- Python 3.9 or higher
+- Python 3.9+
 - Conda (recommended) or virtualenv
 - Git
 
 ## Basic Installation
 
-1. Clone the repository:
+1. Clone repository:
 ```bash
 git clone https://github.com/yourusername/semantic-text-analyzer.git
 cd semantic-text-analyzer
@@ -27,14 +27,78 @@ conda activate semantic-analyzer
 pip install -e .
 ```
 
-## FileUtils Setup
+## Language Support Setup
 
-### Automatic Installation
+### Finnish Language Support (Voikko)
 
-FileUtils is automatically installed as part of the environment setup:
+#### Linux
 ```bash
-# Create conda environment
-conda env create -f environment.yaml
+# Ubuntu/Debian (if needed)
+sudo apt-get update
+sudo apt-get install libvoikko-dev voikko-fi
+
+```
+
+#### Windows
+1. Download Voikko installer from [Official Site](https://voikko.puimula.org/windows.html)
+2. Install, for example, to `C:\Program Files\Voikko` or `C:\scripts\Voikko`
+3. Add installation directory to PATH
+4. Set environment variable:
+```powershell
+setx VOIKKO_PATH "C:\scripts\Voikko"
+```
+
+#### macOS
+```bash
+brew install libvoikko
+brew install voikko-fi
+```
+
+## Environment Configuration
+
+Create a `.env` file or set environment variables:
+
+```bash
+# Required for OpenAI
+OPENAI_API_KEY=your-key-here
+
+# Required for Azure OpenAI
+AZURE_OPENAI_API_KEY=your-key-here
+AZURE_OPENAI_ENDPOINT=your-endpoint
+AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
+
+# Required for Anthropic
+ANTHROPIC_API_KEY=your-key-here
+```
+
+## Verify Installation
+
+Run verification script:
+```python
+from semantic_analyzer import verify_environment
+verify_environment()
+```
+
+## Package Dependencies
+
+Key dependencies from environment.yaml:
+```yaml
+dependencies:
+  - python=3.9
+  - pandas>=2.0.0
+  - numpy>=1.24.0
+  - pyyaml>=6.0
+  - jsonschema>=4.17.0
+  - python-dotenv>=1.0.0
+  - openpyxl>=3.1.0
+  - scikit-learn>=1.2.0
+  - nltk>=3.8.0
+  - langdetect>=1.0.9
+  - langchain
+  - langchain-openai
+  - langchain-anthropic
+  - aiohttp>=3.9.0
+  - libvoikko
 ```
 
 The environment.yaml includes FileUtils and its dependencies:
@@ -44,6 +108,19 @@ dependencies:
   - pip
   - pip:
     - "FileUtils[all] @ git+https://github.com/topij/FileUtils.git"
+```
+
+## Azure Integration Setup
+
+1. Install Azure dependencies:
+```bash
+pip install -e ".[azure]"
+```
+
+2. Configure Azure credentials:
+```bash
+az login
+az account set --subscription <subscription-id>
 ```
 
 ### Storage Configuration
@@ -82,66 +159,6 @@ from semantic_analyzer import verify_environment
 
 # Check FileUtils version
 print(FileUtils.__version__)
-
-# Verify analyzer environment
-result = verify_environment()
-print("FileUtils status:", "OK" if result else "Failed")
-```
-
-## Language Support Setup
-
-### Finnish Language Support (Voikko)
-
-#### Linux
-```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install libvoikko-dev voikko-fi
-
-# Fedora
-sudo dnf install libvoikko-devel malaga-suomi-voikko
-```
-
-#### Windows
-1. Download Voikko installer from [Official Site](https://voikko.puimula.org/windows.html)
-2. Install to `C:\Program Files\Voikko` or `C:\scripts\Voikko`
-3. Add installation directory to PATH
-4. Set environment variables:
-```powershell
-setx VOIKKO_PATH "C:\scripts\Voikko"
-```
-
-#### macOS
-```bash
-brew install libvoikko
-brew install voikko-fi
-```
-
-## Development Setup
-
-1. Install development dependencies:
-```bash
-pip install -e ".[dev]"
-```
-
-2. Install pre-commit hooks:
-```bash
-pre-commit install
-```
-
-## Azure Integration Setup
-
-For Azure support:
-
-1. Install Azure dependencies:
-```bash
-pip install -e ".[azure]"
-```
-
-2. Configure Azure credentials:
-```bash
-az login
-az account set --subscription <subscription-id>
 ```
 
 ## Environment Variables
@@ -164,66 +181,20 @@ VOIKKO_PATH=/path/to/voikko  # Linux/macOS
 VOIKKO_PATH=C:\scripts\Voikko  # Windows
 ```
 
-## Verify Installation
-
-Run verification script:
-```bash
-python -m semantic_analyzer.verify_installation
-```
-
-Or run in Python:
-```python
-from semantic_analyzer import verify_environment
-
-result = verify_environment()
-print("Installation status:", "OK" if result else "Failed")
-```
-
-## Docker Installation (not tested)
-
-```dockerfile
-FROM continuumio/miniconda3
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && \
-    apt-get install -y libvoikko-dev voikko-fi && \
-    rm -rf /var/lib/apt/lists/*
-
-# Clone repository
-RUN git clone https://github.com/yourusername/semantic-text-analyzer.git .
-
-# Create conda environment
-RUN conda env create -f environment.yaml
-
-# Make RUN commands use the new environment
-SHELL ["conda", "run", "-n", "semantic-analyzer", "/bin/bash", "-c"]
-
-# Install the package
-RUN pip install -e .
-
-# Set environment variables
-ENV PYTHONPATH=/app
-
-# Default command
-CMD ["conda", "run", "-n", "semantic-analyzer", "python"]
-```
-
 ## Troubleshooting
 
-### Common Issues
+### Common Installation Issues
 
-1. Voikko Installation Issues
-   - Windows: Ensure Visual C++ build tools are installed
+1. Voikko Installation
    - Linux: Check `libvoikko-dev` installation
-   - Path issues: Verify VOIKKO_PATH environment variable
+   - Verify VOIKKO_PATH environment variable
 
-2. Package Dependency Conflicts
-   - Use `conda create --name semantic-analyzer-clean --file requirements.txt`
+2. Package Conflicts
+   - Use `conda clean --all` before installation
+   - Create fresh environment if conflicts persist
    - Check for conflicting packages with `pip check`
 
-3. Azure Integration Issues
+3. Azure Integration
    - Verify Azure CLI installation
    - Check credential configuration
    - Confirm subscription access
@@ -232,6 +203,6 @@ For more troubleshooting help, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Next Steps
 
-- Review [GETTING_STARTED.md](GETTING_STARTED.md) for usage
-- Set up [Azure integration](AZURE_GUIDE.md)
-- Configure the analyzer using [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md)
+- Review [Getting Started](GETTING_STARTED.md) for initial usage
+- Configure analyzer using [Configuration Guide](CONFIGURATION_GUIDE.md)
+- Check [Examples](EXAMPLES.md) for usage patterns

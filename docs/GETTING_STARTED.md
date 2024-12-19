@@ -1,187 +1,126 @@
 # Getting Started with Semantic Text Analyzer
 
-This guide will help you get up and running with the Semantic Text Analyzer. We'll cover basic setup, common usage patterns, and best practices.
+This guide will help you get up and running with the Semantic Text Analyzer.
+
+## Prerequisites
+
+1. Required software:
+   - Python 3.9+
+   - Conda (recommended) or virtualenv
+   - Git
+
+2. For Finnish language support:
+   - Linux: `libvoikko-dev` and `voikko-fi` packages
+   - Windows: Voikko installation from official site
+   - macOS: `libvoikko` via Homebrew
+
+3. Optional:
+   - Azure subscription (if using Azure OpenAI)
 
 ## Basic Setup
 
-1. First, ensure you have the analyzer installed:
+1. Create and activate environment:
 ```bash
-pip install semantic-text-analyzer
+conda env create -f environment.yaml
+conda activate semantic-analyzer
 ```
 
-2. Set up your environment variables:
+2. Install package:
 ```bash
-# For OpenAI
+pip install -e .
+```
+
+3. Configure environment:
+```bash
+# Create .env file or set environment variables
+# OpenAI
 export OPENAI_API_KEY='your-key-here'
 
-# For Azure OpenAI
+# Or Azure OpenAI
 export AZURE_OPENAI_API_KEY='your-key-here'
 export AZURE_OPENAI_ENDPOINT='your-endpoint'
 export AZURE_OPENAI_DEPLOYMENT_NAME='your-deployment'
 
-# For Anthropic (optional)
-export ANTHROPIC_API_KEY='your-key-here'
+# Finnish support on Windows
+setx VOIKKO_PATH "C:\scripts\Voikko"
 ```
 
-3. Create a basic configuration file (config.yaml):
+4. Verify installation:
+```python
+from src.semantic_analyzer import verify_environment
+verify_environment()
+```
+
+## First Analysis
+
+```python
+from src.semantic_analyzer import SemanticAnalyzer
+
+async def first_analysis():
+    # Initialize analyzer
+    analyzer = SemanticAnalyzer()
+    
+    # Analyze text
+    result = await analyzer.analyze(
+        "Machine learning models process data efficiently.",
+        analysis_types=["keywords", "themes"]
+    )
+    
+    # Print results
+    print(f"Keywords: {result.keywords}")
+    print(f"Themes: {result.themes}")
+```
+
+## Excel Analysis
+
+```python
+# Create analyzer for Excel processing
+analyzer = SemanticAnalyzer.from_excel(
+    content_file="input.xlsx",
+    parameter_file="parameters.xlsx"
+)
+
+# Run analysis
+results_df = await analyzer.analyze_excel(
+    analysis_types=["keywords", "themes"],
+    batch_size=10,
+    save_results=True,
+    output_file="results.xlsx"
+)
+```
+
+## Configuration
+
+1. Basic parameter file structure (Excel):
+   - General Parameters sheet: Basic settings
+   - Categories sheet: Category definitions
+   - Keywords sheet: Predefined keywords
+   - Settings sheet: Analysis settings
+
+2. Main configuration file (config.yaml):
 ```yaml
 models:
-  default_provider: "azure"
+  default_provider: "azure"  # or "openai"
   default_model: "gpt-4o-mini"
-  parameters:
-    temperature: 0.0
-    max_tokens: 1000
-
-features:
-  use_caching: true
-  use_async: true
-  enable_finnish_support: true
 ```
-
-## Basic Usage
-
-### Simple Analysis
-
-```python
-from semantic_analyzer import SemanticAnalyzer
-
-# Initialize analyzer
-analyzer = SemanticAnalyzer()
-
-# Analyze text
-text = """Machine learning models are trained using large datasets 
-          to recognize patterns. The neural network architecture 
-          includes multiple layers for feature extraction."""
-
-result = await analyzer.analyze(text)
-
-# Access results
-print("\nKeywords:")
-for kw in result.keywords.keywords:
-    print(f"- {kw.keyword} (score: {kw.score:.2f})")
-
-print("\nThemes:")
-for theme in result.themes.themes:
-    print(f"- {theme.name}: {theme.description}")
-
-print("\nCategories:")
-for cat in result.categories.matches:
-    print(f"- {cat.name} (confidence: {cat.confidence:.2f})")
-```
-
-### Finnish Language Support
-
-The analyzer automatically detects language and applies appropriate processing:
-
-```python
-# Finnish text analysis
-text_fi = """Koneoppimismalleja koulutetaan suurilla datajoukolla 
-             tunnistamaan kaavoja. Neuroverkon arkkitehtuuri 
-             sisältää useita kerroksia."""
-
-result_fi = await analyzer.analyze(text_fi)
-```
-
-### Batch Processing
-
-For analyzing multiple texts efficiently:
-
-```python
-texts = [
-    "First document to analyze",
-    "Second document to analyze",
-    "Third document to analyze"
-]
-
-results = await analyzer.analyze_batch(
-    texts=texts,
-    batch_size=3,
-    timeout=30.0
-)
-```
-
-## Advanced Usage
-
-### Custom Configuration
-
-```python
-analyzer = SemanticAnalyzer(
-    parameter_file="parameters.xlsx",
-    config={
-        "max_keywords": 5,
-        "min_confidence": 0.3,
-        "analysis": {
-            "keywords": {
-                "include_compounds": True,
-                "min_keyword_length": 3
-            },
-            "themes": {
-                "max_themes": 3,
-                "min_confidence": 0.5
-            }
-        }
-    }
-)
-```
-
-### Saving Results
-
-```python
-# Save analysis results
-output_path = analyzer.save_results(
-    results=result,
-    output_file="analysis_results",
-    output_type="processed"
-)
-```
-
-### Working with Categories
-
-```python
-# Define custom categories
-categories = {
-    "technical": {
-        "description": "Technical content",
-        "keywords": ["software", "api", "data"],
-        "threshold": 0.6
-    },
-    "business": {
-        "description": "Business content",
-        "keywords": ["revenue", "growth", "market"],
-        "threshold": 0.6
-    }
-}
-
-# Create analyzer with custom categories
-analyzer = SemanticAnalyzer(
-    config={"categories": categories}
-)
-```
-
-## Best Practices
-
-1. **Language Processing:**
-   - Let the analyzer auto-detect language when possible
-   - For Finnish text, ensure Voikko is properly installed
-   - Consider text preprocessing for better results
-
-2. **Performance:**
-   - Use batch processing for multiple texts
-   - Enable caching for repeated analyses
-   - Configure appropriate timeouts for your use case
-
-3. **Configuration:**
-   - Use YAML files for static configuration
-   - Use environment variables for credentials
-   - Override specific settings at runtime as needed
-
-4. **Error Handling:**
-   - Always check the `success` field in results
-   - Log and handle potential errors in results
-   - Set appropriate confidence thresholds
 
 ## Next Steps
 
-- Review the [Configuration Guide](CONFIGURATION_GUIDE.md) for detailed settings
-- Check the [API Reference](API_REFERENCE.md) for complete functionality
-- See the [Azure Guide](AZURE_GUIDE.md) for cloud deployment
+- Review [Examples](EXAMPLES.md) for more usage patterns
+- Check [Configuration Guide](CONFIGURATION_GUIDE.md) for detailed settings
+- See [API Reference](API_REFERENCE.md) for complete functionality
+- Review [Troubleshooting](TROUBLESHOOTING.md) for common issues
+
+## Common Issues
+
+1. Language Support:
+   - Verify Voikko installation for Finnish support
+   - Check language settings in parameters
+
+2. LLM Connection:
+   - Verify API keys are set
+   - Check endpoint configuration for Azure
+
+3. File Operations:
+   - Ensure proper file paths
+   - Check file permissions

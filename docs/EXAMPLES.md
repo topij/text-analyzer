@@ -2,25 +2,22 @@
 
 Comprehensive examples for using the Semantic Text Analyzer.
 
-## Basic Usage
+## Basic Analysis
 
 ### Simple Text Analysis
-
 ```python
-from semantic_analyzer import SemanticAnalyzer
+from src.semantic_analyzer import SemanticAnalyzer
 
 async def analyze_text():
-    # Initialize analyzer
     analyzer = SemanticAnalyzer()
     
-    # Analyze text
     text = """Machine learning models are trained using large datasets 
               to recognize patterns. The neural network architecture 
               includes multiple layers for feature extraction."""
               
     result = await analyzer.analyze(text)
     
-    # Print results
+    # Access results
     print("\nKeywords:")
     for kw in result.keywords.keywords:
         print(f"• {kw.keyword} (score: {kw.score:.2f})")
@@ -38,16 +35,12 @@ async def analyze_text():
         print(f"\n• {cat.name}")
         print(f"  Confidence: {cat.confidence:.2f}")
         print(f"  Description: {cat.description}")
-
-# Run analysis
-await analyze_text()
 ```
 
 ### Finnish Text Analysis
-
 ```python
 async def analyze_finnish_text():
-    analyzer = SemanticAnalyzer()
+    analyzer = SemanticAnalyzer(parameter_file="parameters_fi.xlsx")
     
     text = """Koneoppimismalleja koulutetaan suurilla datajoukolla 
               tunnistamaan kaavoja. Neuroverkon arkkitehtuuri 
@@ -57,23 +50,18 @@ async def analyze_finnish_text():
     
     # Print compound words
     print("\nCompound Words:")
-    for word in result.keywords.compound_words:
-        parts = analyzer.language_processor.get_compound_parts(word)
-        print(f"• {word}")
-        if parts:
-            print(f"  Parts: {' + '.join(parts)}")
-
-await analyze_finnish_text()
+    for kw in result.keywords.keywords:
+        if kw.compound_parts:
+            print(f"• {kw.keyword}")
+            print(f"  Parts: {' + '.join(kw.compound_parts)}")
 ```
 
 ## Advanced Usage
 
 ### Custom Categories
-
 ```python
 from src.schemas import CategoryConfig
 
-# Define custom categories
 categories = {
     "technical": CategoryConfig(
         description="Technical content",
@@ -87,13 +75,10 @@ categories = {
     )
 }
 
-analyzer = SemanticAnalyzer(
-    config={"categories": categories}
-)
+analyzer = SemanticAnalyzer(categories=categories)
 ```
 
 ### Batch Processing
-
 ```python
 async def process_batch():
     analyzer = SemanticAnalyzer()
@@ -104,25 +89,39 @@ async def process_batch():
         "Third document to analyze"
     ]
     
-    # Process in batches
     results = await analyzer.analyze_batch(
         texts=texts,
         batch_size=2,
         timeout=30.0
     )
-    
-    # Print results
-    for i, result in enumerate(results, 1):
-        print(f"\nDocument {i}:")
-        print(f"Keywords: {len(result.keywords.keywords)}")
-        print(f"Themes: {len(result.themes.themes)}")
-        print(f"Categories: {len(result.categories.matches)}")
+```
 
-await process_batch()
+### Excel Processing
+```python
+from src.semantic_analyzer import SemanticAnalyzer
+from src.utils.formatting_config import ExcelOutputConfig
+
+# Create Excel analyzer
+analyzer = SemanticAnalyzer.from_excel(
+    content_file="input.xlsx",
+    parameter_file="parameters.xlsx"
+)
+
+# Optional: Configure output formatting
+format_config = ExcelOutputConfig()
+
+# Process with progress tracking
+results_df = await analyzer.analyze_excel(
+    analysis_types=["keywords", "themes", "categories"],
+    batch_size=10,
+    save_results=True,
+    output_file="results.xlsx",
+    show_progress=True,
+    format_config=format_config  # Optional formatting configuration
+)
 ```
 
 ### Custom Configuration
-
 ```python
 config = {
     "analysis": {
@@ -137,80 +136,18 @@ config = {
         },
         "themes": {
             "max_themes": 3,
-            "min_confidence": 0.5,
-            "include_hierarchy": True
+            "min_confidence": 0.5
         },
         "categories": {
-            "max_categories": 2,
-            "min_confidence": 0.3,
-            "require_evidence": True
+            "min_confidence": 0.3
         }
-    },
-    "features": {
-        "use_caching": True,
-        "use_async": True
     }
 }
 
 analyzer = SemanticAnalyzer(config=config)
 ```
 
-### Azure Integration
-
-```python
-from FileUtils import FileUtils
-
-# Initialize with Azure storage
-file_utils = FileUtils.create_azure_utils(
-    connection_string="your-connection-string"
-)
-
-# Create analyzer with Azure configuration
-analyzer = SemanticAnalyzer(
-    file_utils=file_utils,
-    config={
-        "models": {
-            "default_provider": "azure",
-            "default_model": "gpt-4o-mini"
-        }
-    }
-)
-
-# Analyze and save results
-result = await analyzer.analyze("Your text here")
-output_path = analyzer.save_results(
-    results=result,
-    output_file="analysis_results",
-    output_type="processed"
-)
-```
-
-### Custom Language Processing
-
-```python
-from src.core.language_processing import create_text_processor
-
-# Configure language processor
-language_processor = create_text_processor(
-    language="fi",
-    config={
-        "min_word_length": 3,
-        "excluded_patterns": [
-            r"^\d+$",
-            r"^[^a-zA-ZäöåÄÖÅ0-9]+$"
-        ],
-        "preserve_compounds": True
-    }
-)
-
-# Create analyzer with custom processor
-analyzer = SemanticAnalyzer(
-    language_processor=language_processor
-)
-```
-
 ### Error Handling
-
 ```python
 async def robust_analysis(text: str):
     try:
@@ -236,43 +173,4 @@ async def robust_analysis(text: str):
         return None
 ```
 
-<!-- ### Performance Optimization
-
-```python
-import asyncio
-from memory_profiler import profile
-
-@profile
-async def optimized_batch_processing(texts: List[str]):
-    # Process in smaller batches
-    batch_size = 2
-    timeout = 30.0
-    max_retries = 3
-    
-    results = []
-    
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        
-        # Process batch with retries
-        for attempt in range(max_retries):
-            try:
-                batch_results = await asyncio.wait_for(
-                    analyzer.analyze_batch(batch),
-                    timeout=timeout
-                )
-                results.extend(batch_results)
-                break
-            except asyncio.TimeoutError:
-                print(f"Batch {i//batch_size} timed out, attempt {attempt + 1}")
-                if attempt == max_retries - 1:
-                    results.extend([None] * len(batch))
-            except Exception as e:
-                print(f"Error processing batch {i//batch_size}: {e}")
-                results.extend([None] * len(batch))
-                break
-                
-    return results
-``` -->
-
-For more examples and detailed API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
+For complete API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
