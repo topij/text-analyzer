@@ -1,141 +1,282 @@
 # src/nb_helpers/environment.py
+
 import logging
 import os
 import sys
+from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
-
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
-from src.nb_helpers.logging import configure_logging
 from FileUtils import FileUtils
+from src.config.manager import ConfigManager
+from src.core.config import AnalyzerConfig
+
+logger = logging.getLogger(__name__)
 
 
-class EnvironmentSetup:
+class EnvironmentType(str, Enum):
+    """Environment types for analysis."""
+
+    LOCAL = "local"
+    AZURE = "azure"
+
+
+class AnalysisEnvironment:
+    """Environment manager supporting both local and Azure environments."""
+
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(
         self,
+        env_type: Optional[str] = None,
         project_root: Optional[Path] = None,
-        log_level: Optional[str] = None,
+        log_level: str = "INFO",
     ):
-        self.project_root = project_root or Path().resolve().parent
-        # Initialize FileUtils with optional log level
-        self.file_utils = FileUtils(log_level=log_level)
-        self.required_env_vars = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+        """Initialize environment manager."""
+        try:
+            # Only initialize once
+            if hasattr(self, "_initialized"):
+                return
 
-    def verify(self) -> bool:
-        # Store current logging level
-        root_level = logging.getLogger().level
-        handler_level = (
-            logging.getLogger().handlers[0].level
-            if logging.getLogger().handlers
-            else None
+            # Set up basic logging first
+            self._configure_logging(log_level)
+
+            # Determine environment type
+            self.env_type = self._determine_env_type(env_type)
+            logger.info(f"Running in {self.env_type} environment")
+
+            # Set up project root based on environment
+            self.project_root = self._setup_project_root(project_root)
+            logger.info(f"Project root: {self.project_root}")
+
+            # Load environment variables
+            self._load_environment()
+
+            # Initialize components
+            self._init_components()
+
+            self._initialized = True
+            logger.info("Analysis environment initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Environment initialization failed: {e}")
+            raise RuntimeError(f"Failed to initialize environment: {e}")
+
+    def _configure_logging(self, level: str) -> None:
+        """Configure logging with proper handlers."""
+        try:
+            # Convert string level to numeric
+            numeric_level = getattr(logging, level.upper(), logging.INFO)
+
+            # Configure root logger
+            root_logger = logging.getLogger()
+            root_logger.setLevel(numeric_level)
+
+            # Remove any existing handlers
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
+
+            # Add console handler
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+            handler.setFormatter(formatter)
+            handler.setLevel(numeric_level)
+            root_logger.addHandler(handler)
+
+            logger.debug("Logging configured successfully")
+
+        except Exception as e:
+            print(
+                f"Error configuring logging: {e}"
+            )  # Use print as logger might not be ready
+            raise
+
+    def _determine_env_type(self, env_type: Optional[str]) -> EnvironmentType:
+        """Determine the environment type."""
+        if env_type:
+            try:
+                return EnvironmentType(env_type.lower())
+            except ValueError:
+                logger.warning(
+                    f"Invalid environment type: {env_type}, defaulting to LOCAL"
+                )
+                return EnvironmentType.LOCAL
+
+        # Auto-detect environment
+        return (
+            EnvironmentType.AZURE
+            if os.getenv("AZUREML_RUN_ID")
+            else EnvironmentType.LOCAL
         )
 
-        env_loaded = load_dotenv(self.project_root / ".env")
-        checks = self._run_checks(env_loaded)
-        self._display_results(checks)
+    def _setup_project_root(self, project_root: Optional[Path]) -> Path:
+        """Set up project root path."""
+        if project_root:
+            return Path(project_root)
 
-        # Restore logging levels
-        if root_level:
-            logging.getLogger().setLevel(root_level)
-        if handler_level and logging.getLogger().handlers:
-            logging.getLogger().handlers[0].setLevel(handler_level)
+        if self.env_type == EnvironmentType.AZURE:
+            return Path(os.getenv("AZUREML_RUN_ROOT", "/"))
 
-        return all(result for _, result in checks.items())
+        # For local environment
+        current_file = Path(__file__).resolve()
+        return current_file.parent.parent.parent
 
-    def _run_checks(self, env_loaded: bool) -> Dict[str, bool]:
+    def _load_environment(self) -> None:
+        """Load environment variables."""
+        if self.env_type == EnvironmentType.LOCAL:
+            env_paths = [
+                self.project_root / ".env",
+                self.project_root / ".env.local",
+                Path.home() / ".env",
+            ]
+
+            for env_path in env_paths:
+                if env_path.exists():
+                    load_dotenv(env_path)
+                    logger.info(f"Loaded environment from: {env_path}")
+                    break
+        else:
+            logger.info("Using Azure ML environment variables")
+
+    def _init_components(self) -> None:
+        """Initialize components."""
+        try:
+            # Create FileUtils configuration
+            file_utils_config = {
+                "project_root": self.project_root,
+                "create_directories": True,
+            }
+
+            if self.env_type == EnvironmentType.AZURE:
+                file_utils_config.update(
+                    {
+                        "use_azure_storage": True,
+                        "azure_connection_string": os.getenv(
+                            "AZURE_STORAGE_CONNECTION_STRING"
+                        ),
+                        "container_name": os.getenv(
+                            "AZURE_STORAGE_CONTAINER", "analysis-data"
+                        ),
+                    }
+                )
+
+            # Initialize components
+            self.file_utils = FileUtils(**file_utils_config)
+            self.config_manager = ConfigManager(file_utils=self.file_utils)
+            self.analyzer_config = AnalyzerConfig(
+                file_utils=self.file_utils, config_manager=self.config_manager
+            )
+
+            logger.debug("Components initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize components: {e}")
+            raise
+
+    def get_components(self) -> Dict[str, Any]:
+        """Get initialized components."""
+        if not hasattr(self, "_initialized"):
+            raise RuntimeError("Environment not properly initialized")
+
         return {
-            **self._check_basic_setup(env_loaded),
-            **self._check_env_vars(),
-            **self._check_paths(),
+            "file_utils": self.file_utils,
+            "config_manager": self.config_manager,
+            "analyzer_config": self.analyzer_config,
+            "project_root": self.project_root,
+            "env_type": self.env_type,
         }
 
-    def _check_basic_setup(self, env_loaded: bool) -> Dict[str, bool]:
+    def verify_setup(self) -> Dict[str, bool]:
+        """Verify environment setup."""
+        try:
+            checks = {
+                "Environment": self._verify_environment(),
+                "API Access": self._verify_api_access(),
+                "Components": self._verify_components(),
+            }
+
+            self._log_verification_results(checks)
+            return checks
+
+        except Exception as e:
+            logger.error(f"Verification failed: {e}")
+            return {"error": False}
+
+    def _verify_environment(self) -> Dict[str, bool]:
+        """Verify environment-specific requirements."""
         return {
-            "Project root in path": str(self.project_root) in sys.path,
-            "Can import src": "src" in sys.modules,
-            "FileUtils initialized": hasattr(self.file_utils, "project_root"),
-            ".env file loaded": env_loaded,
+            "Project root exists": self.project_root.exists(),
+            "Data directories": self._verify_data_directories(),
+            "Environment variables": self._verify_env_vars(),
         }
 
-    def _check_env_vars(self) -> Dict[str, bool]:
+    def _verify_data_directories(self) -> bool:
+        """Verify data directories exist."""
+        required_dirs = ["raw", "processed", "config", "parameters"]
+        data_path = self.project_root / "data"
+        return all((data_path / d).exists() for d in required_dirs)
+
+    def _verify_env_vars(self) -> bool:
+        """Verify environment variables."""
+        required_vars = ["OPENAI_API_KEY"]
+        if self.env_type == EnvironmentType.AZURE:
+            required_vars.extend(
+                ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_ENDPOINT"]
+            )
+
+        return all(bool(os.getenv(var)) for var in required_vars)
+
+    def _verify_api_access(self) -> Dict[str, bool]:
+        """Verify API access."""
         return {
-            f"{var} set": os.getenv(var) is not None
-            for var in self.required_env_vars
+            "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
+            "Azure OpenAI": bool(os.getenv("AZURE_OPENAI_API_KEY")),
         }
 
-    def _check_paths(self) -> Dict[str, bool]:
-        paths = {
-            "Raw data": self.file_utils.get_data_path("raw"),
-            "Processed data": self.file_utils.get_data_path("processed"),
-            "Configuration": self.file_utils.get_data_path("config"),
-            "Main config.yaml": self.project_root / "config.yaml",
-        }
-        return {f"{name} exists": path.exists() for name, path in paths.items()}
-
-    def _display_results(self, checks: Dict[str, bool]) -> None:
-        sections = {
-            "Basic Setup": {
-                k: v
-                for k, v in checks.items()
-                if "in path" in k or "initialized" in k or "loaded" in k
-            },
-            "Environment Variables": {
-                k: v for k, v in checks.items() if "set" in k
-            },
-            "Project Structure": {
-                k: v for k, v in checks.items() if "exists" in k
-            },
+    def _verify_components(self) -> Dict[str, bool]:
+        """Verify components."""
+        return {
+            "FileUtils": hasattr(self, "file_utils"),
+            "ConfigManager": hasattr(self, "config_manager"),
+            "AnalyzerConfig": hasattr(self, "analyzer_config"),
         }
 
-        print("Environment Check Results:")
-        print("=" * 50)
+    def _log_verification_results(
+        self, checks: Dict[str, Dict[str, bool]]
+    ) -> None:
+        """Log verification results."""
+        for category, results in checks.items():
+            logger.info(f"\n{category} checks:")
+            for check, status in results.items():
+                status_symbol = "✓" if status else "✗"
+                logger.info(f"{status_symbol} {check}")
 
-        for section, section_checks in sections.items():
-            print(f"\n{section}:")
-            print("-" * len(section))
-            for check, result in section_checks.items():
-                status = "✓" if result else "✗"
-                print(f"{status} {check}")
 
-        print("\n" + "=" * 50)
-        all_passed = all(checks.values())
-        print(
-            "Environment Status:", "Ready ✓" if all_passed else "Setup needed ✗"
+def setup_analysis_environment(
+    env_type: Optional[str] = None,
+    log_level: str = "INFO",
+    project_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Setup analysis environment and return components."""
+    try:
+        env = AnalysisEnvironment(
+            env_type=env_type, project_root=project_root, log_level=log_level
         )
 
+        # Verify setup
+        if not env.verify_setup():
+            logger.warning("Environment setup verification failed")
 
-def verify_environment(log_level: Optional[str] = None) -> bool:
-    """
-    Verify environment setup with optional logging level control.
+        return env.get_components()
 
-    Args:
-        log_level: Optional logging level to use (e.g., "DEBUG", "INFO")
-                  If None, uses FileUtils default
-    """
-    setup = EnvironmentSetup(log_level=log_level)
-    return setup.verify()
-
-
-def setup_notebook_env(log_level: Optional[str] = None) -> None:
-    """Setup notebook environment with optional logging level control."""
-    logger = logging.getLogger(__name__)
-
-    setup = EnvironmentSetup(log_level=log_level)
-    if not str(setup.project_root) in sys.path:
-        sys.path.append(str(setup.project_root))
-
-    # Log current levels before any changes
-    logger.debug(
-        "Before environment setup - Root logger level: %s",
-        logging.getLevelName(logging.getLogger().level),
-    )
-
-    # We're not calling configure_logging() anymore
-    # Remove or comment out: configure_logging()
-
-    # Log levels after setup
-    logger.debug(
-        "After environment setup - Root logger level: %s",
-        logging.getLevelName(logging.getLogger().level),
-    )
+    except Exception as e:
+        logger.error(f"Failed to set up analysis environment: {e}")
+        raise

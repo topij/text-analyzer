@@ -74,10 +74,6 @@ class CategoryOutput(AnalyzerOutput):
     language: str = Field(default="unknown")
     success: bool = Field(default=True)
     error: Optional[str] = None
-    domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class CategoryAnalysisResult(BaseModel):
@@ -96,6 +92,37 @@ class CategoryAnalysisResult(BaseModel):
     error: Optional[str] = Field(
         None, description="Error message if analysis failed"
     )
+
+
+# class CategoryOutput(AnalyzerOutput):
+#     """Output model for category analysis."""
+
+#     categories: List[CategoryMatch] = Field(default_factory=list)
+#     language: str = Field(default="unknown")
+#     success: bool = Field(default=True)
+#     error: Optional[str] = None
+#     domain_keywords: Dict[str, List[str]] = Field(default_factory=dict)
+
+#     class Config:
+#         arbitrary_types_allowed = True
+
+
+# class CategoryAnalysisResult(BaseModel):
+#     """Complete result of category analysis."""
+
+#     matches: List[CategoryMatch] = Field(
+#         default_factory=list,
+#         description="List of category matches with confidence scores",
+#     )
+#     language: str = Field(
+#         ..., description="Detected language of the analyzed text"
+#     )
+#     success: bool = Field(
+#         default=True, description="Whether the analysis was successful"
+#     )
+#     error: Optional[str] = Field(
+#         None, description="Error message if analysis failed"
+#     )
 
 
 class ThemeInfo(BaseModel):
