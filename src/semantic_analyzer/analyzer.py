@@ -120,6 +120,7 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
 
     async def analyze_excel(
         self,
+        content_file: Optional[Union[str, Path, pd.DataFrame]] = None,
         analysis_types: Optional[List[str]] = None,
         batch_size: int = 10,
         save_results: bool = True,
@@ -128,95 +129,64 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         format_config: Optional[ExcelOutputConfig] = None,
         **kwargs,
     ) -> pd.DataFrame:
-        """Analyze Excel content with enhanced formatting.
-
-        Args:
-            analysis_types: List of analysis types to perform
-            batch_size: Size of processing batches
-            save_results: Whether to save results to Excel
-            output_file: Optional output file path
-            show_progress: Whether to show progress bars
-            format_config: Optional formatting configuration
-            **kwargs: Additional analysis parameters
-
-        Returns:
-            DataFrame with formatted analysis results
-        """
+        """Analyze Excel content with enhanced error handling."""
         start_time = datetime.now()
 
         try:
+            # Verify analyzers before starting
+            self._verify_analyzers()
+
+            # Initialize formatter if needed
+            if not hasattr(self, "formatter"):
+                self.formatter = ExcelAnalysisFormatter(
+                    file_utils=self.file_utils,
+                    config=format_config
+                    or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
+                )
+
+            # Load content if provided
+            if content_file is not None:
+                if isinstance(content_file, pd.DataFrame):
+                    content_df = content_file
+                else:
+                    content_df = self.file_utils.load_single_file(
+                        file_path=content_file, input_type="raw"
+                    )
+                kwargs["content"] = content_df
+
             # Validate analysis types
             types_to_run = self._validate_analysis_types(analysis_types)
-            logger.info(f"Running analysis types: {types_to_run}")
+            logger.debug(f"Running analysis types: {types_to_run}")
 
-            # Initialize results storage
-            analysis_results = {}
-
-            # Create progress bar if requested
-            types_iter = (
-                tqdm(types_to_run, desc="Analysis Progress")
-                if show_progress
-                else types_to_run
+            # Run analyses
+            analysis_results = await self._run_analyses(
+                types_to_run, batch_size, show_progress, **kwargs
             )
 
-            # Run individual analyses
-            for analysis_type in types_iter:
-                logger.info(f"Running {analysis_type} analysis...")
-                attr_name = self.ANALYZER_MAPPING[analysis_type][0]
-                analyzer = getattr(self, attr_name)
-
-                # Process with progress reporting
-                if show_progress:
-                    tqdm.write(f"\nProcessing {analysis_type.capitalize()}...")
-
-                # Run analysis
-                result_df = await analyzer.analyze_excel(
-                    batch_size=batch_size, **kwargs
-                )
-                analysis_results[analysis_type] = result_df
-
-                if show_progress:
-                    tqdm.write(f"✓ Completed {analysis_type} analysis")
-
-            # Format results using enhanced formatter
-            logger.info("Formatting results...")
-            formatted_df = self.formatter.format_analysis_results(
-                analysis_results=analysis_results,
-                original_content=self.content,
-                content_column=self.content_column,
+            # Format results
+            formatted_df = self.formatter.format_output(
+                analysis_results, types_to_run
             )
 
-            # Add analysis metadata
+            # Add metadata
             formatted_df["analysis_timestamp"] = datetime.now()
             formatted_df["processing_time"] = (
                 datetime.now() - start_time
             ).total_seconds()
-            formatted_df["language"] = (
-                self.parameters.parameters.general.language
-            )
+            formatted_df["language"] = self.parameters.general.language
 
             # Save if requested
             if save_results and output_file:
-                logger.info("Saving formatted results...")
-                saved_path = self.formatter.save_excel_results(
-                    results_df=formatted_df,
-                    output_file=output_file,
-                    include_summary=True,
+                logger.info(f"Saving results to {output_file}...")
+                self.formatter.save_excel_results(
+                    formatted_df, output_file, include_summary=True
                 )
-                logger.info(f"Results saved to: {saved_path}")
-
-            # Display summary if progress shown
-            if show_progress:
-                self.formatter.display_results_summary(formatted_df)
-
-            total_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Analysis completed in {total_time:.2f} seconds")
 
             return formatted_df
 
         except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            raise
+            logger.error(f"Excel analysis failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Excel analysis failed: {str(e)}")
 
     def _combine_results(
         self, results: Dict[str, pd.DataFrame]
@@ -302,7 +272,27 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
 class SemanticAnalyzer:
     """Main interface for semantic text analysis."""
 
+    # Define valid types consistently using plural form
     VALID_TYPES = {"keywords", "themes", "categories"}
+
+    # Mapping between analysis types and their analyzers
+    ANALYZER_MAPPING = {
+        "keywords": {
+            "attr_name": "keyword_analyzer",
+            "class": KeywordAnalyzer,
+            "singular": "keyword",
+        },
+        "themes": {
+            "attr_name": "theme_analyzer",
+            "class": ThemeAnalyzer,
+            "singular": "theme",
+        },
+        "categories": {
+            "attr_name": "category_analyzer",
+            "class": CategoryAnalyzer,
+            "singular": "category",
+        },
+    }
 
     def __init__(
         self,
@@ -313,9 +303,39 @@ class SemanticAnalyzer:
         **kwargs,
     ):
         """Initialize analyzer with parameters and components."""
-        self.file_utils = file_utils or FileUtils()
+        try:
+            # Initialize core components
+            self.file_utils = file_utils or FileUtils()
 
-        # Load and validate parameters first
+            # Load and validate parameters
+            self._init_parameters(parameter_file)
+
+            # Initialize categories
+            self._init_categories(categories)
+
+            # Initialize config and LLM
+            self._init_config_and_llm(llm)
+
+            # Initialize analyzers
+            self._init_analyzers()
+
+            # Initialize formatter
+            self.formatter = ExcelAnalysisFormatter(
+                file_utils=self.file_utils,
+                config=kwargs.get("format_config")
+                or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
+            )
+
+            logger.info("Semantic Analyzer initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Semantic Analyzer: {e}")
+            raise
+
+    def _init_parameters(
+        self, parameter_file: Optional[Union[str, Path]]
+    ) -> None:
+        """Initialize and validate parameters."""
         if parameter_file:
             param_path = (
                 Path(parameter_file)
@@ -327,6 +347,7 @@ class SemanticAnalyzer:
                 raise FileNotFoundError(
                     f"Parameter file not found: {param_path}"
                 )
+
             self.parameter_handler = ParameterHandler(param_path)
             self.parameters = self.parameter_handler.get_parameters()
             logger.debug(f"Loaded parameters from {param_path}")
@@ -335,23 +356,23 @@ class SemanticAnalyzer:
             self.parameter_handler = ParameterHandler()
             self.parameters = self.parameter_handler.get_parameters()
 
-        # Initialize categories with explicit priority
-        self.categories = categories
+    def _init_categories(
+        self, categories: Optional[Dict[str, CategoryConfig]]
+    ) -> None:
+        """Initialize categories with validation."""
+        self.categories = categories or self.parameters.categories or {}
         if not self.categories:
-            self.categories = self.parameters.categories
-            if not self.categories:
-                logger.warning(
-                    "No categories available from parameters or explicit input"
-                )
-                self.categories = (
-                    {}
-                )  # Ensure we have an empty dict rather than None
+            logger.warning(
+                "No categories available from parameters or explicit input"
+            )
 
-        # Initialize config and LLM
+    def _init_config_and_llm(self, llm: Optional[BaseChatModel]) -> None:
+        """Initialize configuration and LLM."""
         self.config_manager = ConfigManager(file_utils=self.file_utils)
         self.analyzer_config = AnalyzerConfig(
             file_utils=self.file_utils, config_manager=self.config_manager
         )
+
         self.llm = llm or create_llm(
             config_manager=self.config_manager,
             provider=self.analyzer_config.config.get("models", {}).get(
@@ -362,113 +383,104 @@ class SemanticAnalyzer:
             ),
         )
 
-        # Initialize analyzers
-        self._init_analyzers()
-
     def _init_analyzers(self) -> None:
-        """Initialize analyzers with correct language and parameters."""
-        language = self.parameters.general.language
-        language_config = self.config_manager.get_language_config()
+        """Initialize analyzers with proper configuration."""
+        try:
+            # Set up language configuration
+            language = self.parameters.general.language
+            language_config = self.config_manager.get_language_config()
 
-        # Build config dict for language processor
-        processor_config = {
-            "min_word_length": self.parameters.general.min_keyword_length,
-            "include_compounds": self.parameters.general.include_compounds,
-            **language_config.languages.get(language, {}),
-        }
-
-        # Create language processor
-        self.language_processor = create_text_processor(
-            language=language,
-            config=processor_config,
-        )
-
-        # Get base config from analyzer config
-        base_config = self.analyzer_config.get_analyzer_config("base")
-        base_config.update(
-            {
-                "language": language,
-                "min_confidence": self.parameters.general.min_confidence,
-                "focus_on": self.parameters.general.focus_on,
+            # Build processor config
+            processor_config = {
+                "min_word_length": self.parameters.general.min_keyword_length,
+                "include_compounds": self.parameters.general.include_compounds,
+                **language_config.languages.get(language, {}),
             }
-        )
 
-        logger.debug(f"Initializing analyzers with config: {base_config}")
+            # Create language processor
+            self.language_processor = create_text_processor(
+                language=language,
+                config=processor_config,
+            )
 
-        # Initialize all analyzers with proper configuration
-        self.keyword_analyzer = KeywordAnalyzer(
-            llm=self.llm,
-            config=base_config,
-            language_processor=self.language_processor,
-        )
+            # Get base config
+            base_config = self.analyzer_config.get_analyzer_config("base")
+            base_config.update(
+                {
+                    "language": language,
+                    "min_confidence": self.parameters.general.min_confidence,
+                    "focus_on": self.parameters.general.focus_on,
+                }
+            )
 
-        self.theme_analyzer = ThemeAnalyzer(
-            llm=self.llm,
-            config=base_config,
-            language_processor=self.language_processor,
-        )
+            logger.debug(f"Initializing analyzers with config: {base_config}")
 
-        # Ensure categories are properly initialized
-        if not self.categories:
-            logger.warning("No categories available for analysis")
-            self.categories = {}
+            # Initialize analyzers
+            self.keyword_analyzer = KeywordAnalyzer(
+                llm=self.llm,
+                config=base_config,
+                language_processor=self.language_processor,
+            )
 
-        # Pass categories at initialization time
-        self.category_analyzer = CategoryAnalyzer(
-            llm=self.llm,
-            config=base_config,
-            language_processor=self.language_processor,
-            categories=self.categories,  # Pass categories here
-        )
+            self.theme_analyzer = ThemeAnalyzer(
+                llm=self.llm,
+                config=base_config,
+                language_processor=self.language_processor,
+            )
 
-        logger.debug(
-            f"Category analyzer initialized with categories: {self.categories}"
-        )
+            self.category_analyzer = CategoryAnalyzer(
+                llm=self.llm,
+                config=base_config,
+                language_processor=self.language_processor,
+                categories=self.categories,
+            )
 
-        # Log successful initialization
-        logger.info(f"All analyzers initialized for language: {language}")
+            # Verify initialization
+            self.verify_configuration()
 
-        # Add validation to ensure all analyzers are ready
-        self.verify_analyzers()
+            logger.info(f"All analyzers initialized for language: {language}")
 
-    def verify_analyzers(self) -> None:
-        """Verify all analyzers are properly initialized."""
-        required_analyzers = {
-            "keyword_analyzer": KeywordAnalyzer,
-            "theme_analyzer": ThemeAnalyzer,
-            "category_analyzer": CategoryAnalyzer,
-        }
-
-        for name, cls in required_analyzers.items():
-            if not hasattr(self, name):
-                raise ValueError(f"Missing required analyzer: {name}")
-
-            analyzer = getattr(self, name)
-            if not isinstance(analyzer, cls):
-                raise ValueError(
-                    f"Invalid analyzer type for {name}: {type(analyzer)}"
-                )
-
-            if not hasattr(analyzer, "analyze"):
-                raise ValueError(
-                    f"Analyzer {name} missing required 'analyze' method"
-                )
-
-            logger.debug(f"Verified {name} initialization")
+        except Exception as e:
+            logger.error(f"Failed to initialize analyzers: {e}")
+            raise
 
     def verify_configuration(self) -> None:
         """Verify all components are properly configured."""
-        logger.info("Verifying analyzer configuration:")
-        logger.info(f"Language: {self.parameters.general.language}")
-        logger.info(f"Categories loaded: {len(self.parameters.categories)}")
-        for name, cat in self.parameters.categories.items():
+        try:
+            logger.info("Verifying analyzer configuration:")
+
+            # Check language processor
+            if not self.language_processor:
+                raise ValueError("Language processor not initialized")
+
+            # Check analyzers
+            for analysis_type, config in self.ANALYZER_MAPPING.items():
+                attr_name = config["attr_name"]
+                expected_class = config["class"]
+
+                if not hasattr(self, attr_name):
+                    raise ValueError(f"Missing required analyzer: {attr_name}")
+
+                analyzer = getattr(self, attr_name)
+                if not isinstance(analyzer, expected_class):
+                    raise ValueError(
+                        f"Invalid analyzer type for {attr_name}: {type(analyzer)}"
+                    )
+
+            # Log configuration details
+            logger.info(f"Language: {self.parameters.general.language}")
+            logger.info(f"Categories loaded: {len(self.categories)}")
+            for name, cat in self.categories.items():
+                logger.info(
+                    f"  - {name}: {len(cat.keywords)} keywords, threshold: {cat.threshold}"
+                )
             logger.info(
-                f"  - {name}: {len(cat.keywords)} keywords, threshold: {cat.threshold}"
+                f"Language processor: {type(self.language_processor).__name__}"
             )
-        logger.info(
-            f"Language processor: {type(self.language_processor).__name__}"
-        )
-        logger.info(f"Base config: {self.analyzer_config}")
+
+        except Exception as e:
+            logger.error(f"Configuration verification failed: {e}")
+            raise
 
     def set_language(self, language: str) -> None:
         """Update analyzer configuration for new language."""
@@ -684,9 +696,52 @@ class SemanticAnalyzer:
             results_df, output_file, include_summary=True
         )
 
+    async def analyze_excel_content(
+        self, text: str, **kwargs
+    ) -> Dict[str, Any]:
+        """Analyze single text content from Excel."""
+        results = {}
+
+        for analysis_type in self.VALID_TYPES:
+            try:
+                # Get analyzer configuration
+                analyzer_config = self.ANALYZER_MAPPING[analysis_type]
+                analyzer_attr = analyzer_config["attr_name"]
+
+                if not hasattr(self, analyzer_attr):
+                    raise AttributeError(f"Missing analyzer: {analyzer_attr}")
+
+                analyzer = getattr(self, analyzer_attr)
+                result = await analyzer.analyze(text)
+
+                # Convert CategoryOutput to CategoryAnalysisResult
+                if analysis_type == "categories" and isinstance(
+                    result, CategoryOutput
+                ):
+                    results[analysis_type] = CategoryAnalysisResult(
+                        matches=result.categories,
+                        language=result.language,
+                        success=result.success,
+                        error=result.error,
+                    )
+                else:
+                    results[analysis_type] = result
+
+                logger.debug(f"Completed {analysis_type} analysis")
+
+            except Exception as e:
+                logger.error(f"Error in {analysis_type} analysis: {e}")
+                results[analysis_type] = self._create_error_result_by_type(
+                    analysis_type
+                )
+
+        return results
+
     async def analyze_excel(
         self,
+        content_file: Union[str, Path, pd.DataFrame],
         analysis_types: Optional[List[str]] = None,
+        content_column: str = "content",
         batch_size: int = 10,
         save_results: bool = True,
         output_file: Optional[Union[str, Path]] = None,
@@ -694,83 +749,115 @@ class SemanticAnalyzer:
         format_config: Optional[ExcelOutputConfig] = None,
         **kwargs,
     ) -> pd.DataFrame:
-        """Analyze Excel content with enhanced formatting."""
+        """Analyze Excel content with proper formatting.
+
+        Args:
+            analysis_types: List of analysis types to run. Can be singular or plural form:
+                          'keyword'/'keywords', 'theme'/'themes', 'category'/'categories'
+        """
         start_time = datetime.now()
 
         try:
+            # Load content if needed
+            if isinstance(content_file, (str, Path)):
+                content_df = self.file_utils.load_single_file(
+                    file_path=content_file, input_type="raw"
+                )
+            else:
+                content_df = content_file
+
+            if content_column not in content_df.columns:
+                raise ValueError(f"Column '{content_column}' not found")
+
             # Update formatter config if provided
             if format_config:
                 self.formatter = ExcelAnalysisFormatter(
                     file_utils=self.file_utils, config=format_config
                 )
 
-            # Run analyses
+            # Validate and normalize analysis types
             types_to_run = self._validate_analysis_types(analysis_types)
-            analysis_results = await self._run_analyses(
-                types_to_run, batch_size, show_progress, **kwargs
-            )
+            logger.info(f"Running analysis types: {types_to_run}")
 
-            # Format results using formatter
-            formatted_df = self.formatter.format_output(
-                analysis_results, types_to_run
+            # Run analyses
+            results_df = await self._run_analyses(
+                types_to_run=types_to_run,
+                content_df=content_df,
+                content_column=content_column,
+                batch_size=batch_size,
+                show_progress=show_progress,
+                **kwargs,
             )
 
             # Add metadata
-            formatted_df["analysis_timestamp"] = datetime.now()
-            formatted_df["processing_time"] = (
+            results_df["analysis_timestamp"] = datetime.now()
+            results_df["processing_time"] = (
                 datetime.now() - start_time
             ).total_seconds()
-            formatted_df["language"] = (
-                self.parameters.parameters.general.language
-            )
+            results_df["language"] = self.parameters.general.language
 
-            # Save results if requested
             if save_results and output_file:
                 self.formatter.save_excel_results(
-                    formatted_df, output_file, include_summary=True
+                    results_df=results_df,
+                    output_file=output_file,
+                    include_summary=True,
                 )
 
-            return formatted_df
+            return results_df
 
         except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            raise
+            logger.error(f"Excel analysis failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Excel analysis failed: {str(e)}")
 
     async def _run_analyses(
         self,
         types_to_run: List[str],
+        content_df: pd.DataFrame,
+        content_column: str,
         batch_size: int,
         show_progress: bool,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Run individual analyses."""
-        analysis_results = {}
+        """Run individual analyses on Excel content."""
+        analysis_results = []
 
-        # Create progress bar if requested
-        types_iter = (
-            tqdm(types_to_run, desc="Analysis Progress")
+        # Create progress bar for rows
+        rows_iter = (
+            tqdm(
+                content_df.iterrows(),
+                total=len(content_df),
+                desc="Processing rows",
+            )
             if show_progress
-            else types_to_run
+            else content_df.iterrows()
         )
 
-        for analysis_type in types_iter:
-            logger.info(f"Running {analysis_type} analysis...")
-            attr_name = self.ANALYZER_MAPPING[analysis_type][0]
-            analyzer = getattr(self, attr_name)
-
+        for idx, row in rows_iter:
+            text = str(row[content_column])
             if show_progress:
-                tqdm.write(f"\nProcessing {analysis_type.capitalize()}...")
+                tqdm.write(f"\nProcessing row {idx + 1}")
 
-            # Run analysis
-            result = await analyzer.analyze_excel(
-                batch_size=batch_size, **kwargs
-            )
-            analysis_results[analysis_type] = result
+            try:
+                # Analyze single text content
+                result = await self.analyze_excel_content(text, **kwargs)
 
-            if show_progress:
-                tqdm.write(f"✓ Completed {analysis_type} analysis")
+                # Format result for the row
+                formatted = self.formatter.format_output(
+                    results=result, analysis_types=types_to_run
+                )
 
-        return analysis_results
+                # Add original content
+                formatted[content_column] = text
+                analysis_results.append(formatted)
+
+                if show_progress:
+                    tqdm.write("✓ Row completed")
+
+            except Exception as e:
+                logger.error(f"Error processing row {idx}: {e}")
+                analysis_results.append({content_column: text, "error": str(e)})
+
+        return pd.DataFrame(analysis_results)
 
     async def analyze_batch(
         self,
@@ -830,15 +917,47 @@ class SemanticAnalyzer:
     def _validate_analysis_types(
         self, types: Optional[List[str]] = None
     ) -> List[str]:
-        """Validate and return analysis types to run."""
+        """Validate and normalize analysis types.
+
+        Args:
+            types: List of requested analysis types
+
+        Returns:
+            List of validated and normalized analysis type names
+
+        Raises:
+            ValueError: If any requested type is invalid
+        """
         if not types:
             return list(self.VALID_TYPES)
 
-        invalid_types = set(types) - self.VALID_TYPES
-        if invalid_types:
-            raise ValueError(f"Invalid analysis types: {invalid_types}")
+        # Normalize input types to plural form
+        normalized_types = []
+        for t in types:
+            # Handle both singular and plural forms
+            if t.endswith("y"):
+                plural = t[:-1] + "ies"
+            elif not t.endswith("s"):
+                plural = t + "s"
+            else:
+                plural = t
 
-        return types
+            normalized_types.append(plural)
+
+        # Check for invalid types
+        invalid_types = set(normalized_types) - self.VALID_TYPES
+        if invalid_types:
+            valid_forms = []
+            for valid in self.VALID_TYPES:
+                singular = self.ANALYZER_MAPPING[valid]["singular"]
+                valid_forms.extend([valid, singular])
+
+            raise ValueError(
+                f"Invalid analysis types: {invalid_types}. "
+                f"Valid types are: {', '.join(valid_forms)}"
+            )
+
+        return normalized_types
 
     def _create_error_result_by_type(self, analysis_type: str) -> Any:
         """Create appropriate error result for each type."""
@@ -912,22 +1031,38 @@ class SemanticAnalyzer:
                 #         error=result.error,
                 #     )
                 elif analysis_type == "categories":
-                    logger.debug(f"Raw categories result: {result}")
-                    # Ensure we're correctly mapping categories to matches
-                    if hasattr(result, "categories"):
-                        processed[analysis_type] = CategoryAnalysisResult(
-                            matches=result.categories,  # This is where categories become matches
-                            language=result.language
-                            or self.parameters.general.language,
-                            success=result.success,
-                            error=result.error,
-                        )
+                    logger.debug(
+                        f"Processing category result type: {type(result)}"
+                    )
+                    logger.debug(f"Raw category result: {result}")
+
+                    # Explicitly handle CategoryOutput
+                    category_result = None
+                    try:
+                        if isinstance(result, CategoryOutput):
+                            category_result = CategoryAnalysisResult(
+                                matches=result.categories,  # Map categories to matches
+                                language=result.language
+                                or self.parameters.general.language,
+                                success=result.success,
+                                error=result.error,
+                            )
+                        else:
+                            logger.warning(
+                                f"Unexpected category result type: {type(result)}"
+                            )
+                            category_result = self._create_error_result_by_type(
+                                "categories"
+                            )
+
+                        processed[analysis_type] = category_result
                         logger.debug(
-                            f"Processed categories result: {processed[analysis_type]}"
+                            f"Processed category result: {category_result}"
                         )
-                    else:
+                    except Exception as e:
                         logger.error(
-                            f"Invalid category result structure: {result}"
+                            f"Error processing category result: {e}",
+                            exc_info=True,
                         )
                         processed[analysis_type] = (
                             self._create_error_result_by_type("categories")

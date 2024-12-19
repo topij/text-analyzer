@@ -45,7 +45,6 @@ dependencies:
   
   # Install pip packages
   - pip:
-    
     # Additional dependencies
     - aiohttp>=3.9.0  # For async HTTP requests
     - anyio>=4.0.0  # For async support
