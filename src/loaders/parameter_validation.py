@@ -76,7 +76,9 @@ class ParameterValidation:
     PATTERNS = {
         "general.language": r"^(en|fi)$",
         # Allow commas, spaces, dashes, underscores, and alphanumeric characters
-        "categories.*.keywords": r"^[a-zA-Z0-9,\s\-_]+$",
+        # "categories.*.keywords": r"^[a-zA-Z0-9,\s\-_]+$",
+        # Allow Finnish letters (äöåÄÖÅ) in addition to basic alphanumeric chars
+        "categories.*.keywords": r"^[a-zA-ZäöåÄÖÅ0-9,\s\-_]+$",
     }
 
     # Interdependent field validations
