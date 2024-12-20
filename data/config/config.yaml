@@ -120,15 +120,15 @@ models:
       
     anthropic:
       available_models:
-        claude-3-opus:
-          description: "Most capable Claude model"
-          max_tokens: 200000
-          supports_functions: false
-        claude-3-sonnet:
-          description: "Balanced performance and speed"
-          max_tokens: 200000
-          supports_functions: false
-        claude-3-haiku:
+        #claude-3-opus:
+        #  description: "Most capable Claude model"
+        #  max_tokens: 200000
+        #  supports_functions: false
+        #claude-3-sonnet:
+        #  description: "Balanced performance and speed"
+        #  max_tokens: 200000
+        #  supports_functions: false
+        claude-3-haiku-20240307:
           description: "Fastest Claude model"
           max_tokens: 200000
           supports_functions: false

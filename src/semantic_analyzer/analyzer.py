@@ -21,6 +21,7 @@ from src.loaders.parameter_handler import (
 
 from src.config import ConfigManager
 from src.core.config import AnalyzerConfig
+from src.config.models import GlobalConfig
 
 from src.loaders.models import CategoryConfig
 
@@ -1178,23 +1179,21 @@ class SemanticAnalyzer:
             self.analyzer_config.config["models"]["default_provider"] = provider
             self.analyzer_config.config["models"]["default_model"] = new_model
 
-            # 2. Update config manager's base config
-            base_config = self.config_manager._config  # Access base config
-            if "models" not in base_config:
-                base_config["models"] = {}
-            base_config["models"]["default_provider"] = provider
-            base_config["models"]["default_model"] = new_model
-
-            # 3. Update config manager's current config
-            self.config_manager.config = self.config_manager._deep_merge(
-                self.config_manager.config.copy(),
-                {
-                    "models": {
-                        "default_provider": provider,
-                        "default_model": new_model,
-                    }
-                },
-            )
+            # 2. Update config manager's config (handle both dict and Pydantic model cases)
+            if hasattr(self.config_manager.config, "model_dump"):
+                config_dict = self.config_manager.config.model_dump()
+                config_dict["models"]["default_provider"] = provider
+                config_dict["models"]["default_model"] = new_model
+                self.config_manager.config = GlobalConfig(**config_dict)
+            else:
+                if "models" not in self.config_manager.config:
+                    self.config_manager.config["models"] = {}
+                self.config_manager.config["models"][
+                    "default_provider"
+                ] = provider
+                self.config_manager.config["models"][
+                    "default_model"
+                ] = new_model
 
             # Force reinitialize LLM with new configuration
             self.llm = create_llm(
@@ -1203,7 +1202,7 @@ class SemanticAnalyzer:
                 model=new_model,
             )
 
-            # Reinitialize all analyzers with new LLM
+            # Reinitialize analyzers with new LLM
             self._init_analyzers()
 
             # Verify change
