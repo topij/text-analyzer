@@ -1,2 +1,4 @@
-- file_utils readme (multipage)
-- project setup script
+- prompt management system: for example, prompts stored in yaml files (one version already exists for a previous version of the analyzer)
+- configuration system optimization 
+- Streamlit UI (one version already exists for a previous version of the analyzer)
+- general clean up and optimization

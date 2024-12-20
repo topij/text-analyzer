@@ -46,6 +46,9 @@ async def analyze_text():
     print(f"Themes: {result.themes}")
 ```
 
+## Example notebook
+Basic operations are demonstrated in [demo notebook](notebooks/cross_env_analyzer_demo_nb.ipynb). For more information see the [documentation](docs/ANALYSIS_DEMO_DOC.md) page
+
 ## Documentation
 
 - [Getting Started](docs/GETTING_STARTED.md) - Basic setup and first steps
@@ -75,12 +78,12 @@ semantic-text-analyzer/
 │   ├── parameters/    # Analysis parameters
 │   └── config/        # Config files
 ├── src/                   # Source code
-│   ├── config/
-│   ├── formatters/
-│   ├── loaders/
-│   ├── models/
-│   ├── nb_helpers/
-│   ├── semantic_analyzer/
+│   ├── config/            # Configuration files
+│   ├── formatters/        # Formatting code
+│   ├── loaders/           # Parameter loading and validation
+│   ├── models/            # Parameter models
+│   ├── nb_helpers/        # Notebook helpers
+│   ├── semantic_analyzer/ # Main analyzer interface
 │   ├── analyzers/         # Analysis components
 │   ├── core/              # Core functionality
 │   └── utils/             # Utility functions
@@ -89,6 +92,15 @@ semantic-text-analyzer/
 ├── examples/              # Example scripts
 └── notebooks/            # Jupyter notebooks
 ```
+
+## Notes from the Author
+This project was born out of everyday needs I encountered in data analysis and business development. Along the way, I used the development process as an opportunity to learn new concepts and explore different ways of handling data and files in various environments.
+
+Please note that I am not a professional software developer, and, for example, the code has not been heavily optimized. My focus was on functionality rather than fine-tuning or optimization.
+
+Active maintenance is not guaranteed, but I may occasionally revisit and update the code base when needed.
+Let me know if you find this useful :-)
+
 
 ## License
 
