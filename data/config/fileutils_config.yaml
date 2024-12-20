@@ -5,7 +5,7 @@ csv_delimiter: ";"
 encoding: "utf-8"
 quoting: 0  # csv.QUOTE_MINIMAL
 include_timestamp: true
-logging_level: "INFO"
+logging_level: "ERROR"
 disable_logging: false
 
 # Directory structure specific to semantic-text-analyzer
