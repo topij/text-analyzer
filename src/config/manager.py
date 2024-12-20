@@ -53,33 +53,6 @@ class ConfigManager:
             logger.error(f"Error during initialization: {e}")
             self._ensure_minimal_config()
 
-    # def __init__(
-    #     self,
-    #     file_utils: Optional[FileUtils] = None,
-    #     config_dir: str = "config",
-    #     project_root: Optional[Path] = None,
-    #     custom_directory_structure: Optional[Dict[str, Any]] = None,
-    # ):
-    #     """Initialize configuration manager."""
-    #     self.file_utils = file_utils or FileUtils()
-    #     self.project_root = (
-    #         Path(project_root) if project_root else Path().resolve()
-    #     )
-    #     self.config_dir = config_dir
-
-    #     # Store initialization variables for potential reinit
-    #     self._custom_directory_structure = custom_directory_structure
-
-    #     # Initialize all components
-    #     try:
-    #         self.init_environment()
-    #         self.init_paths()
-    #         self.init_file_utils()
-    #         self.load_configurations()
-    #     except Exception as e:
-    #         logger.error(f"Error during initialization: {e}")
-    #         self._ensure_minimal_config()
-
     def init_environment(self) -> None:
         """Initialize environment variables."""
         for env_file in [".env", ".env.local"]:
@@ -99,17 +72,6 @@ class ConfigManager:
         for path in [self.config_path, self.logs_dir]:
             path.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Created directory: {path}")
-
-    # def init_paths(self) -> None:
-    #     """Initialize project paths."""
-    #     self.data_dir = self.project_root / "data"
-    #     self.config_path = self.data_dir / self.config_dir
-    #     self.logs_dir = self.data_dir / "logs"
-
-    #     # Create essential directories
-    #     for path in [self.config_path, self.data_dir, self.logs_dir]:
-    #         path.mkdir(parents=True, exist_ok=True)
-    #         logger.debug(f"Created directory: {path}")
 
     def init_file_utils(self) -> None:
         """Initialize or configure FileUtils."""
