@@ -5,12 +5,13 @@ import os
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from dotenv import load_dotenv
 
 from FileUtils import FileUtils
 from src.config.manager import ConfigManager
 from src.core.config import AnalyzerConfig
+from src.semantic_analyzer.analyzer import SemanticAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -263,12 +264,38 @@ class AnalysisEnvironment:
 def setup_analysis_environment(
     env_type: Optional[str] = None,
     log_level: str = "INFO",
-    project_root: Optional[Path] = None,
+    project_root: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Setup analysis environment and return components."""
     try:
+        # Convert project_root to Path if provided as string
+        if isinstance(project_root, str):
+            project_root = Path(project_root)
+        
+        # If project_root is not provided, determine it from current file
+        if project_root is None:
+            current_file = Path().resolve()
+            # If we're in notebooks directory, go up one level
+            if current_file.name == "notebooks":
+                project_root = current_file.parent
+            else:
+                # Go up until we find the project root (where data dir exists)
+                current = current_file
+                while current.parent != current:  # Stop at root
+                    if (current / "data").exists():
+                        project_root = current
+                        break
+                    current = current.parent
+
+        if not project_root or not (project_root / "data").exists():
+            raise ValueError(f"Invalid project root: {project_root}")
+
+        logger.info(f"Using project root: {project_root}")
+        
         env = AnalysisEnvironment(
-            env_type=env_type, project_root=project_root, log_level=log_level
+            env_type=env_type,
+            project_root=project_root,
+            log_level=log_level
         )
 
         # Verify setup
@@ -280,3 +307,45 @@ def setup_analysis_environment(
     except Exception as e:
         logger.error(f"Failed to set up analysis environment: {e}")
         raise
+
+def get_llm_info(analyzer: SemanticAnalyzer, detailed: bool = False) -> str:
+    """Get information about the active LLM configuration."""
+    config = analyzer.analyzer_config.config
+    model_config = config.get("models", {})
+    
+    provider = model_config.get("default_provider", "unknown")
+    model = model_config.get("default_model", "unknown")
+    
+    info = f"Active LLM: {provider} ({model})"
+    
+    if detailed:
+        params = model_config.get("parameters", {})
+        info += f"\nParameters:"
+        info += f"\n- Temperature: {params.get('temperature', 'N/A')}"
+        info += f"\n- Max tokens: {params.get('max_tokens', 'N/A')}"
+    
+    return info
+
+def get_available_providers(analyzer: SemanticAnalyzer) -> Dict[str, Dict[str, Any]]:
+    """Get available LLM providers and their configurations."""
+    config = analyzer.analyzer_config.config
+    return config.get("models", {}).get("providers", {})
+
+def change_llm_provider(analyzer: SemanticAnalyzer, provider: str, model: Optional[str] = None) -> None:
+    """Change LLM provider and optionally model."""
+    available_providers = get_available_providers(analyzer)
+    if provider not in available_providers:
+        raise ValueError(f"Invalid provider: {provider}. Available: {list(available_providers.keys())}")
+    
+    provider_config = available_providers[provider]
+    if model and model not in provider_config.get("available_models", {}):
+        raise ValueError(f"Invalid model for {provider}: {model}")
+    
+    # Update config
+    config = analyzer.analyzer_config.config
+    config["models"]["default_provider"] = provider
+    if model:
+        config["models"]["default_model"] = model
+    
+    # Reinitialize LLM
+    analyzer._init_config_and_llm(None)
