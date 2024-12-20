@@ -263,7 +263,7 @@ class AnalysisEnvironment:
 
 def setup_analysis_environment(
     env_type: Optional[str] = None,
-    log_level: str = "INFO",
+    log_level: str = "WARNING",
     project_root: Optional[Union[str, Path]] = None,
 ) -> Dict[str, Any]:
     """Setup analysis environment and return components."""
