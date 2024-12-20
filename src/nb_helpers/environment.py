@@ -271,7 +271,7 @@ def setup_analysis_environment(
         # Convert project_root to Path if provided as string
         if isinstance(project_root, str):
             project_root = Path(project_root)
-        
+
         # If project_root is not provided, determine it from current file
         if project_root is None:
             current_file = Path().resolve()
@@ -291,11 +291,9 @@ def setup_analysis_environment(
             raise ValueError(f"Invalid project root: {project_root}")
 
         logger.info(f"Using project root: {project_root}")
-        
+
         env = AnalysisEnvironment(
-            env_type=env_type,
-            project_root=project_root,
-            log_level=log_level
+            env_type=env_type, project_root=project_root, log_level=log_level
         )
 
         # Verify setup
@@ -308,44 +306,59 @@ def setup_analysis_environment(
         logger.error(f"Failed to set up analysis environment: {e}")
         raise
 
+
 def get_llm_info(analyzer: SemanticAnalyzer, detailed: bool = False) -> str:
     """Get information about the active LLM configuration."""
-    config = analyzer.analyzer_config.config
-    model_config = config.get("models", {})
-    
-    provider = model_config.get("default_provider", "unknown")
-    model = model_config.get("default_model", "unknown")
-    
-    info = f"Active LLM: {provider} ({model})"
-    
-    if detailed:
-        params = model_config.get("parameters", {})
-        info += f"\nParameters:"
-        info += f"\n- Temperature: {params.get('temperature', 'N/A')}"
-        info += f"\n- Max tokens: {params.get('max_tokens', 'N/A')}"
-    
-    return info
+    try:
+        # Get current config and LLM info
+        config = analyzer.analyzer_config.config["models"]
+        provider = config["default_provider"]
+        model = config["default_model"]
 
-def get_available_providers(analyzer: SemanticAnalyzer) -> Dict[str, Dict[str, Any]]:
+        info = f"Active LLM: {provider} ({model})"
+
+        if detailed:
+            params = config.get("parameters", {})
+            info += "\nParameters:"
+            for key, value in params.items():
+                # Format key name for display
+                display_key = key.replace("_", " ").title()
+                info += f"\n- {display_key}: {value}"
+
+            # Add provider-specific info
+            provider_config = config.get("providers", {}).get(provider, {})
+            if provider_config:
+                if "api_type" in provider_config:
+                    info += f"\nAPI Type: {provider_config['api_type']}"
+                if "api_version" in provider_config:
+                    info += f"\nAPI Version: {provider_config['api_version']}"
+
+        return info
+
+    except Exception as e:
+        logger.error(f"Error getting LLM info: {e}")
+        return "Unable to get LLM information"
+
+
+def get_available_providers(
+    analyzer: SemanticAnalyzer,
+) -> Dict[str, Dict[str, Any]]:
     """Get available LLM providers and their configurations."""
     config = analyzer.analyzer_config.config
     return config.get("models", {}).get("providers", {})
 
-def change_llm_provider(analyzer: SemanticAnalyzer, provider: str, model: Optional[str] = None) -> None:
-    """Change LLM provider and optionally model."""
-    available_providers = get_available_providers(analyzer)
-    if provider not in available_providers:
-        raise ValueError(f"Invalid provider: {provider}. Available: {list(available_providers.keys())}")
-    
-    provider_config = available_providers[provider]
-    if model and model not in provider_config.get("available_models", {}):
-        raise ValueError(f"Invalid model for {provider}: {model}")
-    
-    # Update config
-    config = analyzer.analyzer_config.config
-    config["models"]["default_provider"] = provider
-    if model:
-        config["models"]["default_model"] = model
-    
-    # Reinitialize LLM
-    analyzer._init_config_and_llm(None)
+
+def change_llm_provider(
+    analyzer: SemanticAnalyzer, provider: str, model: Optional[str] = None
+) -> None:
+    """Change LLM provider and optionally model.
+
+    This is a convenience function that delegates to SemanticAnalyzer's implementation.
+    """
+    try:
+        # Delegate to SemanticAnalyzer's implementation
+        analyzer.change_llm_provider(provider, model)
+
+    except Exception as e:
+        logger.error(f"Failed to change LLM provider: {e}")
+        raise

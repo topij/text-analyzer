@@ -1136,61 +1136,87 @@ class SemanticAnalyzer:
             return CategoryAnalysisResult(matches=[], **base_error)
 
         return base_error
-    
-    def change_llm_provider(self, provider: str, model: Optional[str] = None) -> None:
+
+    def change_llm_provider(
+        self, provider: str, model: Optional[str] = None
+    ) -> None:
         """Change LLM provider and optionally model."""
         try:
             # Get available providers from config
-            available_providers = self.analyzer_config.config.get("models", {}).get("providers", {})
+            available_providers = self.analyzer_config.config.get(
+                "models", {}
+            ).get("providers", {})
             if provider not in available_providers:
-                raise ValueError(f"Invalid provider: {provider}. Available: {list(available_providers.keys())}")
-            
+                raise ValueError(
+                    f"Invalid provider: {provider}. Available: {list(available_providers.keys())}"
+                )
+
             provider_config = available_providers[provider]
             logger.debug(f"Selected provider config: {provider_config}")
-            
+
             # Validate model if provided
             if model:
                 if "available_models" not in provider_config:
-                    logger.warning(f"No available_models defined for {provider}")
+                    logger.warning(
+                        f"No available_models defined for {provider}"
+                    )
                 elif model not in provider_config["available_models"]:
                     raise ValueError(f"Invalid model for {provider}: {model}")
                 new_model = model
             else:
                 # Use provider's default model if none specified
-                new_model = next(iter(provider_config.get("available_models", {}).keys()))
-            
-            logger.debug(f"Changing provider to: {provider}, model: {new_model}")
-            
+                new_model = next(
+                    iter(provider_config.get("available_models", {}).keys())
+                )
+
+            logger.debug(
+                f"Changing provider to: {provider}, model: {new_model}"
+            )
+
             # Update configurations at all levels
             # 1. Update analyzer config
             self.analyzer_config.config["models"]["default_provider"] = provider
             self.analyzer_config.config["models"]["default_model"] = new_model
-            
+
             # 2. Update config manager's base config
             base_config = self.config_manager._config  # Access base config
             if "models" not in base_config:
                 base_config["models"] = {}
             base_config["models"]["default_provider"] = provider
             base_config["models"]["default_model"] = new_model
-            
+
             # 3. Update config manager's current config
             self.config_manager.config = self.config_manager._deep_merge(
                 self.config_manager.config.copy(),
-                {"models": {"default_provider": provider, "default_model": new_model}}
+                {
+                    "models": {
+                        "default_provider": provider,
+                        "default_model": new_model,
+                    }
+                },
             )
-            
+
             # Force reinitialize LLM with new configuration
             self.llm = create_llm(
                 config_manager=self.config_manager,
                 provider=provider,
-                model=new_model
+                model=new_model,
             )
-            
+
+            # Reinitialize all analyzers with new LLM
+            self._init_analyzers()
+
             # Verify change
-            current_provider = self.analyzer_config.config["models"]["default_provider"]
-            current_model = self.analyzer_config.config["models"]["default_model"]
-            logger.info(f"LLM provider changed to {current_provider} using model {current_model}")
-            
+            current_provider = self.analyzer_config.config["models"][
+                "default_provider"
+            ]
+            current_model = self.analyzer_config.config["models"][
+                "default_model"
+            ]
+            logger.info(
+                f"LLM provider changed to {current_provider} using model {current_model}"
+            )
+
         except Exception as e:
             logger.error(f"Failed to change LLM provider: {e}")
             raise

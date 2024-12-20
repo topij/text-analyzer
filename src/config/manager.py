@@ -36,8 +36,7 @@ class ConfigManager:
         self.file_utils = file_utils or FileUtils()
         # Use the provided project_root or get it from file_utils
         self.project_root = (
-            Path(project_root) if project_root 
-            else self.file_utils.project_root
+            Path(project_root) if project_root else self.file_utils.project_root
         )
         self.config_dir = config_dir
 
@@ -53,7 +52,6 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error during initialization: {e}")
             self._ensure_minimal_config()
-
 
     # def __init__(
     #     self,
@@ -81,8 +79,6 @@ class ConfigManager:
     #     except Exception as e:
     #         logger.error(f"Error during initialization: {e}")
     #         self._ensure_minimal_config()
-
- 
 
     def init_environment(self) -> None:
         """Initialize environment variables."""
@@ -136,6 +132,12 @@ class ConfigManager:
         """Load configurations from all sources."""
         try:
             # Load base config from config.yaml
+            env = (
+                os.getenv("ENV")
+                or os.getenv("ENVIRONMENT", "development").lower()
+            )
+
+            # Load base config
             config_file = self.config_path / "config.yaml"
             if config_file.exists():
                 base_config = self.file_utils.load_yaml(config_file)
@@ -172,11 +174,10 @@ class ConfigManager:
 
             # Merge base config
             if base_config:
-                self._deep_merge(self._config, base_config)
+                self._config.update(base_config)
                 logger.debug("Merged base configuration")
 
-            # Load environment-specific config
-            env = os.getenv("ENV", "development").lower()
+            # Load environment-specific config only if in development
             if env == "development":
                 dev_config_file = self.config_path / "config.dev.yaml"
                 if dev_config_file.exists():
