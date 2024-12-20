@@ -21,12 +21,22 @@ logger = logging.getLogger(__name__)
 def setup_notebook_environment(
     log_level: Optional[str] = "INFO",
     config_dir: str = "config",
+    project_root: Optional[Path] = None,
     custom_directory_structure: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Set up environment for notebook usage."""
     try:
-        # Get project root
-        project_root = Path().resolve().parent.absolute()
+        # Get project root by climbing up from notebook directory
+        if project_root is None:
+            current = Path().resolve()
+            while current.parent != current:  # Stop at root
+                if (current / "data").exists():
+                    project_root = current
+                    break
+                current = current.parent
+                
+            if not project_root:
+                raise ValueError("Could not determine project root")
 
         # Initialize FileUtils once
         directory_structure = (
@@ -40,9 +50,9 @@ def setup_notebook_environment(
             directory_structure=directory_structure,
         )
 
-        # Pass the existing FileUtils instance to ConfigManager
+        # Pass project_root explicitly to ConfigManager
         config_manager = ConfigManager(
-            file_utils=file_utils,  # Pass the existing instance
+            file_utils=file_utils,
             config_dir=config_dir,
             project_root=project_root,
             custom_directory_structure=directory_structure,
@@ -62,7 +72,6 @@ def setup_notebook_environment(
     except Exception as e:
         logger.error(f"Failed to set up notebook environment: {e}")
         raise
-
 
 def verify_notebook_environment(
     initialized_components: Optional[Dict[str, Any]] = None

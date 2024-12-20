@@ -82,6 +82,70 @@ class LLMConfig:
         return provider_config
 
 
+# def create_llm(
+#     provider: Optional[str] = None,
+#     model: Optional[str] = None,
+#     config: Optional[AnalyzerConfig] = None,
+#     config_manager: Optional[ConfigManager] = None,
+#     **kwargs,
+# ) -> BaseChatModel:
+#     """Create an LLM instance with specified configuration."""
+#     logger.info(f"Creating LLM instance: {provider} {model}")
+#     try:
+#         # Get provider configuration
+#         if config:
+#             # Use AnalyzerConfig
+#             provider = provider or config.config["models"]["default_provider"]
+#             model = model or config.config["models"]["default_model"]
+#             provider_config = config.get_provider_config(provider, model)
+#         elif config_manager:
+#             # Use model config from ConfigManager
+#             model_config = config_manager.get_model_config()
+#             provider = provider or model_config.default_provider
+#             model = model or model_config.default_model
+#             # Create analyzer config with config_manager
+#             analyzer_config = AnalyzerConfig(config_manager=config_manager)
+#             provider_config = analyzer_config.get_provider_config(
+#                 provider, model
+#             )
+#         else:
+#             # Create minimal config
+#             file_utils = FileUtils()
+#             config_manager = ConfigManager(file_utils=file_utils)
+#             analyzer_config = AnalyzerConfig(config_manager=config_manager)
+#             model_config = config_manager.get_model_config()
+#             provider = provider or model_config.default_provider
+#             model = model or model_config.default_model
+#             provider_config = analyzer_config.get_provider_config(
+#                 provider, model
+#             )
+
+#         # Ensure we have a provider
+#         if not provider:
+#             raise ValueError(
+#                 "No LLM provider specified or found in configuration"
+#             )
+
+#         # Override with kwargs
+#         provider_config.update(kwargs)
+
+#         # In create_llm function
+#         logger.debug(f"Creating LLM with provider: {provider}, model: {model}")
+#         logger.debug(f"Provider config: {provider_config}")
+
+#         # Create appropriate LLM instance
+#         if provider == "azure":
+#             return AzureChatOpenAI(
+#                 azure_endpoint=provider_config["azure_endpoint"],
+#                 azure_deployment=provider_config["azure_deployment"],
+#                 api_key=provider_config["api_key"],
+#                 api_version=provider_config.get(
+#                     "api_version", "2024-02-15-preview"
+#                 ),
+#                 temperature=provider_config.get("temperature", 0),
+#                 max_tokens=provider_config.get("max_tokens", 1000),
+#             )
+
 def create_llm(
     provider: Optional[str] = None,
     model: Optional[str] = None,
@@ -104,34 +168,15 @@ def create_llm(
             provider = provider or model_config.default_provider
             model = model or model_config.default_model
             # Create analyzer config with config_manager
-            analyzer_config = AnalyzerConfig(config_manager=config_manager)
+            analyzer_config = AnalyzerConfig(
+                config_manager=config_manager
+            )
             provider_config = analyzer_config.get_provider_config(
                 provider, model
             )
-        else:
-            # Create minimal config
-            file_utils = FileUtils()
-            config_manager = ConfigManager(file_utils=file_utils)
-            analyzer_config = AnalyzerConfig(config_manager=config_manager)
-            model_config = config_manager.get_model_config()
-            provider = provider or model_config.default_provider
-            model = model or model_config.default_model
-            provider_config = analyzer_config.get_provider_config(
-                provider, model
-            )
-
-        # Ensure we have a provider
-        if not provider:
-            raise ValueError(
-                "No LLM provider specified or found in configuration"
-            )
-
-        # Override with kwargs
-        provider_config.update(kwargs)
-
-        # In create_llm function
-        logger.debug(f"Creating LLM with provider: {provider}, model: {model}")
+            
         logger.debug(f"Provider config: {provider_config}")
+        logger.debug(f"Creating LLM with provider: {provider}, model: {model}")
 
         # Create appropriate LLM instance
         if provider == "azure":

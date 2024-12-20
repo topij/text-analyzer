@@ -76,7 +76,7 @@ analyzer:
 
 # Model settings
 models:
-  default_provider: "openai"
+  default_provider: "azure"
   default_model: "gpt-4o-mini"
   parameters:
     temperature: 0.0
