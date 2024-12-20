@@ -54,7 +54,7 @@ dependencies:
     - types-requests>=2.31.0  # Type hints for requests
     
     # Development tools
-    - pre-commit>=3.3.0
+    # - pre-commit>=3.3.0
     - black[jupyter]>=23.3.0
     - ruff>=0.1.0  # Fast Python linter
     

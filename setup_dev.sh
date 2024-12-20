@@ -55,7 +55,7 @@ class SetupManager:
                 success = self._setup_azure_environment()
             
             if success:
-                self._setup_git_hooks()
+                #self._setup_git_hooks()
                 self._create_env_files()
                 logger.info("Setup completed successfully")
             
