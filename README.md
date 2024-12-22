@@ -10,7 +10,22 @@ A Python-based text analysis toolkit providing keyword extraction, theme identif
 - Support for English and Finnish languages
 - Excel file processing for batch analysis
 - LLM integration (OpenAI, Azure, and Anthropic)
-- Parameter management through Excel files
+- Support for both local and Azure cloud operations (in part enabled by custom [FileUtils package](https://github.com/topij/FileUtils))
+- Parameter management and content input through Excel files
+
+## Background and Use Cases
+
+In my previous job, I frequently encountered situations where valuable textual data remained underutilized. Often, due to time constraints or resource limitations, decisions and/or actions were based on arbitrary highlights rather than comprehensive analysis of available text data.
+
+This led me to develop a semantic text analyzer that combines Large Language Models (LLMs) and Natural Language Processing (NLP) techniques. The project served two purposes: to create a practical tool for better textual data analysis, and to deepen my understanding of LLMs, modern Python development tools and cloud services. 
+
+Accessibility was a key priority in the design. To make the tool approachable for non-developers, all inputs (both content and parameters) can be provided through [Excel files](docs/INPUT_FILES.md), a format familiar to most business users.
+
+**Example Use Cases:**
+- Support ticket analysis and categorization
+- Product information tagging using category analyzer
+- Chatbot conversation analysis and insights extraction
+
 
 ## Quick Start
 
@@ -70,14 +85,14 @@ Basic operations are demonstrated in [demo notebook](notebooks/cross_env_analyze
 
 ```
 semantic-text-analyzer/
-├── data/
+├── data/              # Data directory managed by FileUtils
 │   ├── raw/           # Original data files
 │   ├── interim/       # Intermediate processing
 │   ├── processed/     # Analysis results
 │   ├── external/      # External data sources
 │   ├── parameters/    # Analysis parameters
 │   └── config/        # Config files
-├── src/                   # Source code
+├── src/               # Source code
 │   ├── config/            # Configuration files
 │   ├── formatters/        # Formatting code
 │   ├── loaders/           # Parameter loading and validation
@@ -87,10 +102,10 @@ semantic-text-analyzer/
 │   ├── analyzers/         # Analysis components
 │   ├── core/              # Core functionality
 │   └── utils/             # Utility functions
-├── tests/                 # Test suite
-├── docs/                  # Documentation
-├── examples/              # Example scripts
-└── notebooks/            # Jupyter notebooks
+├── tests/             # Test suite
+├── docs/              # Documentation
+├── examples/          # Example scripts
+└── notebooks/         # Jupyter notebooks
 ```
 
 ## Notes from the Author

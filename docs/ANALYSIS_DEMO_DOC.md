@@ -32,12 +32,9 @@ components = setup_analysis_environment(
 )
 ```
 ## Example files
-You can create example files with `$ python scripts/test_data_generator.py`, For example: 
+You can create example files with `$ python scripts/test_data_generator.py`. It creates both content and parameter file in Finnish and English. For example: 
 - `parameters_en.xlsx`, defines the parameters used in the analysis. This can be used as the basic template for other analyses
 - `test_content_en.xlsx`, generic test content
-
-
-
 
 ## Analyzer Configuration
 
