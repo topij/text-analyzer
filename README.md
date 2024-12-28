@@ -9,9 +9,11 @@ A Python-based text analysis toolkit providing keyword extraction, theme identif
 - Category classification with configurable categories
 - Support for English and Finnish languages
 - Excel file processing for batch analysis
-- LLM integration (OpenAI, Azure, and Anthropic)
+- LLM integration (OpenAI, Azure, and Anthropic) using Langchain
 - Support for both local and Azure cloud operations (in part enabled by custom [FileUtils package](https://github.com/topij/FileUtils))
 - Parameter management and content input through Excel files
+- Centralized logging and environment management
+- Type-safe configuration system
 
 ## Background and Use Cases
 
@@ -36,23 +38,28 @@ conda activate semantic-analyzer
 pip install -e .
 ```
 
-2. Set up environment variables:
+2. Set up environment variables in `.env` file or export them:
 ```bash
 # For OpenAI
-export OPENAI_API_KEY='your-key-here'
+OPENAI_API_KEY='your-key-here'
 
 # For Azure OpenAI
-export AZURE_OPENAI_API_KEY='your-key-here'
-export AZURE_OPENAI_ENDPOINT='your-endpoint'
-export AZURE_OPENAI_DEPLOYMENT_NAME='your-deployment'
+AZURE_OPENAI_API_KEY='your-key-here'
+AZURE_OPENAI_ENDPOINT='your-endpoint'
+AZURE_OPENAI_DEPLOYMENT_NAME='your-deployment'
 
 # For Finnish support (Windows)
-setx VOIKKO_PATH "C:\scripts\Voikko"
+VOIKKO_PATH="C:\scripts\Voikko"
 ```
 
 3. Basic usage:
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
+from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+
+# Set up the environment
+config = EnvironmentConfig(log_level="INFO")
+env_manager = EnvironmentManager(config)
 
 async def analyze_text():
     analyzer = SemanticAnalyzer()
@@ -93,11 +100,11 @@ semantic-text-analyzer/
 │   ├── parameters/    # Analysis parameters
 │   └── config/        # Config files
 ├── src/               # Source code
-│   ├── config/            # Configuration files
-│   ├── formatters/        # Formatting code
+│   ├── config/            # Configuration management
+│   ├── formatters/        # Output formatting
 │   ├── loaders/           # Parameter loading and validation
-│   ├── models/            # Parameter models
-│   ├── nb_helpers/        # Notebook helpers
+│   ├── models/            # Data models and type definitions
+│   ├── nb_helpers/        # Notebook helpers and environment management
 │   ├── semantic_analyzer/ # Main analyzer interface
 │   ├── analyzers/         # Analysis components
 │   ├── core/              # Core functionality

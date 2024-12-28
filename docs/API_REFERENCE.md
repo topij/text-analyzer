@@ -1,6 +1,39 @@
 # API Reference
 
-Complete API documentation for the Semantic Text Analyzer.
+## Environment Management
+
+### EnvironmentManager
+
+The `EnvironmentManager` class provides centralized environment setup and management.
+
+```python
+from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+
+# Initialize
+config = EnvironmentConfig(log_level="INFO")
+env_manager = EnvironmentManager(config)
+
+# Methods
+env_manager.verify_environment()  # Check environment setup
+env_manager.display_configuration()  # Show current config
+env_manager.get_llm_info(analyzer)  # Get LLM details
+```
+
+### LoggingManager
+
+The `LoggingManager` class handles logging configuration and management.
+
+```python
+from src.nb_helpers.logging_manager import LoggingManager
+
+# Initialize
+logging_manager = LoggingManager()
+
+# Methods
+logging_manager.configure_logging(level="INFO")
+logging_manager.setup_debug_logging(module_name)
+logging_manager.verify_logging_setup()
+```
 
 ## Core Classes
 

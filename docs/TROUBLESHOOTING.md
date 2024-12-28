@@ -159,6 +159,56 @@ print("Exists:", os.path.exists(path))
 print("Writable:", os.access(path, os.W_OK))
 ```
 
+## Environment Setup Issues
+
+### Environment Verification Failed
+
+Use the environment manager to diagnose the issue:
+
+```python
+from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+
+# Initialize with debug logging
+config = EnvironmentConfig(log_level="DEBUG")
+env_manager = EnvironmentManager(config)
+
+# Check environment status
+status = env_manager.verify_environment()
+print("Environment Status:", status)
+
+# Display current configuration
+env_manager.display_configuration()
+```
+
+Common causes:
+1. Missing or invalid `.env` file
+2. Incorrect project root detection
+3. Missing required directories
+4. Invalid configuration values
+
+### Logging Issues
+
+Use the logging manager to verify setup:
+
+```python
+from src.nb_helpers.logging_manager import LoggingManager
+
+# Initialize logging manager
+logging_manager = LoggingManager()
+
+# Verify logging setup
+logging_manager.verify_logging_setup(show_hierarchy=True)
+
+# Enable debug logging for troubleshooting
+logging_manager.setup_debug_logging("src.analyzers")
+```
+
+Common issues:
+1. Incorrect log level configuration
+2. Missing log handlers
+3. Permission issues with log files
+4. Conflicting logger configurations
+
 ## Debug Mode
 
 Enable detailed logging:

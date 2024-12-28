@@ -1,6 +1,6 @@
 # Configuration Guide
 
-This guide covers the configuration options for the Semantic Text Analyzer.
+This guide covers configuration options for the Semantic Text Analyzer.
 
 ## Configuration Methods
 
@@ -65,6 +65,69 @@ features:
   batch_processing: true
 ```
 
+## Environment Configuration
+
+The environment setup is managed through the `EnvironmentManager` class, which provides a centralized way to configure and manage the application environment.
+
+### Basic Environment Setup
+
+```python
+from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+
+# Create environment configuration
+config = EnvironmentConfig(
+    env_type="local",          # or "azure"
+    log_level="INFO",          # Logging level
+    config_dir="config",       # Configuration directory
+    project_root=None,         # Auto-detected if None
+)
+
+# Initialize environment
+env_manager = EnvironmentManager(config)
+```
+
+### Environment Variables
+
+Create a `.env` file in your project root with these variables:
+
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=your-key-here
+
+# Azure OpenAI Configuration
+AZURE_OPENAI_API_KEY=your-key-here
+AZURE_OPENAI_ENDPOINT=your-endpoint
+AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
+
+# Finnish Language Support
+VOIKKO_PATH=path-to-voikko  # Required for Finnish
+```
+
+## Configuration Files
+
+### Main Configuration (config.yaml)
+
+```yaml
+# Global settings
+global:
+  environment: "local"  # or "azure"
+  log_level: "INFO"
+  project_root: null    # Auto-detected if null
+
+# Model settings
+model:
+  default_provider: "azure"  # or "openai"
+  default_model: "gpt-4"
+  temperature: 0.0
+  max_tokens: 2000
+
+# Logging settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+```
+
 ## Excel Parameter Files
 
 ### General Parameters Sheet
@@ -99,23 +162,78 @@ Column Names:
 - domain: Optional domain classification
 ```
 
-## Environment Variables
+## Logging Configuration
 
-Required environment variables:
+Logging is managed through the `LoggingManager` class:
 
-```bash
-# LLM Provider Keys (at least one required)
-OPENAI_API_KEY=your-key-here
-AZURE_OPENAI_API_KEY=your-key-here
-ANTHROPIC_API_KEY=your-key-here
+```python
+from src.nb_helpers.logging_manager import LoggingManager
 
-# Azure Configuration (if using Azure)
-AZURE_OPENAI_ENDPOINT=your-endpoint
-AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
+# Initialize logging manager
+logging_manager = LoggingManager()
 
-# Finnish Support (Windows)
-VOIKKO_PATH=C:\scripts\Voikko
+# Configure logging
+logging_manager.configure_logging(
+    level="INFO",
+    format_string="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+# Set up debug logging for specific component
+logging_manager.setup_debug_logging("src.analyzers.keyword_analyzer")
+
+# Verify logging setup
+logging_manager.verify_logging_setup(show_hierarchy=True)
 ```
+
+## Directory Structure
+
+The project uses a standardized directory structure:
+
+```
+project_root/
+├── data/
+│   ├── raw/         # Input data
+│   ├── interim/     # Intermediate files
+│   ├── processed/   # Analysis results
+│   ├── external/    # External resources
+│   ├── parameters/  # Parameter files
+│   └── config/      # Configuration files
+└── src/            # Source code
+```
+
+## Verification and Troubleshooting
+
+### Environment Verification
+
+```python
+# Verify environment setup
+status = env_manager.verify_environment()
+print("Environment Status:", status)
+
+# Display current configuration
+env_manager.display_configuration()
+
+# Get LLM information
+llm_info = env_manager.get_llm_info(analyzer, detailed=True)
+print("LLM Configuration:", llm_info)
+```
+
+### Common Configuration Issues
+
+1. **Environment Setup**:
+   - Use `env_manager.verify_environment()` to check setup
+   - Verify `.env` file is properly loaded
+   - Check project root detection
+
+2. **Logging**:
+   - Use `logging_manager.verify_logging_setup()` to check configuration
+   - Verify log levels are properly set
+   - Check handler configuration
+
+3. **LLM Configuration**:
+   - Verify API keys in `.env`
+   - Check model availability
+   - Use `get_llm_info()` to verify settings
 
 ## Runtime Configuration
 
