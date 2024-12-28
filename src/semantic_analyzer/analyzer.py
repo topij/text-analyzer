@@ -49,13 +49,14 @@ from src.utils.output_formatter import OutputDetail
 from src.schemas import CompleteAnalysisResult
 from src.core.llm.factory import create_llm
 from FileUtils import FileUtils
+from .base import BaseSemanticAnalyzer, ResultProcessingMixin, AnalyzerFactory
 
 logger = logging.getLogger(__name__)
 
 from tqdm import tqdm  # For progress reporting
 
 
-class ExcelSemanticAnalyzer(ExcelAnalysisBase):
+class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Enhanced SemanticAnalyzer with Excel support."""
 
     ANALYZER_MAPPING = {
@@ -74,25 +75,14 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         **kwargs,
     ):
         """Initialize analyzer with Excel support and formatting."""
-        # Initialize base components
         super().__init__(
-            content_file=content_file,
             parameter_file=parameter_file,
             file_utils=file_utils,
-            **kwargs,
+            llm=llm,
+            format_config=output_config,
+            **kwargs
         )
-
-        # Create LLM if needed
-        self.llm = llm or create_llm()
-
-        # Initialize formatter with configuration
-        self.formatter = ExcelAnalysisFormatter(
-            file_utils=self.file_utils,
-            config=output_config
-            or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
-        )
-
-        # Initialize analyzers
+        self.content_file = content_file
         self._init_analyzers()
         logger.info(
             "Excel Semantic Analyzer initialized with formatting support"
@@ -270,7 +260,7 @@ class ExcelSemanticAnalyzer(ExcelAnalysisBase):
         return types
 
 
-class SemanticAnalyzer:
+class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Main interface for semantic text analysis."""
 
     # Define valid types consistently using plural form
@@ -306,18 +296,13 @@ class SemanticAnalyzer:
         """Initialize analyzer with parameters and components."""
         try:
             # Initialize core components
-            self.file_utils = file_utils or FileUtils()
-
-            # Load and validate parameters
-            self._init_parameters(parameter_file)
-
-            # Initialize categories
+            super().__init__(
+                parameter_file=parameter_file,
+                file_utils=file_utils,
+                llm=llm,
+                **kwargs
+            )
             self._init_categories(categories)
-
-            # Initialize config and LLM
-            self._init_config_and_llm(llm)
-
-            # Initialize analyzers
             self._init_analyzers()
 
             # Initialize formatter
@@ -720,7 +705,7 @@ class SemanticAnalyzer:
                     result, CategoryOutput
                 ):
                     results[analysis_type] = CategoryAnalysisResult(
-                        matches=result.categories,
+                        matches=result.categories,  # Map categories to matches
                         language=result.language,
                         success=result.success,
                         error=result.error,
