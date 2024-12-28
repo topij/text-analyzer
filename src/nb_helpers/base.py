@@ -94,18 +94,8 @@ class DebugMixin:
     """Common debug functionality."""
 
     def setup_debug_logging(self, logger_name: str) -> None:
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(logging.DEBUG)
-
-        # Configure debug handler if not present
-        if not any(h.level == logging.DEBUG for h in logger.handlers):
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-            )
-            handler.setFormatter(formatter)
-            handler.setLevel(logging.DEBUG)
-            logger.addHandler(handler)
+        from src.nb_helpers.logging_manager import LoggingManager
+        LoggingManager().setup_debug_logging(logger_name)
 
     def display_debug_info(self, results: Any) -> None:
         """Display debug information."""
