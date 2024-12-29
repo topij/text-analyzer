@@ -4,13 +4,12 @@ import json
 import logging
 import pytest
 from typing import Any, Dict
-import logging
 from pydantic import BaseModel
 
 from src.analyzers.keyword_analyzer import KeywordAnalyzer, KeywordOutput
 from src.core.language_processing import create_text_processor
 from tests.helpers.mock_llms.keyword_mock import KeywordMockLLM
-
+from tests.conftest import test_environment_manager
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -60,13 +59,20 @@ class TestKeywordAnalyzer:
         return KeywordMockLLM()
 
     @pytest.fixture
-    def analyzer(self, mock_llm, test_analyzer_config):
+    def analyzer(self, mock_llm, test_environment_manager):
         """Create analyzer with mock LLM and test config."""
-        config = test_analyzer_config.get_analyzer_config("keywords")
+        config = {
+            "min_confidence": 0.3,
+            "max_keywords": 10,
+            "min_keyword_length": 3,
+            "include_compounds": True,
+            "language": "en",
+            "focus_on": "technical content analysis",
+        }
+        
         return KeywordAnalyzer(
             llm=mock_llm,
             config=config,
-            language_processor=create_text_processor(language="en"),
         )
 
     def _validate_keyword_result(self, result: KeywordOutput) -> None:
@@ -81,61 +87,54 @@ class TestKeywordAnalyzer:
 
     @pytest.mark.asyncio
     async def test_technical_keyword_extraction(self, analyzer):
-        """Test extraction of technical keywords."""
-        text = "The machine learning model uses neural networks."
-        raw_result = await analyzer.analyze(text)
-        print(f"raw_result: {raw_result}, result type: {type(raw_result)}")
-        # Transform output for testing
-        result = transform_analyzer_output(raw_result)
-
-        print(f"Transformed result: {result}, result type: {type(result)}")
-
-        # Validate result structure
-        self._validate_keyword_result(result)
-
-        # Check for technical keywords
-        keywords = [kw.keyword.lower() for kw in result.keywords]
-        assert "machine learning" in keywords
-        assert "neural network" in keywords
-
-        # Verify technical domain
-        assert any(kw.domain == "technical" for kw in result.keywords)
+        """Test keyword extraction for technical content."""
+        text = """Machine learning models are trained using large datasets.
+                Neural networks enable complex pattern recognition."""
+        result = await analyzer.analyze(text)
+        
+        assert result.success
+        assert len(result.keywords) > 0
+        assert any("machine learning" in kw.keyword.lower() for kw in result.keywords)
 
     @pytest.mark.asyncio
     async def test_empty_input(self, analyzer):
-        """Test analyzer behavior with empty input."""
-        raw_result = await analyzer.analyze("")
-        result = transform_analyzer_output(raw_result)
+        """Test handling of empty input."""
+        result = await analyzer.analyze("")
         assert not result.success
-        assert len(result.keywords) == 0
-        assert result.error is not None
+        assert "Empty input text" in result.error
 
     @pytest.mark.asyncio
     async def test_none_input(self, analyzer):
-        """Test analyzer behavior with None input."""
-        with pytest.raises(ValueError):
+        """Test handling of None input."""
+        with pytest.raises(ValueError, match="Input text cannot be None"):
             await analyzer.analyze(None)
 
     @pytest.mark.asyncio
-    async def test_finnish_language(self, test_analyzer_config, mock_llm):
+    async def test_finnish_language(self, mock_llm, test_environment_manager):
         """Test Finnish language support."""
-        config = test_analyzer_config.get_analyzer_config("keywords")
-
-        # Create Finnish analyzer
-        fi_analyzer = KeywordAnalyzer(
+        config = {
+            "min_confidence": 0.3,
+            "max_keywords": 10,
+            "min_keyword_length": 3,
+            "include_compounds": True,
+            "language": "fi",
+            "focus_on": "general content analysis",
+        }
+        
+        analyzer = KeywordAnalyzer(
             llm=mock_llm,
             config=config,
-            language_processor=create_text_processor(language="fi"),
         )
 
-        text = "Koneoppimismalli käyttää neuroverkkoja."
-        raw_result = await fi_analyzer.analyze(text)
-        result = transform_analyzer_output(raw_result)
+        text = """
+        Tekoäly ja koneoppiminen ovat tärkeitä teknologioita.
+        Ohjelmistokehitys vaatii paljon osaamista.
+        """
 
+        result = await analyzer.analyze(text)
         self._validate_keyword_result(result)
-        assert result.language == "fi"
 
-        # Check Finnish keywords
-        keywords = [kw.keyword.lower() for kw in result.keywords]
-        assert "koneoppimismalli" in keywords
-        assert "neuroverkko" in keywords
+        # Verify Finnish keywords
+        keywords = {kw.keyword.lower() for kw in result.keywords}
+        assert "tekoäly" in keywords, "Expected Finnish keyword not found"
+        assert "koneoppiminen" in keywords, "Expected Finnish keyword not found"

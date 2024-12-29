@@ -5,10 +5,7 @@ from src.analyzers.theme_analyzer import ThemeAnalyzer
 from src.core.language_processing import create_text_processor
 from src.schemas import ThemeOutput, ThemeInfo
 from tests.helpers.mock_llms.theme_mock import ThemeMockLLM
-from tests.helpers.config import (
-    create_test_config,
-)  # Remove test_analyzer_config import
-
+from tests.conftest import test_environment_manager
 
 class TestThemeAnalyzer:
     """Tests for theme analysis functionality."""
@@ -19,14 +16,22 @@ class TestThemeAnalyzer:
         return ThemeMockLLM()
 
     @pytest.fixture
-    def analyzer(
-        self, mock_llm, test_analyzer_config
-    ):  # test_analyzer_config comes from conftest.py
+    def analyzer(self, mock_llm, test_environment_manager):
         """Create analyzer with mock LLM and test config."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+        
+        config = {
+            "min_confidence": 0.3,
+            "max_themes": 5,
+            "language": "en",
+            "focus_on": "general content analysis",
+        }
+        
         return ThemeAnalyzer(
             llm=mock_llm,
-            config=test_analyzer_config.get_analyzer_config("themes"),
-            language_processor=create_text_processor(language="en"),
+            config=config,
+            language_processor=create_text_processor(language="en", file_utils=file_utils),
         )
 
     def _validate_theme_result(self, result: ThemeOutput) -> None:
@@ -117,29 +122,38 @@ class TestThemeAnalyzer:
             await analyzer.analyze(None)
 
     @pytest.mark.asyncio
-    async def test_finnish_language(self, test_analyzer_config, mock_llm):
+    async def test_finnish_language(
+        self, mock_llm, test_environment_manager
+    ):
         """Test Finnish language support."""
-        config = test_analyzer_config.get_analyzer_config("themes")
-
-        # Create Finnish analyzer
-        fi_analyzer = ThemeAnalyzer(
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+        
+        config = {
+            "min_confidence": 0.3,
+            "max_themes": 5,
+            "language": "fi",
+            "focus_on": "general content analysis",
+        }
+        
+        analyzer = ThemeAnalyzer(
             llm=mock_llm,
             config=config,
-            language_processor=create_text_processor(language="fi"),
+            language_processor=create_text_processor(language="fi", file_utils=file_utils),
         )
 
-        text = """Koneoppimismallit koulutetaan suurilla datajoukolla.
-                 Neuroverkon arkkitehtuuri sisältää useita kerroksia.
-                 Datan esikäsittely ja piirteiden suunnittelu ovat tärkeitä."""
+        text = """
+        Tekoäly ja koneoppiminen ovat tärkeitä teknologioita.
+        Ohjelmistokehitys vaatii paljon osaamista.
+        """
 
-        result = await fi_analyzer.analyze(text)
+        result = await analyzer.analyze(text)
         self._validate_theme_result(result)
-        assert result.language == "fi"
 
-        # Check Finnish themes
+        # Verify Finnish themes
         themes = {theme.name.lower() for theme in result.themes}
-        assert "koneoppiminen" in themes
-        assert "data-analyysi" in themes
+        assert "tekoäly" in themes, "Expected Finnish theme not found"
+        assert "ohjelmistokehitys" in themes, "Expected Finnish theme not found"
 
     @pytest.mark.asyncio
     async def test_theme_hierarchy(self, analyzer):

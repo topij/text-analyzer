@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any, List, Dict, Tuple
+import json
 
 from langchain_core.messages import BaseMessage
 from src.schemas import CategoryMatch, CategoryOutput, Evidence
@@ -11,6 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class CategoryMockLLM(BaseMockLLM):
+    """Mock LLM for category analysis testing."""
+
+    def __init__(self):
+        super().__init__()
+        self._config = {}  # Use private attribute instead of pydantic field
+
     def _detect_content_type(self, message: str) -> Tuple[str, str]:
         """Detect language and content type from message."""
         message = message.lower()
@@ -28,14 +35,18 @@ class CategoryMockLLM(BaseMockLLM):
             "dataa",
             "tiedon",
             "tehokkaasti",
+            "tekoäly",  # Add common Finnish test terms
+            "ohjelmistokehitys",
         }
 
         # Check for Finnish text presence
-        is_finnish = any(term in message for term in finnish_terms)
+        finnish_matches = [term for term in finnish_terms if term in message]
+        is_finnish = bool(finnish_matches)
         language = "fi" if is_finnish else "en"
         logger.debug(
-            f"Language detection - Message contains Finnish terms: {is_finnish}"
+            f"Language detection - Finnish terms found: {finnish_matches}"
         )
+        logger.debug(f"Language detection - Using language: {language}")
 
         # Business indicators by language
         business_indicators = {
@@ -98,6 +109,20 @@ class CategoryMockLLM(BaseMockLLM):
         last_message = messages[-1].content if messages else ""
         logger.debug(f"CategoryMockLLM: Processing message: {last_message}")
 
+        # Extract config from the messages
+        for msg in messages:
+            if isinstance(msg.content, str) and "config" in msg.content.lower():
+                try:
+                    # Look for config in the message content
+                    config_str = msg.content.split("config=", 1)[1].strip()
+                    # Remove any trailing text after the config JSON
+                    config_str = config_str.split("\n")[0].strip()
+                    # Parse the config
+                    self._config.update(json.loads(config_str))
+                    logger.debug(f"Found config in message: {self._config}")
+                except Exception as e:
+                    logger.warning(f"Failed to parse config from message: {e}")
+
         if not last_message:
             return CategoryOutput(
                 categories=[],
@@ -112,8 +137,33 @@ class CategoryMockLLM(BaseMockLLM):
         )
 
         if language == "fi":
-            return self._get_finnish_response(content_type)
-        return self._get_english_response(content_type)
+            response = self._get_finnish_response(content_type)
+        else:
+            response = self._get_english_response(content_type)
+
+        # Adjust confidence based on focus
+        if "focus_on" in self._config:
+            focus = self._config["focus_on"].lower()
+            for cat in response.categories:
+                if focus == "technical analysis" and cat.name == "Technical":
+                    cat.confidence *= 1.1  # Boost technical confidence
+                elif focus == "business analysis" and cat.name == "Business":
+                    cat.confidence *= 1.1  # Boost business confidence
+                else:
+                    cat.confidence *= 0.9  # Reduce other confidences
+
+                # Ensure confidence stays in valid range
+                cat.confidence = min(1.0, max(0.0, cat.confidence))
+
+        # Filter by min_confidence if set
+        if "min_confidence" in self._config:
+            min_conf = float(self._config["min_confidence"])
+            response.categories = [
+                cat for cat in response.categories 
+                if cat.confidence >= min_conf
+            ]
+
+        return response
 
     def _get_english_response(self, content_type: str) -> CategoryOutput:
         """Get English category response."""
@@ -126,7 +176,7 @@ class CategoryMockLLM(BaseMockLLM):
                 categories=[
                     CategoryMatch(
                         name="Technical",
-                        confidence=0.9,
+                        confidence=0.75,  # Lower base confidence
                         description="Technical content with software and API focus",
                         evidence=[
                             Evidence(
@@ -149,7 +199,7 @@ class CategoryMockLLM(BaseMockLLM):
                 categories=[
                     CategoryMatch(
                         name="Business",
-                        confidence=0.95,
+                        confidence=0.75,  # Lower base confidence
                         description="Business metrics and financial analysis",
                         evidence=[
                             Evidence(
@@ -179,7 +229,7 @@ class CategoryMockLLM(BaseMockLLM):
                 categories=[
                     CategoryMatch(
                         name="Technical",
-                        confidence=0.9,
+                        confidence=0.75,  # Lower base confidence
                         description="Tekninen sisältö ja ohjelmistokehitys",
                         evidence=[
                             Evidence(
@@ -202,22 +252,19 @@ class CategoryMockLLM(BaseMockLLM):
                 categories=[
                     CategoryMatch(
                         name="Business",
-                        confidence=0.95,
-                        description="Liiketoiminnan mittarit ja analyysi",
+                        confidence=0.75,  # Lower base confidence
+                        description="Liiketoiminnan mittarit ja talousanalyysi",
                         evidence=[
                             Evidence(
-                                text="Liikevaihto kasvoi merkittävästi",
+                                text="Q3 taloudelliset tulokset osoittavat 15% kasvun",
                                 relevance=0.95,
                             ),
                             Evidence(
-                                text="Markkinaosuus laajeni uusille sektoreille",
+                                text="Markkinalaajuuden strategia keskittyy uusiin sektoreihin",
                                 relevance=0.90,
                             ),
                         ],
-                        themes=[
-                            "Taloudellinen Suorituskyky",
-                            "Markkinastrategia",
-                        ],
+                        themes=["Taloudellinen suorituskyky", "Markkinastrategia"],
                     ),
                 ],
                 language="fi",

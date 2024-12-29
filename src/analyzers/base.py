@@ -136,9 +136,12 @@ class TextAnalyzer(ABC):
     def _get_language(self) -> str:
         """Get current language with better fallback."""
         if self.language_processor:
+            logger.debug(f"Getting language from language_processor: {self.language_processor.language}")
             return self.language_processor.language
         if "language" in self.config:
+            logger.debug(f"Getting language from config: {self.config['language']}")
             return self.config["language"]
+        logger.debug("No language found, using 'unknown'")
         return "unknown"
 
     def _prepare_result(self, result: Any, output_type: str) -> Any:

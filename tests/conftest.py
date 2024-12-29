@@ -3,11 +3,15 @@
 import pytest
 import logging
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Generator, Optional
+import yaml
 
 from src.core.config import AnalyzerConfig
 from src.config.manager import ConfigManager
+from src.core.managers import EnvironmentManager, EnvironmentConfig
 from FileUtils import FileUtils
 
 
@@ -25,6 +29,9 @@ TEST_ENV_VARS = {
     "AZURE_OPENAI_API_KEY": "azure-test-key-123",
     "AZURE_OPENAI_ENDPOINT": "https://test-endpoint.azure.com",
     "AZURE_OPENAI_DEPLOYMENT_NAME": "test-deployment",
+    "APP_LOGGING_LEVEL": "DEBUG",
+    "APP_MODELS_DEFAULT_PROVIDER": "openai",
+    "APP_MODELS_DEFAULT_MODEL": "gpt-4o-mini",
 }
 
 
@@ -71,6 +78,12 @@ models:
     parameters:
         temperature: 0.0
         max_tokens: 1000
+    providers:
+        openai:
+            available_models:
+                gpt-4o-mini:
+                    description: "Fast and cost-effective for simpler tasks"
+                    max_tokens: 4096
 languages:
     default_language: en
     languages:
@@ -115,10 +128,109 @@ analysis:
     return config_manager
 
 
+@pytest.fixture
+def test_environment_manager(file_utils: FileUtils, test_config_manager: ConfigManager) -> Generator[EnvironmentManager, None, None]:
+    """Create EnvironmentManager instance."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Create necessary subdirectories
+        config_dir = temp_path / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create config content
+        config_content = """
+environment: production
+logging:
+  level: DEBUG
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  disable_existing_loggers: false
+
+models:
+  default_provider: mock
+  default_model: mock-model
+  parameters:
+    temperature: 0.7
+    max_tokens: 1000
+  providers:
+    mock:
+      api_key: mock-key
+      models:
+        - mock-model
+        - mock-model-large
+
+languages:
+  default_language: en
+  languages:
+    en:
+      name: English
+      code: en
+    fi:
+      name: Finnish
+      code: fi
+
+features:
+  use_cache: true
+  batch_processing: true
+
+analysis:
+  keywords:
+    min_confidence: 0.3
+    max_keywords: 10
+    min_keyword_length: 3
+    include_compounds: true
+    language: en
+    focus_on: general content analysis
+  themes:
+    min_confidence: 0.3
+    max_themes: 5
+    language: en
+    focus_on: general content analysis
+  categories:
+    min_confidence: 0.3
+    language: en
+    focus_on: general content analysis
+"""
+        # Create config.yaml
+        base_config = config_dir / "config.yaml"
+        base_config.write_text(config_content)
+        
+        # Initialize environment manager with test components
+        config = EnvironmentConfig(
+            project_root=temp_path,
+            custom_directory_structure=TEST_DIRECTORY_STRUCTURE,
+            config_dir=str(config_dir),
+        )
+        
+        # Reset singleton state
+        EnvironmentManager._instance = None
+        EnvironmentManager._initialized = False
+        
+        # Create environment manager instance
+        environment = EnvironmentManager(config=config)
+        
+        # Set up test components
+        environment._components = {
+            "file_utils": file_utils,
+            "config_manager": test_config_manager,
+        }
+        
+        yield environment
+        
+        # Cleanup
+        environment._initialized = False
+        environment._instance = None
+
+
 @pytest.fixture(scope="session")
-def test_analyzer_config(test_config_manager: ConfigManager) -> AnalyzerConfig:
+def test_analyzer_config(test_environment_manager: EnvironmentManager) -> AnalyzerConfig:
     """Create AnalyzerConfig for testing."""
-    return AnalyzerConfig(config_manager=test_config_manager)
+    components = test_environment_manager.get_components()
+    return AnalyzerConfig(
+        file_utils=components["file_utils"],
+        config_manager=components["config_manager"]
+    )
 
 
 @pytest.fixture
@@ -154,17 +266,6 @@ def test_parameters() -> Dict[str, Any]:
     }
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests."""
-    import asyncio
-
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest.fixture(autouse=True)
 def setup_test_env():
     """Automatically set up test environment variables for each test."""
@@ -183,3 +284,14 @@ def setup_test_env():
             os.environ.pop(key, None)
         else:
             os.environ[key] = value
+
+
+@pytest.fixture
+def event_loop():
+    """Create event loop for async tests."""
+    import asyncio
+
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    yield loop
+    loop.close()

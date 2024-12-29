@@ -71,6 +71,7 @@ class CategoryAnalyzer(TextAnalyzer):
                 f"Input text: {text[:100]}..."
             )  # Log first 100 chars of input
             logger.debug(f"Available categories: {self.categories}")
+            logger.debug(f"Current language from config: {self._get_language()}")
 
             result = await self.chain.ainvoke(text)
 
@@ -87,6 +88,7 @@ class CategoryAnalyzer(TextAnalyzer):
                         f"CategoryAnalyzer.analyze: Parsed JSON data: {data}"
                     )
                     result = CategoryOutput(**data)
+                    logger.debug(f"Language from LLM response: {result.language}")
                 except Exception as e:
                     logger.error(f"Error parsing AIMessage content: {e}")
                     return CategoryOutput(
@@ -105,6 +107,13 @@ class CategoryAnalyzer(TextAnalyzer):
                     and cat.name in self.categories
                 ]
 
+            # Only set language if not already set by LLM
+            if not result.language or result.language == "unknown":
+                result.language = self._get_language()
+                logger.debug(f"Set language from config: {result.language}")
+            else:
+                logger.debug(f"Using language from LLM: {result.language}")
+
             return result
 
         except Exception as e:
@@ -115,116 +124,6 @@ class CategoryAnalyzer(TextAnalyzer):
                 success=False,
                 error=str(e),
             )
-
-        # temporary fix for the test failure
-        # async def analyze(self, text: str) -> CategoryOutput:
-        #     """Analyze text with AIMessage handling."""
-
-        #     if not self.categories:
-        #         logger.warning("No categories available for analysis")
-        #         return CategoryOutput(
-        #             categories=[],
-        #             language=self._get_language(),
-        #             success=False,
-        #             error="No categories configured",
-        #         )
-        #     if text is None:
-        #         raise ValueError("Input text cannot be None")
-
-        #     if not text:
-        #         return CategoryOutput(
-        #             categories=[],
-        #             language=self._get_language(),
-        #             success=False,
-        #             error="Empty input text",
-        #         )
-
-        #     try:
-        #         logger.debug("CategoryAnalyzer.analyze: Starting analysis")
-        #         logger.debug(
-        #             f"Input text: {text[:100]}..."
-        #         )  # Log first 100 chars of input
-        #         logger.debug(f"Available categories: {self.categories}")
-
-        #         result = await self.chain.ainvoke(text)
-
-        #         logger.debug(
-        #             f"CategoryAnalyzer.analyze: Chain result type: {type(result)}"
-        #         )
-        #         logger.debug(f"CategoryAnalyzer.analyze: Chain result: {result}")
-
-        #         # Handle AIMessage from mock LLMs
-        #         if hasattr(result, "content"):
-        #             try:
-        #                 data = json.loads(result.content)
-        #                 logger.debug(
-        #                     f"CategoryAnalyzer.analyze: Parsed JSON data: {data}"
-        #                 )
-        #                 result = CategoryOutput(**data)
-        #             except Exception as e:
-        #                 logger.error(f"Error parsing AIMessage content: {e}")
-        #                 return CategoryOutput(
-        #                     categories=[],
-        #                     language=self._get_language(),
-        #                     success=False,
-        #                     error=f"Error parsing response: {str(e)}",
-        #                 )
-
-        #         # Filter categories by confidence
-        #         if getattr(result, "categories", None):
-        #             result.categories = [
-        #                 cat
-        #                 for cat in result.categories
-        #                 if cat.confidence >= self.min_confidence
-        #                 and cat.name in self.categories
-        #             ]
-
-        #         return result
-
-        except Exception as e:
-            logger.error(f"CategoryAnalyzer.analyze: Exception occurred: {e}")
-            return CategoryOutput(
-                categories=[],
-                language=self._get_language(),
-                success=False,
-                error=str(e),
-            )
-
-    # don't remove, this is the working production version
-    # async def analyze(self, text: str) -> CategoryOutput:
-    #     """Analyze text with structured output validation."""
-    #     if text is None:
-    #         raise ValueError("Input text cannot be None")
-
-    #     if not text:
-    #         return CategoryOutput(
-    #             categories=[],
-    #             language=self._get_language(),
-    #             success=False,
-    #             error="Empty input text",
-    #         )
-
-    #     try:
-    #         result = await self.chain.ainvoke(text)
-
-    #         # Filter categories by confidence and match against predefined categories
-    #         result.categories = [
-    #             cat
-    #             for cat in result.categories
-    #             if cat.confidence >= self.min_confidence
-    #             and cat.name in self.categories
-    #         ]
-
-    #         return result
-
-    #     except Exception as e:
-    #         logger.error(f"Category analysis failed: {str(e)}")
-    #         return CategoryOutput(
-    #             categories=[],
-    #             language=self._get_language(),
-    #             success=False,
-    #             error=str(e),
-    #         )
 
     def _create_error_output(self) -> CategoryOutput:
         """Create error output."""
@@ -249,7 +148,10 @@ class CategoryAnalyzer(TextAnalyzer):
             3. Provide specific evidence from the text for each category match
             
             Only match categories when there is clear supporting evidence in the text.
-            Each match must include specific quotes or references from the text.""",
+            Each match must include specific quotes or references from the text.
+            
+            Configuration:
+            config={config_json}""",
                 ),
                 (
                     "human",
@@ -274,58 +176,11 @@ class CategoryAnalyzer(TextAnalyzer):
                 "text": RunnablePassthrough(),
                 "language": lambda _: self._get_language(),
                 "categories_json": self._format_categories_json,
+                "config_json": lambda _: json.dumps(self.config),
             }
             | template
             | self.llm.with_structured_output(CategoryOutput)
         )
-
-    # def _create_chain(self) -> RunnableSequence:
-    #     """Create enhanced LangChain processing chain."""
-    #     template = ChatPromptTemplate.from_messages(
-    #         [
-    #             (
-    #                 "system",
-    #                 """You are a JSON-focused classification expert. Your responses must be ONLY valid JSON, no additional text.
-    #             Analyze text and classify it into predefined categories.""",
-    #             ),
-    #             (
-    #                 "human",
-    #                 """Categories for classification:
-    #             {categories_json}
-
-    #             Text to analyze (Language: {language}):
-    #             {text}
-
-    #             Return ONLY a JSON object with this exact structure (no other text):
-    #             {{
-    #                 "categories": [
-    #                     {{
-    #                         "name": "exact_category_name",
-    #                         "confidence": 0.95,
-    #                         "explanation": "why this category applies",
-    #                         "evidence": [
-    #                             {{
-    #                                 "text": "relevant quote",
-    #                                 "relevance": 0.9
-    #                             }}
-    #                         ]
-    #                     }}
-    #                 ]
-    #             }}""",
-    #             ),
-    #         ]
-    #     )
-
-    #     return (
-    #         {
-    #             "text": RunnablePassthrough(),
-    #             "categories_json": self._format_categories_json,
-    #             "language": lambda _: self._get_language(),
-    #         }
-    #         | template
-    #         | self.llm
-    #         | self._post_process_llm_output
-    #     )
 
     def _format_categories_json(self, _: Any) -> str:
         """Format categories as detailed JSON for prompt."""

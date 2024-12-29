@@ -1,7 +1,7 @@
 # tests/helpers/mock_llms/theme_mock.py
 
 import logging
-from typing import Any, List
+from typing import Any, List, Tuple
 
 from langchain_core.messages import BaseMessage
 
@@ -95,21 +95,38 @@ class ThemeMockLLM(BaseMockLLM):
             return ThemeOutput(
                 themes=[
                     ThemeInfo(
-                        name="Koneoppiminen",
+                        name="Tekoäly",
                         description="Tekoälyn ja koneoppimisen soveltaminen",
                         confidence=0.9,
+                        keywords=["tekoäly", "koneoppiminen", "neuroverkko"],
+                        parent_theme=None,
+                    ),
+                    ThemeInfo(
+                        name="Koneoppiminen",
+                        description="Koneoppimisen menetelmät ja mallit",
+                        confidence=0.85,
                         keywords=["koneoppimismalli", "neuroverkko", "data"],
+                        parent_theme="Tekoäly",
+                    ),
+                    ThemeInfo(
+                        name="Ohjelmistokehitys",
+                        description="Ohjelmistokehityksen menetelmät ja työkalut",
+                        confidence=0.85,
+                        keywords=["ohjelmistokehitys", "teknologia", "osaaminen"],
                         parent_theme=None,
                     ),
                     ThemeInfo(
                         name="Data-analyysi",
                         description="Datan käsittely ja analysointi",
-                        confidence=0.85,
+                        confidence=0.8,
                         keywords=["data", "esikäsittely", "piirteet"],
                         parent_theme="Koneoppiminen",
                     ),
                 ],
-                theme_hierarchy={"Koneoppiminen": ["Data-analyysi"]},
+                theme_hierarchy={
+                    "Tekoäly": ["Koneoppiminen"],
+                    "Koneoppiminen": ["Data-analyysi"]
+                },
                 language="fi",
                 success=True,
             )
@@ -137,3 +154,91 @@ class ThemeMockLLM(BaseMockLLM):
                 language="fi",
                 success=True,
             )
+
+    def _detect_content_type(self, message: str) -> Tuple[str, str]:
+        """Detect language and content type from message."""
+        message = message.lower()
+
+        # Finnish language detection - check first
+        finnish_terms = {
+            "koneoppimis",
+            "neuroverko",
+            "järjestelmä",
+            "rajapinta",
+            "validointi",
+            "käsittelee",
+            "analysoivat",
+            "mallit",
+            "dataa",
+            "tiedon",
+            "tehokkaasti",
+            "tekoäly",  # Add common Finnish test terms
+            "ohjelmistokehitys",
+        }
+
+        # Check for Finnish text presence
+        finnish_matches = [term for term in finnish_terms if term in message]
+        is_finnish = bool(finnish_matches)
+        language = "fi" if is_finnish else "en"
+        logger.debug(
+            f"Language detection - Finnish terms found: {finnish_matches}"
+        )
+        logger.debug(f"Language detection - Using language: {language}")
+
+        # Business indicators by language
+        business_indicators = {
+            "en": [
+                "revenue growth",
+                "financial results",
+                "market expansion",
+                "customer acquisition",
+                "q3",
+                "quarterly",
+            ],
+            "fi": [
+                "liikevaihdon kasvu",
+                "taloudelliset tulokset",
+                "markkinalaajuus",
+                "asiakashankinta",
+            ],
+        }
+
+        # Technical indicators by language
+        technical_indicators = {
+            "en": [
+                "machine learning",
+                "neural network",
+                "trained",
+                "datasets",
+                "api",
+                "system",
+            ],
+            "fi": [
+                "koneoppimis",
+                "neuroverko",
+                "data",
+                "järjestelmä",
+                "rajapinta",
+                "validointi",
+                "analysoida",
+                "tekoäly",
+                "ohjelmistokehitys",
+            ],
+        }
+
+        # Count matches for detected language
+        tech_count = sum(
+            1 for term in technical_indicators[language] if term in message
+        )
+        business_count = sum(
+            1 for term in business_indicators[language] if term in message
+        )
+
+        logger.debug(
+            f"Language {language}: Technical matches: {tech_count}, Business matches: {business_count}"
+        )
+        content_type = (
+            "business" if business_count > tech_count else "technical"
+        )
+
+        return language, content_type

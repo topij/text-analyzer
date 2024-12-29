@@ -421,15 +421,24 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         file_utils: Optional[FileUtils] = None,
         llm: Optional[BaseChatModel] = None,
         categories: Optional[Dict[str, CategoryConfig]] = None,
+        environment_manager: Optional[EnvironmentManager] = None,
+        config_manager: Optional[ConfigManager] = None,
         **kwargs,
     ):
         """Initialize analyzer with parameters and components."""
         try:
+            # Get components from environment manager if provided
+            if environment_manager:
+                components = environment_manager.get_components()
+                file_utils = components["file_utils"]
+                config_manager = components["config_manager"]
+
             # Initialize core components
             super().__init__(
                 parameter_file=parameter_file,
                 file_utils=file_utils,
                 llm=llm,
+                config_manager=config_manager,
                 **kwargs
             )
             self._init_categories(categories)

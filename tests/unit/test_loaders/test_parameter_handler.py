@@ -1,12 +1,17 @@
 # tests/unit/test_loaders/test_parameter_handler.py
 
 import logging
+import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Generator
+import tempfile
+from contextlib import contextmanager
 
 import pandas as pd
 import pytest
-
+from src.core.managers.environment_manager import EnvironmentManager
+from src.config.manager import ConfigManager
+from src.core.managers import EnvironmentConfig
 from src.loaders.models import CategoryConfig, GeneralParameters, ParameterSet
 from src.loaders.parameter_config import ParameterSheets
 from src.loaders.parameter_handler import ParameterHandler
@@ -15,17 +20,180 @@ from FileUtils import FileUtils, OutputFileType
 
 logger = logging.getLogger(__name__)
 
+TEST_DIRECTORY_STRUCTURE = {
+    "data": ["raw", "processed", "config", "parameters"],
+    "logs": [],
+    "reports": [],
+    "models": [],
+}
+
 
 @pytest.fixture
-def file_utils() -> FileUtils:
+def test_root(tmp_path_factory) -> Path:
+    """Create a test root directory."""
+    root = tmp_path_factory.mktemp("test_data")
+    # Create data directory structure
+    data_dir = root / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for subdir in ["raw", "processed", "config", "parameters"]:
+        subdir_path = data_dir / subdir
+        subdir_path.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Created directory: {subdir_path}")
+    return root
+
+
+@pytest.fixture
+def file_utils(test_root) -> FileUtils:
     """Create FileUtils instance."""
-    return FileUtils()
+    logger.debug(f"Initializing FileUtils with project root: {test_root}")
+    return FileUtils(
+        project_root=test_root,
+        directory_structure=TEST_DIRECTORY_STRUCTURE,
+        create_directories=True,
+    )
 
 
 @pytest.fixture
-def parameter_handler() -> ParameterHandler:
+def test_environment_manager(test_root, file_utils: FileUtils) -> Generator[EnvironmentManager, None, None]:
+    """Create EnvironmentManager instance."""
+    logger.debug(f"Setting up test environment in: {test_root}")
+    
+    # Create test config.yaml FIRST
+    config_content = """
+environment: test
+logging:
+  level: DEBUG
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  disable_existing_loggers: false
+
+models:
+  default_provider: mock
+  default_model: mock-model
+  parameters:
+    temperature: 0.7
+    max_tokens: 1000
+  providers:
+    mock:
+      api_key: mock-key
+      models:
+        - mock-model
+        - mock-model-large
+
+languages:
+  default_language: en
+  languages:
+    en:
+      name: English
+      code: en
+    fi:
+      name: Finnish
+      code: fi
+
+features:
+  use_cache: true
+  batch_processing: true
+"""
+    # Create config file in data/config directory
+    config_file = test_root / "data" / "config" / "config.yaml"
+    config_file.write_text(config_content)
+    logger.debug(f"Created config file at: {config_file}")
+    
+    # Verify config file exists
+    if not config_file.exists():
+        logger.error(f"Failed to create config file at: {config_file}")
+        raise RuntimeError(f"Failed to create config file at: {config_file}")
+    else:
+        logger.debug(f"Config file exists with size: {config_file.stat().st_size} bytes")
+    
+    # THEN initialize config manager with file_utils and the temp directory
+    config_manager = ConfigManager(
+        config_dir="config",  # This will be relative to data directory
+        file_utils=file_utils,
+        project_root=test_root
+    )
+    
+    # Create test parameter file
+    param_content = """
+general:
+  max_keywords: 10
+  min_keyword_length: 3
+  language: en
+  focus_on: general content analysis
+  include_compounds: true
+  max_themes: 3
+  min_confidence: 0.3
+  column_name_to_analyze: text
+
+categories:
+  technical:
+    description: Technical content
+    keywords: [programming, software, algorithm]
+    threshold: 0.6
+  business:
+    description: Business content
+    keywords: [strategy, market, revenue]
+    threshold: 0.5
+
+predefined_keywords:
+  technical: [python, java, cloud]
+  business: [sales, marketing, finance]
+
+excluded_keywords:
+  - the
+  - and
+  - or
+
+analysis_settings:
+  theme_analysis:
+    enabled: true
+    min_confidence: 0.5
+  weights:
+    statistical: 0.4
+    llm: 0.6
+
+domain_context:
+  technical:
+    focus: technology and software development
+  business:
+    focus: business strategy and operations
+"""
+    param_file = test_root / "data" / "parameters" / "parameters.yaml"
+    param_file.write_text(param_content)
+    logger.debug(f"Created parameter file at: {param_file}")
+    
+    # Initialize environment manager with test components
+    config = EnvironmentConfig(
+        project_root=test_root,
+        log_level="DEBUG",
+        config_dir="config",  # This will be relative to data directory
+    )
+    
+    # Reset the singleton state to ensure clean initialization
+    EnvironmentManager._instance = None
+    EnvironmentManager._initialized = False
+    
+    # Create new instance with config
+    env_manager = EnvironmentManager(config=config)
+    
+    # Set up test components
+    env_manager.file_utils = file_utils
+    env_manager.config_manager = config_manager
+    env_manager._components = {
+        "file_utils": file_utils,
+        "config_manager": config_manager,
+    }
+    env_manager._initialized = True
+    
+    yield env_manager
+
+
+@pytest.fixture
+def parameter_handler(test_environment_manager) -> ParameterHandler:
     """Create ParameterHandler with validator."""
-    handler = ParameterHandler()
+    components = test_environment_manager.get_components()
+    file_utils = components["file_utils"]
+    handler = ParameterHandler(file_utils=file_utils)
     handler.validator = ParameterValidation()
     return handler
 
@@ -104,120 +272,102 @@ class TestParameterHandling:
             raise
 
     def test_parameter_loading(
-        self, file_utils: FileUtils, test_parameters: Dict[str, Any]
+        self, test_environment_manager, test_parameters
     ) -> None:
-        """Test parameter loading with proper sheet structure."""
-        # Get correct sheet name and column names
-        general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
-        column_names = ParameterSheets.get_column_names("general", "en")
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ]["en"]
+        """Test loading parameters from Excel file."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
 
-        # Create DataFrame with proper structure
+        # Get sheet name and column names
+        sheet_name = ParameterSheets.get_sheet_name("general", "en")
+        column_names = ParameterSheets.get_column_names("general", "en")
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["en"]
+
+        # Create DataFrame rows
         data_rows = []
         for internal_name, value in test_parameters["general"].items():
-            # Find the Excel parameter name that maps to this internal name
             excel_name = next(
-                (
-                    excel
-                    for excel, internal in param_mappings.items()
-                    if internal == internal_name
-                ),
-                internal_name,  # Fallback to internal name if no mapping found
+                (excel for excel, internal in param_mappings.items() if internal == internal_name),
+                internal_name
             )
-            data_rows.append(
-                {
-                    column_names["parameter"]: excel_name,
-                    column_names["value"]: value,
-                    column_names[
-                        "description"
-                    ]: f"Description for {excel_name}",
-                }
-            )
-
-        # Create DataFrame
-        param_df = pd.DataFrame(data_rows)
-
-        # Create the dictionary of DataFrames with proper sheet name
-        sheet_data = {
-            general_sheet_name: param_df
-        }  # Now this is Dict[str, pd.DataFrame]
-
-        # Save file
-        file_path = self._save_parameter_file(
-            file_utils=file_utils,
-            sheet_data=sheet_data,
-            file_name="test_params",
-        )
-
-        # Test parameter loading
-        handler = ParameterHandler(file_path)
-        params = handler.get_parameters()
-
-        assert isinstance(params, ParameterSet)
-        assert params.general.language == test_parameters["general"]["language"]
-        assert params.general.focus_on == test_parameters["general"]["focus_on"]
-        assert (
-            params.general.max_keywords
-            == test_parameters["general"]["max_keywords"]
-        )
-
-    def test_finnish_parameters(
-        self, file_utils: FileUtils, test_parameters: Dict[str, Any]
-    ) -> None:
-        """Test Finnish parameter handling."""
-        # Get Finnish sheet and column names
-        general_sheet_name = ParameterSheets.get_sheet_name("general", "fi")
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ]["fi"]
-        column_names = ParameterSheets.get_column_names("general", "fi")
-
-        # Modify for Finnish
-        fi_params = test_parameters.copy()
-        fi_params["general"]["language"] = "fi"
-        fi_params["general"]["focus_on"] = "tekninen sisältö"
-
-        # Create Excel mappings and DataFrame rows
-        data_rows = []
-        for internal_name, value in fi_params["general"].items():
-            # Find the Excel parameter name that maps to this internal name
-            excel_name = next(
-                (
-                    excel
-                    for excel, internal in param_mappings.items()
-                    if internal == internal_name
-                ),
-                internal_name,  # Fallback to internal name if no mapping found
-            )
-            data_rows.append(
-                {
-                    column_names["parameter"]: excel_name,
-                    column_names["value"]: value,
-                    column_names["description"]: f"Kuvaus: {excel_name}",
-                }
-            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Description for {excel_name}",
+            })
 
         # Create DataFrame and sheet data
         param_df = pd.DataFrame(data_rows)
-        sheet_data = {general_sheet_name: param_df}
-
-        # Save and test
-        param_file = self._save_parameter_file(
-            file_utils=file_utils, sheet_data=sheet_data, file_name="fi_params"
+        file_path = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data={sheet_name: param_df},
+            file_name="test_params",
         )
 
-        handler = ParameterHandler(param_file)
+        # Test loading
+        handler = ParameterHandler(file_path=file_path, file_utils=file_utils)
         params = handler.get_parameters()
 
+        # Verify loaded parameters
+        assert isinstance(params, ParameterSet)
+        assert params.general.max_keywords == test_parameters["general"]["max_keywords"]
+        assert params.general.focus_on == test_parameters["general"]["focus_on"]
+        assert params.general.column_name_to_analyze == test_parameters["general"]["column_name_to_analyze"]
+
+    def test_finnish_parameters(
+        self, test_environment_manager, test_parameters
+    ) -> None:
+        """Test loading Finnish language parameters."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+
+        # Update test parameters for Finnish
+        fi_params = test_parameters.copy()
+        fi_params["general"]["language"] = "fi"
+
+        # Get sheet name and column names for Finnish
+        sheet_name = ParameterSheets.get_sheet_name("general", "fi")
+        column_names = ParameterSheets.get_column_names("general", "fi")
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"]["fi"]
+
+        # Create DataFrame rows
+        data_rows = []
+        for internal_name, value in fi_params["general"].items():
+            excel_name = next(
+                (excel for excel, internal in param_mappings.items() if internal == internal_name),
+                internal_name
+            )
+            data_rows.append({
+                column_names["parameter"]: excel_name,
+                column_names["value"]: value,
+                column_names["description"]: f"Kuvaus: {excel_name}",
+            })
+
+        # Create DataFrame and sheet data
+        param_df = pd.DataFrame(data_rows)
+        file_path = self._save_parameter_file(
+            file_utils=file_utils,
+            sheet_data={sheet_name: param_df},
+            file_name="test_params_fi",
+        )
+
+        # Test loading
+        handler = ParameterHandler(file_path=file_path, file_utils=file_utils)
+        params = handler.get_parameters()
+
+        # Verify Finnish settings
         assert params.general.language == "fi"
-        assert params.general.focus_on == "tekninen sisältö"
+        assert params.general.max_keywords == fi_params["general"]["max_keywords"]
+        assert params.general.focus_on == fi_params["general"]["focus_on"]
+        assert params.general.column_name_to_analyze == fi_params["general"]["column_name_to_analyze"]
 
     def test_parameter_validation(
-        self, file_utils: FileUtils, test_parameters: Dict[str, Any]
+        self, test_environment_manager, test_parameters
     ) -> None:
         """Test parameter validation rules."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
         column_names = ParameterSheets.get_column_names("general", "en")
 
@@ -262,7 +412,8 @@ class TestParameterHandling:
 
         # Expect ValueError with validation errors
         with pytest.raises(ValueError) as exc_info:
-            handler = ParameterHandler(param_file)
+            handler = ParameterHandler(file_path=param_file, file_utils=file_utils)
+            handler.get_parameters()
 
         # Verify specific validation error messages
         error_msg = str(exc_info.value)
@@ -271,8 +422,13 @@ class TestParameterHandling:
         assert "min_confidence" in error_msg
         assert "less than or equal to 1" in error_msg
 
-    def test_missing_mandatory_fields(self, file_utils: FileUtils) -> None:
+    def test_missing_mandatory_fields(
+        self, test_environment_manager
+    ) -> None:
         """Test validation of mandatory fields."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
         column_names = ParameterSheets.get_column_names("general", "en")
 
@@ -306,7 +462,7 @@ class TestParameterHandling:
         )
 
         # Test with incomplete but valid parameters
-        handler = ParameterHandler(param_file)
+        handler = ParameterHandler(file_path=param_file, file_utils=file_utils)
         params = handler.get_parameters()
 
         # Should fill in missing non-mandatory fields with defaults
@@ -327,13 +483,19 @@ class TestParameterHandling:
 
         # Should raise ValueError for missing mandatory field
         with pytest.raises(ValueError) as exc_info:
-            handler = ParameterHandler(param_file)
+            handler = ParameterHandler(file_path=param_file, file_utils=file_utils)
+            handler.get_parameters()
 
         assert "Missing mandatory parameters" in str(exc_info.value)
         assert "column_name_to_analyze" in str(exc_info.value)
 
-    def test_empty_parameter_file(self, file_utils: FileUtils) -> None:
+    def test_empty_parameter_file(
+        self, test_environment_manager
+    ) -> None:
         """Test handling of empty parameter files."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+
         sheet_name = ParameterSheets.get_sheet_name("general", "en")
 
         # Create DataFrame with required fields but empty values
@@ -365,7 +527,7 @@ class TestParameterHandling:
             file_name="empty_params",
         )
 
-        handler = ParameterHandler(param_file)
+        handler = ParameterHandler(file_path=param_file, file_utils=file_utils)
         params = handler.get_parameters()
 
         # Should use defaults while preserving required fields
@@ -377,9 +539,12 @@ class TestParameterHandling:
         assert params.general.include_compounds is True  # default
 
     def test_parameter_updates(
-        self, file_utils: FileUtils, test_parameters: Dict[str, Any]
+        self, test_environment_manager, test_parameters
     ) -> None:
         """Test parameter update functionality."""
+        components = test_environment_manager.get_components()
+        file_utils = components["file_utils"]
+
         general_sheet_name = ParameterSheets.get_sheet_name("general", "en")
         column_names = ParameterSheets.get_column_names("general", "en")
         param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
@@ -417,7 +582,8 @@ class TestParameterHandling:
             file_name="update_params",
         )
 
-        handler = ParameterHandler(param_file)
+        handler = ParameterHandler(file_path=param_file, file_utils=file_utils)
+        params = handler.get_parameters()
 
         # Update parameters
         updated = handler.update_parameters(
