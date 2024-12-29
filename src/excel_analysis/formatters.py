@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 
 from FileUtils import FileUtils, OutputFileType
+from src.core.managers import EnvironmentManager
 from src.utils.formatting_config import ExcelOutputConfig, OutputDetail
 from src.utils.output_formatter import BaseFormatter
 
@@ -21,8 +22,30 @@ class ExcelAnalysisFormatter(BaseFormatter):
         file_utils: Optional[FileUtils] = None,
         config: Optional[ExcelOutputConfig] = None,
     ):
+        """Initialize formatter with FileUtils and config.
+        
+        Args:
+            file_utils: FileUtils instance (required)
+            config: Optional output configuration
+            
+        Raises:
+            ValueError: If file_utils is None and EnvironmentManager not initialized
+        """
         super().__init__(config or ExcelOutputConfig())
-        self.file_utils = file_utils or FileUtils()
+        
+        # Try to get FileUtils from EnvironmentManager first
+        if file_utils is None:
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                self.file_utils = components["file_utils"]
+            except RuntimeError:
+                raise ValueError(
+                    "FileUtils instance must be provided to ExcelAnalysisFormatter. "
+                    "Use EnvironmentManager to get a shared FileUtils instance."
+                )
+        else:
+            self.file_utils = file_utils
 
     def format_output(
         self, results: Dict[str, Any], analysis_types: List[str]

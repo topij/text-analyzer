@@ -8,6 +8,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 from src.config.manager import ConfigManager
 from src.core.config import AnalyzerConfig
+from src.core.managers import EnvironmentManager
 
 from src.loaders.parameter_config import (
     ParameterConfigurations,
@@ -43,14 +44,47 @@ class ParameterHandler:
         file_path: Optional[Union[str, Path]] = None,
         file_utils: Optional[FileUtils] = None,
     ):
-        """Initialize parameter handler."""
-        self.file_utils = file_utils or FileUtils()
-        self.analyzer_config = AnalyzerConfig(file_utils=self.file_utils)
+        """Initialize parameter handler.
+        
+        Args:
+            file_path: Optional path to parameter file
+            file_utils: FileUtils instance (required)
+            
+        Raises:
+            ValueError: If file_utils is None and EnvironmentManager not initialized
+        """
+        # Try to get components from EnvironmentManager first
+        if file_utils is None:
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                self.file_utils = components["file_utils"]
+                self.analyzer_config = AnalyzerConfig(
+                    file_utils=self.file_utils,
+                    config_manager=components["config_manager"]
+                )
+            except RuntimeError:
+                raise ValueError(
+                    "FileUtils instance must be provided to ParameterHandler. "
+                    "Use EnvironmentManager to get a shared FileUtils instance."
+                )
+        else:
+            self.file_utils = file_utils
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                self.analyzer_config = AnalyzerConfig(
+                    file_utils=self.file_utils,
+                    config_manager=components["config_manager"]
+                )
+            except RuntimeError:
+                raise ValueError(
+                    "EnvironmentManager must be initialized before creating ParameterHandler. "
+                    "Initialize EnvironmentManager first."
+                )
+
         self.config = ParameterConfigurations()
         self.validator = ParameterValidation()
-
-        # Convert file path to Path object if provided
-        # self.file_path = Path(file_path) if file_path else None
 
         # Handle file path
         if isinstance(file_path, (str, Path)):
@@ -281,72 +315,6 @@ class ParameterHandler:
             logger.error(f"Error loading parameters: {e}")
             raise ValueError(str(e))
 
-    # def _load_and_validate_parameters(self) -> None:
-    #     """Load and validate parameters from file."""
-    #     try:
-    #         if not self.file_path or not self.file_path.exists():
-    #             logger.debug("No parameter file specified, using defaults")
-    #             default_config = self.config.DEFAULT_CONFIG.copy()
-    #             default_config["general"]["language"] = self.language
-    #             default_config["general"][
-    #                 "focus_on"
-    #             ] = "general content analysis"
-    #             self.parameters = ParameterSet(**default_config)
-    #             return
-
-    #         expected_sheet = ParameterSheets.get_sheet_name(
-    #             "general", self.language
-    #         )
-    #         sheets = self.file_utils.load_excel_sheets(self.file_path)
-
-    #         if expected_sheet not in sheets:
-    #             raise ValueError(
-    #                 f"Invalid parameter file: Required sheet '{expected_sheet}' not found. "
-    #                 f"Available sheets: {', '.join(sheets.keys())}"
-    #             )
-
-    #         df = sheets[expected_sheet]
-    #         if df.empty:
-    #             logger.debug("Empty parameter sheet, using defaults")
-    #             default_config = self.config.DEFAULT_CONFIG.copy()
-    #             default_config["general"]["language"] = self.language
-    #             default_config["general"][
-    #                 "focus_on"
-    #             ] = "general content analysis"
-    #             self.parameters = ParameterSet(**default_config)
-    #             return
-
-    #         column_names = ParameterSheets.get_column_names(
-    #             "general", self.language
-    #         )
-    #         self._validate_mandatory_fields(df, column_names)
-
-    #         general_params = self._parse_general_parameters(df)
-    #         config = {
-    #             "general": general_params,
-    #             "categories": {},
-    #             "predefined_keywords": {},
-    #             "excluded_keywords": set(),
-    #             "analysis_settings": self.config.DEFAULT_CONFIG[
-    #                 "analysis_settings"
-    #             ],
-    #             "domain_context": {},
-    #         }
-
-    #         # Don't override explicit values with defaults
-    #         if "language" not in general_params:
-    #             general_params["language"] = self.language
-    #         if "min_keyword_length" not in general_params:
-    #             general_params["min_keyword_length"] = 3
-    #         if "include_compounds" not in general_params:
-    #             general_params["include_compounds"] = True
-
-    #         self.parameters = ParameterSet(**config)
-
-    #     except Exception as e:
-    #         logger.error(f"Error loading parameters: {e}")
-    #         raise ValueError(str(e))
-
     def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Parse general parameters with validation."""
         params = {}
@@ -371,31 +339,6 @@ class ParameterHandler:
                 params[internal_name] = self._convert_value(row[value_col])
 
         return params
-
-    # def _parse_general_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
-    #     """Parse general parameters with defaults for non-mandatory fields."""
-    #     params = {}
-    #     column_names = ParameterSheets.get_column_names(
-    #         "general", self.language
-    #     )
-    #     param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-    #         "parameters"
-    #     ][self.language]
-
-    #     param_col = column_names["parameter"]
-    #     value_col = column_names["value"]
-
-    #     excel_mappings = {
-    #         excel: internal for excel, internal in param_mappings.items()
-    #     }
-
-    #     for _, row in df.iterrows():
-    #         excel_name = row[param_col]
-    #         if excel_name in excel_mappings:
-    #             internal_name = excel_mappings[excel_name]
-    #             params[internal_name] = self._convert_value(row[value_col])
-
-    #     return params
 
     def _parse_keywords(
         self, df: Optional[pd.DataFrame]
@@ -530,81 +473,6 @@ class ParameterHandler:
             logger.error(f"Error parsing categories: {str(e)}", exc_info=True)
             return categories
 
-    # def _parse_categories(
-    #     self, df: Optional[pd.DataFrame]
-    # ) -> Dict[str, CategoryConfig]:
-    #     """Parse categories sheet."""
-    #     categories = {}
-    #     if df is None or df.empty:
-    #         return categories
-
-    #     try:
-    #         column_names = ParameterSheets.get_column_names(
-    #             "categories", self.language
-    #         )
-    #         cat_col = column_names["category"]
-
-    #         if cat_col not in df.columns:
-    #             logger.warning(
-    #                 f"Category column '{cat_col}' not found. Available columns: {df.columns.tolist()}"
-    #             )
-    #             return categories
-
-    #         for _, row in df.iterrows():
-    #             if pd.notna(row[cat_col]):
-    #                 cat_name = str(row[cat_col]).strip()
-
-    #                 description = ""
-    #                 if (
-    #                     "description" in column_names
-    #                     and column_names["description"] in df.columns
-    #                 ):
-    #                     description = row.get(column_names["description"], "")
-
-    #                 keywords = []
-    #                 if (
-    #                     "keywords" in column_names
-    #                     and column_names["keywords"] in df.columns
-    #                 ):
-    #                     keywords = self._split_list(
-    #                         row.get(column_names["keywords"], "")
-    #                     )
-
-    #                 threshold = 0.5
-    #                 if (
-    #                     "threshold" in column_names
-    #                     and column_names["threshold"] in df.columns
-    #                 ):
-    #                     threshold = float(
-    #                         row.get(column_names["threshold"], 0.5)
-    #                     )
-
-    #                 parent = None
-    #                 if (
-    #                     "parent" in column_names
-    #                     and column_names["parent"] in df.columns
-    #                 ):
-    #                     parent = (
-    #                         row.get(column_names["parent"])
-    #                         if pd.notna(row.get(column_names["parent"]))
-    #                         else None
-    #                     )
-
-    #                 categories[cat_name] = CategoryConfig(
-    #                     description=description,
-    #                     keywords=keywords,
-    #                     threshold=threshold,
-    #                     parent=parent,
-    #                 )
-    #                 logger.debug(
-    #                     f"Added category: {cat_name} with {len(keywords)} keywords"
-    #                 )
-
-    #     except Exception as e:
-    #         logger.error(f"Error parsing categories: {str(e)}")
-
-    #     return categories
-
     def _parse_domains(
         self, df: Optional[pd.DataFrame]
     ) -> Dict[str, DomainContext]:
@@ -706,7 +574,6 @@ class ParameterHandler:
 
         return settings
 
-    # @staticmethod
     def _convert_value(self, value: Any) -> Any:
         """Enhanced value conversion with type preservation."""
         if pd.isna(value):

@@ -1,3 +1,5 @@
+"""Core logging management functionality."""
+
 import logging
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
@@ -101,91 +103,69 @@ class LoggingManager:
             logger.setLevel(numeric_level)
 
     def _get_numeric_level(self, level: Union[str, int]) -> int:
-        """Convert string level to numeric if needed."""
-        if isinstance(level, str):
-            return getattr(logging, level.upper(), logging.WARNING)
-        return level
+        """Convert string level to numeric logging level."""
+        if isinstance(level, int):
+            return level
+        try:
+            return getattr(logging, level.upper())
+        except (AttributeError, TypeError) as e:
+            raise ValueError(f"Invalid log level: {level}") from e
 
     def _configure_root_logger(
         self, level: int, formatter: logging.Formatter
     ) -> None:
-        """Configure the root logger."""
-        root_logger = logging.getLogger()
-        root_logger.setLevel(level)
-        root_logger.handlers.clear()
+        """Configure root logger with proper handler cleanup."""
+        root = logging.getLogger()
+        root.setLevel(level)
         
+        # Remove existing handlers
+        for handler in root.handlers[:]:
+            root.removeHandler(handler)
+        
+        # Add console handler
         handler = logging.StreamHandler()
         handler.setFormatter(formatter)
         handler.setLevel(level)
-        root_logger.addHandler(handler)
+        root.addHandler(handler)
 
     def _configure_loggers(
         self, logger_names: List[str], level: str, numeric_level: int
     ) -> None:
         """Configure multiple loggers."""
-        for logger_name in logger_names:
-            is_http_logger = any(
-                name in logger_name.lower()
-                for name in ["httpx", "httpcore", "openai", "anthropic"]
-            )
-            
-            logger_level = (
-                logging.INFO if is_http_logger and level == "DEBUG"
-                else numeric_level
-            )
-            
+        for name in logger_names:
             self._configure_logger(
-                LoggerConfig(name=logger_name, level=logger_level)
+                LoggerConfig(
+                    name=name,
+                    level=numeric_level,
+                    format_string=self.DEFAULT_FORMAT
+                )
             )
 
     def _configure_logger(self, config: LoggerConfig) -> None:
-        """Configure a single logger."""
+        """Configure a specific logger."""
         logger = logging.getLogger(config.name)
-        logger.handlers.clear()
-        logger.propagate = config.propagate
         logger.setLevel(self._get_numeric_level(config.level))
+        logger.propagate = config.propagate
         
+        # Update handler format if specified
         if config.format_string:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter(config.format_string))
-            handler.setLevel(logger.level)
-            logger.addHandler(handler)
+            formatter = logging.Formatter(config.format_string)
+            for handler in logger.handlers:
+                handler.setFormatter(formatter)
 
-    def _get_logger_hierarchy(self, logger_name: str) -> List[str]:
-        """Get the hierarchy of logger names from root to specified logger."""
-        if not logger_name:
-            return []
-        parts = logger_name.split(".")
-        return [".".join(parts[: i + 1]) for i in range(len(parts))]
-
-    def _display_logger_info(self, name: str, show_hierarchy: bool) -> None:
-        """Display information about a specific logger."""
-        logger = logging.getLogger(name)
-        logger_name = "root" if name == "" else name
-        print(f"\nLogger: {logger_name}")
+    def _display_logger_info(self, logger_name: str, show_hierarchy: bool) -> None:
+        """Display information about a logger."""
+        logger = logging.getLogger(logger_name)
+        name_display = logger_name or "root"
+        print(f"\nLogger: {name_display}")
+        print(f"Level: {logging.getLevelName(logger.level)}")
+        print(f"Handlers: {len(logger.handlers)}")
+        print(f"Propagate: {logger.propagate}")
         
-        if show_hierarchy and name:
-            print("Hierarchy:")
-            for ancestor in self._get_logger_hierarchy(name):
-                ancestor_logger = logging.getLogger(ancestor)
-                print(
-                    f"  {ancestor}: "
-                    f"{logging.getLevelName(ancestor_logger.level)}"
-                )
-        
-        print(f"Set Level: {logging.getLevelName(logger.level)}")
-        print(
-            f"Effective Level: "
-            f"{logging.getLevelName(logger.getEffectiveLevel())}"
-        )
-        print(f"Propagates to root: {logger.propagate}")
-        
-        if logger.handlers:
-            print("Handlers:")
-            for i, handler in enumerate(logger.handlers):
-                print(
-                    f"  Handler {i+1} level: "
-                    f"{logging.getLevelName(handler.level)}"
-                )
-        else:
-            print("No handlers (uses root handlers)")
+        if show_hierarchy:
+            current = logger
+            hierarchy = []
+            while current:
+                hierarchy.append(current.name or "root")
+                current = current.parent
+            print(f"Hierarchy: {' -> '.join(reversed(hierarchy))}")

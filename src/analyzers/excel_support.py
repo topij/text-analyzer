@@ -125,10 +125,22 @@ class ExcelKeywordAnalyzer(KeywordAnalyzer, ExcelAnalysisBase):
 
     async def _process_batch(
         self, batch: List[str], **kwargs
-    ) -> List[KeywordAnalysisResult]:
-        """Process batch of texts with keyword analysis."""
+    ) -> List[Any]:
+        """Process batch of texts with keyword analysis.
+
+        Args:
+            batch: List of texts to analyze
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            List of keyword analysis results
+        """
+        # Filter out unsupported kwargs
+        analysis_kwargs = {k: v for k, v in kwargs.items() 
+                         if k not in ['show_progress', 'batch_size']}
+        
         return await asyncio.gather(
-            *[self.analyze(text, **kwargs) for text in batch]
+            *[self.analyze(text, **analysis_kwargs) for text in batch]
         )
 
 
@@ -234,10 +246,22 @@ class ExcelThemeAnalyzer(ThemeAnalyzer, ExcelAnalysisBase):
 
     async def _process_batch(
         self, batch: List[str], **kwargs
-    ) -> List[ThemeAnalysisResult]:
-        """Process batch of texts with theme analysis."""
+    ) -> List[Any]:
+        """Process batch of texts with theme analysis.
+
+        Args:
+            batch: List of texts to analyze
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            List of theme analysis results
+        """
+        # Filter out unsupported kwargs
+        analysis_kwargs = {k: v for k, v in kwargs.items() 
+                         if k not in ['show_progress', 'batch_size']}
+        
         return await asyncio.gather(
-            *[self.analyze(text, **kwargs) for text in batch]
+            *[self.analyze(text, **analysis_kwargs) for text in batch]
         )
 
 
@@ -331,8 +355,20 @@ class ExcelCategoryAnalyzer(CategoryAnalyzer, ExcelAnalysisBase):
 
     async def _process_batch(
         self, batch: List[str], **kwargs
-    ) -> List[CategoryAnalysisResult]:
-        """Process batch of texts with category analysis."""
+    ) -> List[Any]:
+        """Process batch of texts with category analysis.
+
+        Args:
+            batch: List of texts to analyze
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            List of category analysis results
+        """
+        # Filter out unsupported kwargs
+        analysis_kwargs = {k: v for k, v in kwargs.items() 
+                         if k not in ['show_progress', 'batch_size']}
+        
         return await asyncio.gather(
-            *[self.analyze(text, **kwargs) for text in batch]
+            *[self.analyze(text, **analysis_kwargs) for text in batch]
         )

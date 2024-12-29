@@ -1,7 +1,5 @@
 # src.analyzer.base.py
 
-# src/analyzers/base.py
-
 # TODO(test-infrastructure): Current analyzer implementations modify production code to handle
 # mock LLM responses. This should be refactored to handle the mock responses in the test code
 # instead. Potential approaches:
@@ -36,6 +34,7 @@ from src.core.llm.factory import create_llm
 from src.loaders.parameter_handler import ParameterHandler
 from src.core.language_processing.base import BaseTextProcessor
 from src.config.manager import ConfigManager
+from src.core.managers import EnvironmentManager
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +97,18 @@ class TextAnalyzer(ABC):
         config: Optional[Dict[str, Any]] = None,
     ):
         """Initialize analyzer with optional LLM and config."""
-        # Initialize analyzer config if not provided
+        # Get config from EnvironmentManager if not provided
         if llm is None:
-            analyzer_config = ConfigManager()
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                analyzer_config = components["config_manager"]
+            except RuntimeError:
+                raise ValueError(
+                    "EnvironmentManager must be initialized before creating TextAnalyzer. "
+                    "Initialize EnvironmentManager first or provide config and LLM."
+                )
+            
             llm = create_llm(config=analyzer_config)
 
             # Merge analyzer config with provided config if any

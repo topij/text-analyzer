@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
@@ -12,19 +13,23 @@ from FileUtils import FileUtils
 from src.config.manager import ConfigManager
 from src.core.config import AnalyzerConfig
 from src.semantic_analyzer.analyzer import SemanticAnalyzer
+from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
 
 logger = logging.getLogger(__name__)
 
 
 class EnvironmentType(str, Enum):
     """Environment types for analysis."""
-
     LOCAL = "local"
     AZURE = "azure"
 
 
 class AnalysisEnvironment:
-    """Environment manager supporting both local and Azure environments."""
+    """Environment manager supporting both local and Azure environments.
+    
+    .. deprecated:: 1.0.0
+       Use `EnvironmentManager` instead. This class will be removed in a future version.
+    """
 
     _instance = None
 
@@ -39,28 +44,40 @@ class AnalysisEnvironment:
         project_root: Optional[Path] = None,
         log_level: str = "INFO",
     ):
-        """Initialize environment manager."""
+        """Initialize environment manager.
+        
+        .. deprecated:: 1.0.0
+           Use `EnvironmentManager` instead. This class will be removed in a future version.
+        """
+        warnings.warn(
+            "AnalysisEnvironment is deprecated and will be removed in a future version. "
+            "Use EnvironmentManager instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         try:
             # Only initialize once
             if hasattr(self, "_initialized"):
                 return
 
-            # Set up basic logging first
-            self._configure_logging(log_level)
-
-            # Determine environment type
-            self.env_type = self._determine_env_type(env_type)
-            logger.info(f"Running in {self.env_type} environment")
-
-            # Set up project root based on environment
-            self.project_root = self._setup_project_root(project_root)
-            logger.info(f"Project root: {self.project_root}")
-
-            # Load environment variables
-            self._load_environment()
-
-            # Initialize components
-            self._init_components()
+            # Initialize new environment manager
+            env_config = EnvironmentConfig(
+                env_type=env_type,
+                project_root=project_root,
+                log_level=log_level
+            )
+            self._env_manager = EnvironmentManager(env_config)
+            
+            # Mirror properties from new manager
+            self.env_type = env_type or "local"
+            self.project_root = self._env_manager.project_root
+            
+            # Get components
+            components = self._env_manager.get_components()
+            self.file_utils = components["file_utils"]
+            self.config_manager = components["config_manager"]
+            self.analyzer_config = components["analyzer_config"]
 
             self._initialized = True
             logger.info("Analysis environment initialized successfully")

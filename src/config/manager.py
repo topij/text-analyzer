@@ -7,12 +7,18 @@ from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 
 from FileUtils import FileUtils
+from src.core.config_base import BaseConfigManager
 from .models import GlobalConfig, ModelConfig, LanguageConfig
 
 logger = logging.getLogger(__name__)
 
 
-class ConfigManager:
+class ConfigurationError(Exception):
+    """Raised when configuration loading fails."""
+    pass
+
+
+class ConfigManager(BaseConfigManager):
     """Configuration manager with FileUtils integration."""
 
     DEFAULT_DIRECTORY_STRUCTURE = {
@@ -33,13 +39,8 @@ class ConfigManager:
         custom_directory_structure: Optional[Dict[str, Any]] = None,
     ):
         """Initialize configuration manager."""
-        self.file_utils = file_utils or FileUtils()
-        # Use the provided project_root or get it from file_utils
-        self.project_root = (
-            Path(project_root) if project_root else self.file_utils.project_root
-        )
-        self.config_dir = config_dir
-
+        super().__init__(file_utils=file_utils, config_dir=config_dir, project_root=project_root)
+        
         # Store initialization variables for potential reinit
         self._custom_directory_structure = custom_directory_structure
 
@@ -63,7 +64,7 @@ class ConfigManager:
 
     def init_paths(self) -> None:
         """Initialize project paths."""
-        # Use project_root/data instead of creating new data dir
+        # Use project_root/data/config for configuration files
         self.data_dir = self.project_root / "data"
         self.config_path = self.data_dir / self.config_dir
         self.logs_dir = self.data_dir / "logs"
@@ -73,101 +74,109 @@ class ConfigManager:
             path.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Created directory: {path}")
 
+        logger.debug(f"Using config path: {self.config_path}")
+
     def init_file_utils(self) -> None:
         """Initialize or configure FileUtils."""
         if not self.file_utils:
-            directory_structure = (
-                self._custom_directory_structure
-                or self.DEFAULT_DIRECTORY_STRUCTURE
-            )
-            self.file_utils = FileUtils(
-                project_root=self.project_root,
-                directory_structure=directory_structure,
-            )
-            logger.debug("Created new FileUtils instance")
-        else:
-            logger.debug("Using provided FileUtils instance")
-
-    # src/config/manager.py
+            logger.error("FileUtils instance must be provided to ConfigManager. Use EnvironmentManager to get a shared instance.")
+            raise ValueError("FileUtils instance must be provided to ConfigManager")
+        logger.debug(f"Using FileUtils with project root: {self.file_utils.project_root}")
 
     def load_configurations(self) -> None:
         """Load configurations from all sources."""
         try:
-            # Load base config from config.yaml
+            # Get environment from env vars or default to development
             env = (
                 os.getenv("ENV")
                 or os.getenv("ENVIRONMENT", "development").lower()
             )
+            logger.debug(f"Loading configurations for environment: {env}")
 
-            # Load base config
-            config_file = self.config_path / "config.yaml"
-            if config_file.exists():
-                base_config = self.file_utils.load_yaml(config_file)
-                logger.debug(f"Loaded base config from {config_file}")
+            # Look for config in data/config first
+            data_config = self.project_root / "data" / "config" / "config.yaml"
+            logger.debug(f"Looking for data config at: {data_config}")
+            
+            if data_config.exists():
+                config_file = data_config
             else:
-                logger.warning(f"Base config file not found: {config_file}")
-                base_config = {}
+                # Fall back to config dir in project root
+                config_file = self.config_path / "config.yaml"
+            
+            logger.debug(f"Using config file: {config_file}")
+            
+            if not config_file.exists():
+                logger.error(f"Config file not found: {config_file}")
+                raise FileNotFoundError(f"Config file not found: {config_file}")
 
-            # Start with default config
-            self._config = {
-                "environment": "development",
-                "models": {
-                    "default_provider": "openai",
-                    "default_model": "gpt-4o-mini",
-                    "providers": {
-                        "openai": {
-                            "model": "gpt-4o-mini",
-                            "temperature": 0.0,
-                            "max_tokens": 1000,
-                        },
-                        "anthropic": {
-                            "model": "claude-3-sonnet-20240229",
-                            "temperature": 0.0,
-                            "max_tokens": 1000,
-                        },
-                    },
-                    "parameters": {
-                        "temperature": 0.0,
-                        "max_tokens": 1000,
-                        "top_p": 1.0,
-                    },
-                },
-            }
+            logger.debug(f"Loading config from: {config_file}")
+            base_config = self.file_utils.load_yaml(str(config_file))
+            if not base_config:
+                logger.error(f"Failed to load config from: {config_file}")
+                raise ValueError(f"Failed to load config from: {config_file}")
+            logger.debug(f"Loaded base config: {base_config}")
+            
+            # If this is production config, use it directly
+            if base_config.get("environment") == "production":
+                logger.debug("Found production config, using it directly")
+                self._config = GlobalConfig(**base_config)
+                logger.debug(f"Created GlobalConfig: {self._config.model_dump()}")
+                return
 
-            # Merge base config
-            if base_config:
-                self._config.update(base_config)
-                logger.debug("Merged base configuration")
+            # For non-production, try to load environment-specific config
+            env_config_file = self.config_path / f"config.{env}.yaml"
+            if env_config_file.exists():
+                logger.debug(f"Loading env config from: {env_config_file}")
+                env_config = self.file_utils.load_yaml(str(env_config_file))
+                logger.debug(f"Loaded env config: {env_config}")
+            else:
+                env_config = {}
+                logger.warning(f"Environment config not found: {env_config_file}")
 
-            # Load environment-specific config only if in development
-            if env == "development":
-                dev_config_file = self.config_path / "config.dev.yaml"
-                if dev_config_file.exists():
-                    dev_config = self.file_utils.load_yaml(dev_config_file)
-                    if dev_config:
-                        self._deep_merge(self._config, dev_config)
-                        logger.debug(
-                            f"Merged dev config from {dev_config_file}"
-                        )
+            # Merge configurations
+            config = {**base_config, **env_config}
+            logger.debug(f"Merged config: {config}")
 
-            # Create and validate config object
-            self.config = GlobalConfig(**self._config)
-            logger.debug(
-                f"Configuration loaded and validated: {self.config.model_dump()}"
-            )
+            # Add environment if not specified
+            if "environment" not in config:
+                config["environment"] = env
+
+            # Create GlobalConfig
+            self._config = GlobalConfig(**config)
+            logger.debug(f"Created GlobalConfig: {self._config.model_dump()}")
 
         except Exception as e:
-            logger.error(f"Error loading configurations: {e}")
-            self._ensure_minimal_config()
+            logger.error(f"Failed to load configurations: {e}", exc_info=True)
+            raise ConfigurationError(f"Failed to load configurations: {e}") from e
 
     def _ensure_minimal_config(self) -> None:
-        """Ensure minimal working configuration."""
-        logger.info("Creating minimal configuration")
-        self.config = GlobalConfig(
-            models=ModelConfig(default_model="gpt-4o-mini"),
-            logging={"level": "INFO"},
-            features={"use_caching": True},
-        )
+        """Ensure minimal configuration exists."""
+        minimal_config = {
+            "environment": "development",
+            "models": {
+                "default_provider": "openai",
+                "default_model": "gpt-4o-mini",
+                "parameters": {
+                    "temperature": 0.0,
+                    "max_tokens": 1000,
+                    "top_p": 1.0,
+                    "frequency_penalty": 0.0,
+                    "presence_penalty": 0.0
+                },
+                "providers": {
+                    "openai": {
+                        "available_models": {
+                            "gpt-4o-mini": {
+                                "description": "Fast and cost-effective for simpler tasks",
+                                "max_tokens": 4096
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        logger.debug(f"Using minimal config: {minimal_config}")
+        self._config = GlobalConfig(**minimal_config)
 
     def load_yaml(
         self, filename: str, required: bool = False
@@ -182,7 +191,7 @@ class ConfigManager:
                     )
                 return None
 
-            return self.file_utils.load_yaml(config_file)
+            return self.file_utils.load_yaml(str(config_file))
         except Exception as e:
             logger.error(f"Error loading {filename}: {e}")
             if required:
@@ -191,9 +200,9 @@ class ConfigManager:
 
     def get_config(self) -> GlobalConfig:
         """Get complete configuration."""
-        if not hasattr(self, "config"):
-            self._ensure_minimal_config()
-        return self.config
+        if not hasattr(self, "_config"):
+            raise ConfigurationError("Configuration not loaded. Call load_configurations() first.")
+        return self._config
 
     def get_model_config(self) -> ModelConfig:
         """Get model-specific configuration."""
@@ -206,6 +215,46 @@ class ConfigManager:
     def get_analyzer_config(self, analyzer_type: str) -> Dict[str, Any]:
         """Get configuration for specific analyzer type."""
         return self.get_config().get("analysis", {}).get(analyzer_type, {})
+
+    def get_provider_config(
+        self, provider: Optional[str] = None, model: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get provider-specific configuration."""
+        try:
+            # Get config, ensuring it's loaded
+            config = self.get_config()
+            model_config = config.models.model_dump()  # Convert to dict first
+
+            # Get provider, defaulting to config value
+            provider = provider or model_config.get("default_provider", "openai")
+            model = model or model_config.get("default_model", "gpt-4")
+
+            # Get base configuration for provider
+            provider_config = {}
+            if "providers" in model_config and provider in model_config["providers"]:
+                provider_config = model_config["providers"][provider].copy()
+
+            # If empty, use defaults
+            if not provider_config:
+                provider_config = {
+                    "model": model,
+                    "temperature": 0.0,
+                    "max_tokens": 1000,
+                }
+
+            # Add model name
+            provider_config["model"] = model
+
+            return provider_config
+
+        except Exception as e:
+            logger.error(f"Failed to get provider config: {e}")
+            # Return minimal config
+            return {
+                "model": model or "gpt-4",
+                "temperature": 0.0,
+                "max_tokens": 1000,
+            }
 
     def _deep_merge(self, dict1: Dict[str, Any], dict2: Dict[str, Any]) -> None:
         """Deep merge two dictionaries."""

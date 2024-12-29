@@ -14,6 +14,7 @@ from src.analyzers.keyword_analyzer import KeywordAnalyzer
 from src.analyzers.theme_analyzer import ThemeAnalyzer
 from src.core.config import AnalyzerConfig
 from src.core.language_processing import create_text_processor
+from src.core.managers import EnvironmentManager
 
 from src.loaders.parameter_handler import (
     ParameterHandler,
@@ -60,6 +61,12 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Enhanced SemanticAnalyzer with Excel support."""
 
     ANALYZER_MAPPING = {
+        "keywords": ("keyword_analyzer", KeywordAnalyzer),
+        "themes": ("theme_analyzer", ThemeAnalyzer),
+        "categories": ("category_analyzer", CategoryAnalyzer),
+    }
+
+    EXCEL_ANALYZER_MAPPING = {
         "keywords": ("keyword_analyzer", ExcelKeywordAnalyzer),
         "themes": ("theme_analyzer", ExcelThemeAnalyzer),
         "categories": ("category_analyzer", ExcelCategoryAnalyzer),
@@ -75,6 +82,19 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         **kwargs,
     ):
         """Initialize analyzer with Excel support and formatting."""
+        # Try to get FileUtils from EnvironmentManager first
+        if file_utils is None:
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                file_utils = components["file_utils"]
+            except RuntimeError:
+                raise ValueError(
+                    "FileUtils instance must be provided to ExcelSemanticAnalyzer. "
+                    "Use EnvironmentManager to get a shared FileUtils instance."
+                )
+
+        # Initialize base components with shared FileUtils
         super().__init__(
             parameter_file=parameter_file,
             file_utils=file_utils,
@@ -82,7 +102,12 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             format_config=output_config,
             **kwargs
         )
+        
+        # Store file paths
         self.content_file = content_file
+        self.parameter_file = parameter_file
+        
+        # Initialize analyzers
         self._init_analyzers()
         logger.info(
             "Excel Semantic Analyzer initialized with formatting support"
@@ -90,24 +115,62 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
     def _init_analyzers(self) -> None:
         """Initialize individual analyzers with proper configuration."""
-        language = self.parameters.parameters.general.language
+        language = self.parameters.general.language
         logger.info(f"Initializing analyzers for language: {language}")
+
+        # Choose appropriate mapping based on analyzer type
+        mapping = (
+            self.EXCEL_ANALYZER_MAPPING
+            if hasattr(self, 'content_file')
+            else self.ANALYZER_MAPPING
+        )
 
         for analyzer_type, (
             attr_name,
             analyzer_class,
-        ) in self.ANALYZER_MAPPING.items():
+        ) in mapping.items():
             logger.debug(f"Initializing {analyzer_type} analyzer...")
-            analyzer = analyzer_class(
-                content_file=self.content,
-                parameter_file=self.parameter_file,
-                llm=self.llm,
-                content_column=self.content_column,
-                file_utils=self.file_utils,
-            )
+            
+            # Initialize with appropriate parameters
+            if hasattr(self, 'content_file'):
+                analyzer = analyzer_class(
+                    content_file=self.content_file,
+                    parameter_file=self.parameter_file,
+                    llm=self.llm,
+                    file_utils=self.file_utils,
+                    content_column=getattr(self, 'content_column', 'content'),
+                )
+            else:
+                analyzer = analyzer_class(
+                    llm=self.llm,
+                    file_utils=self.file_utils,
+                    config={"language": language},
+                )
             setattr(self, attr_name, analyzer)
 
         logger.info(f"Successfully initialized all analyzers")
+
+    def _verify_analyzers(self) -> None:
+        """Verify that all required analyzers are properly initialized."""
+        logger.debug("Verifying analyzer initialization...")
+        
+        # Check if any analyzers are initialized
+        if not any(hasattr(self, attr_name) for _, (attr_name, _) in self.EXCEL_ANALYZER_MAPPING.items()):
+            raise ValueError("No analyzers have been initialized")
+        
+        # Verify each analyzer
+        for analyzer_type, (attr_name, _) in self.EXCEL_ANALYZER_MAPPING.items():
+            if not hasattr(self, attr_name):
+                logger.warning(f"{analyzer_type} analyzer not initialized")
+                continue
+                
+            analyzer = getattr(self, attr_name)
+            if not analyzer:
+                raise ValueError(f"{analyzer_type} analyzer is None")
+                
+            logger.debug(f"Verified {analyzer_type} analyzer")
+            
+        logger.debug("All available analyzers verified successfully")
 
     async def analyze_excel(
         self,
@@ -178,6 +241,73 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         except Exception as e:
             logger.error(f"Excel analysis failed: {str(e)}", exc_info=True)
             raise RuntimeError(f"Excel analysis failed: {str(e)}")
+
+    async def analyze_excel(
+        self,
+        analysis_types: Optional[List[str]] = None,
+        batch_size: int = 10,
+        show_progress: bool = True,
+        **kwargs,
+    ) -> pd.DataFrame:
+        """Run Excel analysis with specified types.
+
+        Args:
+            analysis_types: List of analysis types to run
+            batch_size: Size of processing batches
+            show_progress: Whether to show progress bar
+            **kwargs: Additional analysis parameters
+
+        Returns:
+            DataFrame with analysis results
+        """
+        try:
+            # Verify analyzers are ready
+            self._verify_analyzers()
+
+            # Load and validate Excel content
+            content_df = pd.read_excel(self.content_file)
+            if content_df.empty:
+                raise ValueError("Excel file contains no data")
+
+            # Validate analysis types
+            types_to_run = self._validate_analysis_types(analysis_types)
+            logger.info(f"Running analyses: {', '.join(types_to_run)}")
+
+            # Run analyses concurrently
+            analysis_tasks = []
+            for analyzer_type in types_to_run:
+                attr_name = self.EXCEL_ANALYZER_MAPPING[analyzer_type][0]
+                analyzer = getattr(self, attr_name)
+                
+                logger.info(f"Running {analyzer_type} analysis...")
+                # Remove show_progress from kwargs
+                analysis_kwargs = {k: v for k, v in kwargs.items() if k != 'show_progress'}
+                task = analyzer.analyze_excel(
+                    batch_size=batch_size,
+                    **analysis_kwargs
+                )
+                analysis_tasks.append(task)
+
+            # Wait for all analyses to complete
+            results = await asyncio.gather(*analysis_tasks)
+
+            # Combine results
+            combined_df = pd.concat(results, axis=1)
+            logger.info("Excel analysis completed successfully")
+
+            # Save results if output file is specified
+            if 'output_file' in kwargs:
+                output_path = Path(kwargs['output_file'])
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                combined_df.to_excel(output_path, index=False)
+                logger.info(f"Results saved to: {output_path}")
+
+            return combined_df
+
+        except Exception as e:
+            error_msg = f"Excel analysis failed: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     def _combine_results(
         self, results: Dict[str, pd.DataFrame]
@@ -305,13 +435,6 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             self._init_categories(categories)
             self._init_analyzers()
 
-            # Initialize formatter
-            self.formatter = ExcelAnalysisFormatter(
-                file_utils=self.file_utils,
-                config=kwargs.get("format_config")
-                or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
-            )
-
             logger.info("Semantic Analyzer initialized successfully")
 
         except Exception as e:
@@ -354,19 +477,25 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
     def _init_config_and_llm(self, llm: Optional[BaseChatModel]) -> None:
         """Initialize configuration and LLM."""
-        self.config_manager = ConfigManager(file_utils=self.file_utils)
-        self.analyzer_config = AnalyzerConfig(
-            file_utils=self.file_utils, config_manager=self.config_manager
-        )
+        if not hasattr(self, "analyzer_config"):
+            try:
+                environment = EnvironmentManager.get_instance()
+                components = environment.get_components()
+                self.config_manager = components["config_manager"]
+                self.analyzer_config = AnalyzerConfig(
+                    file_utils=self.file_utils,
+                    config_manager=self.config_manager
+                )
+            except RuntimeError:
+                raise ValueError(
+                    "EnvironmentManager must be initialized before creating SemanticAnalyzer. "
+                    "Initialize EnvironmentManager first."
+                )
 
         self.llm = llm or create_llm(
-            config_manager=self.config_manager,
-            provider=self.analyzer_config.config.get("models", {}).get(
-                "default_provider"
-            ),
-            model=self.analyzer_config.config.get("models", {}).get(
-                "default_model"
-            ),
+            analyzer_config=self.analyzer_config,
+            provider=None,
+            model=None,
         )
 
     def _init_analyzers(self) -> None:
@@ -384,10 +513,7 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             }
 
             # Create language processor
-            self.language_processor = create_text_processor(
-                language=language,
-                config=processor_config,
-            )
+            self._initialize_text_processor()
 
             # Get base config
             base_config = self.analyzer_config.get_analyzer_config("base")
@@ -428,6 +554,22 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
         except Exception as e:
             logger.error(f"Failed to initialize analyzers: {e}")
+            raise
+
+    def _initialize_text_processor(self) -> None:
+        """Initialize text processor for language handling."""
+        try:
+            self.language_processor = create_text_processor(
+                language=self.parameters.general.language,
+                config={
+                    "min_keyword_length": self.parameters.general.min_keyword_length,
+                    "include_compounds": self.parameters.general.include_compounds,
+                },
+                file_utils=self.file_utils
+            )
+            logger.debug(f"Initialized text processor for language: {self.parameters.general.language}")
+        except Exception as e:
+            logger.error(f"Failed to initialize text processor: {e}")
             raise
 
     def verify_configuration(self) -> None:
@@ -493,9 +635,7 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             self.config = new_config
 
             # Create new language processor
-            self.language_processor = create_text_processor(
-                language=language, config=self.config
-            )
+            self._initialize_text_processor()
 
             # Reinitialize analyzers with new configuration
             self._init_analyzers()
@@ -1128,26 +1268,20 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     ) -> None:
         """Change LLM provider and optionally model."""
         try:
-            # Get available providers from config
-            available_providers = self.analyzer_config.config.get(
-                "models", {}
-            ).get("providers", {})
-            if provider not in available_providers:
-                raise ValueError(
-                    f"Invalid provider: {provider}. Available: {list(available_providers.keys())}"
-                )
+            # Get provider config
+            config = self.config_manager.get_config()
+            if not isinstance(config, dict):
+                config = config.model_dump()
+            
+            model_config = config.get("models", {})
+            provider_config = model_config.get("providers", {}).get(provider)
 
-            provider_config = available_providers[provider]
-            logger.debug(f"Selected provider config: {provider_config}")
+            if not provider_config:
+                logger.error(f"Provider {provider} not found in configuration")
+                return
 
-            # Validate model if provided
-            if model:
-                if "available_models" not in provider_config:
-                    logger.warning(
-                        f"No available_models defined for {provider}"
-                    )
-                elif model not in provider_config["available_models"]:
-                    raise ValueError(f"Invalid model for {provider}: {model}")
+            # Get model to use
+            if model and model in provider_config.get("available_models", {}):
                 new_model = model
             else:
                 # Use provider's default model if none specified
@@ -1165,24 +1299,25 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             self.analyzer_config.config["models"]["default_model"] = new_model
 
             # 2. Update config manager's config (handle both dict and Pydantic model cases)
-            if hasattr(self.config_manager.config, "model_dump"):
-                config_dict = self.config_manager.config.model_dump()
-                config_dict["models"]["default_provider"] = provider
-                config_dict["models"]["default_model"] = new_model
-                self.config_manager.config = GlobalConfig(**config_dict)
-            else:
-                if "models" not in self.config_manager.config:
-                    self.config_manager.config["models"] = {}
-                self.config_manager.config["models"][
-                    "default_provider"
-                ] = provider
-                self.config_manager.config["models"][
-                    "default_model"
-                ] = new_model
+            if hasattr(self.config_manager, "_config"):
+                if hasattr(self.config_manager._config, "model_dump"):
+                    config_dict = self.config_manager._config.model_dump()
+                    config_dict["models"]["default_provider"] = provider
+                    config_dict["models"]["default_model"] = new_model
+                    self.config_manager._config = GlobalConfig(**config_dict)
+                else:
+                    if "models" not in self.config_manager._config:
+                        self.config_manager._config["models"] = {}
+                    self.config_manager._config["models"][
+                        "default_provider"
+                    ] = provider
+                    self.config_manager._config["models"][
+                        "default_model"
+                    ] = new_model
 
             # Force reinitialize LLM with new configuration
             self.llm = create_llm(
-                config_manager=self.config_manager,
+                analyzer_config=self.analyzer_config,
                 provider=provider,
                 model=new_model,
             )
@@ -1202,5 +1337,27 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             )
 
         except Exception as e:
-            logger.error(f"Failed to change LLM provider: {e}")
+            logger.error(f"Failed to change LLM provider: {e}", exc_info=True)
             raise
+
+    def get_available_providers(self) -> List[str]:
+        """Get list of available LLM providers.
+
+        Returns:
+            List of provider names
+        """
+        try:
+            if not hasattr(self, "config_manager"):
+                raise ValueError("config_manager not initialized")
+
+            config = self.config_manager.get_config()
+            if not isinstance(config, dict):
+                config = config.model_dump()
+            
+            model_config = config.get("models", {})
+            provider_names = list(model_config.get("providers", {}).keys())
+            logger.debug(f"Found providers: {provider_names}")
+            return provider_names
+        except Exception as e:
+            logger.error(f"Failed to get available providers: {e}", exc_info=True)
+            return []

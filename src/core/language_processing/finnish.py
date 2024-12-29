@@ -170,8 +170,23 @@ class FinnishTextProcessor(BaseTextProcessor):
         language: str = "fi",
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None,
+        file_utils: Optional[FileUtils] = None,
     ):
-        super().__init__(language, custom_stop_words, config)
+        """Initialize Finnish text processor.
+
+        Args:
+            language: Language code ('fi')
+            custom_stop_words: Optional set of additional stop words
+            config: Configuration parameters
+            file_utils: FileUtils instance for file operations
+        """
+        super().__init__(
+            language=language,
+            custom_stop_words=custom_stop_words,
+            config=config,
+            file_utils=file_utils
+        )
+
         self._analysis_cache = {}
         self._failed_words = set()
 

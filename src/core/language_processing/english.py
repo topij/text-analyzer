@@ -9,8 +9,7 @@ from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
 from src.core.language_processing.base import BaseTextProcessor
-
-# from FileUtils import FileUtils
+from FileUtils import FileUtils
 
 logger = logging.getLogger(__name__)
 
@@ -87,13 +86,26 @@ class EnglishTextProcessor(BaseTextProcessor):
         language: str = "en",
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None,
+        file_utils: Optional[FileUtils] = None,
     ):
+        """Initialize English text processor.
+
+        Args:
+            language: Language code ('en')
+            custom_stop_words: Optional set of additional stop words
+            config: Configuration parameters
+            file_utils: FileUtils instance for file operations
+        """
+        super().__init__(
+            language=language,
+            custom_stop_words=custom_stop_words,
+            config=config,
+            file_utils=file_utils
+        )
+
         # Initialize NLTK first
         self._ensure_nltk_data()
         self.lemmatizer = WordNetLemmatizer()
-
-        # Call parent init
-        super().__init__(language, custom_stop_words, config)
 
     def _ensure_nltk_data(self):
         """Initialize NLTK with required data."""
