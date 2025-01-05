@@ -6,64 +6,11 @@ This guide covers configuration options for the Semantic Text Analyzer.
 
 The analyzer supports multiple configuration methods in order of precedence:
 
-1. Runtime parameters
+1. Runtime parameters passed to components
 2. Environment variables
 3. Configuration files
-   - `config.yaml` (base configuration)
-   - `config.dev.yaml` (development overrides)
    - Excel parameter files
-
-## Base Configuration (config.yaml)
-
-```yaml
-# Model settings
-models:
-  default_provider: "azure"  # or "openai" or "anthropic"
-  default_model: "gpt-4o-mini"
-  parameters:
-    temperature: 0.0
-    max_tokens: 1000
-    top_p: 1.0
-  
-  providers:
-    openai:
-      available_models:
-        gpt-4o-mini:
-          max_tokens: 4096
-          supports_functions: true
-      
-    azure:
-      available_models:
-        gpt-4o-mini:
-          deployment_name: "gpt-4o-mini"
-          max_tokens: 4096
-          supports_functions: true
-      api_version: "2024-02-15-preview"
-
-# Language settings
-languages:
-  default_language: "en"
-  languages:
-    en:
-      min_word_length: 3
-      excluded_patterns: 
-        - "^\\d+$"
-        - "^[^a-zA-Z0-9]+$"
-    fi:
-      min_word_length: 3
-      excluded_patterns: 
-        - "^\\d+$"
-        - "^[^a-zA-ZäöåÄÖÅ0-9]+$"
-      voikko:
-        paths:
-          win32: "C:/scripts/Voikko"
-          linux: "/usr/lib/x86_64-linux-gnu/libvoikko.so.1"
-
-# Feature flags
-features:
-  use_caching: true
-  batch_processing: true
-```
+   - Configuration directory files
 
 ## Environment Configuration
 
@@ -72,14 +19,15 @@ The environment setup is managed through the `EnvironmentManager` class, which p
 ### Basic Environment Setup
 
 ```python
-from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
 # Create environment configuration
 config = EnvironmentConfig(
-    env_type="local",          # or "azure"
     log_level="INFO",          # Logging level
     config_dir="config",       # Configuration directory
     project_root=None,         # Auto-detected if None
+    custom_directory_structure=None  # Optional custom structure
 )
 
 # Initialize environment
@@ -88,196 +36,157 @@ env_manager = EnvironmentManager(config)
 
 ### Environment Variables
 
-Create a `.env` file in your project root with these variables:
+Required environment variables in your `.env` file:
 
 ```bash
-# OpenAI Configuration
+# OpenAI Configuration (Required - at least one of these)
 OPENAI_API_KEY=your-key-here
-
-# Azure OpenAI Configuration
+# OR
 AZURE_OPENAI_API_KEY=your-key-here
 AZURE_OPENAI_ENDPOINT=your-endpoint
-AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment
 
-# Finnish Language Support
-VOIKKO_PATH=path-to-voikko  # Required for Finnish
+# Optional Environment Variables
+APP_LOGGING_LEVEL=INFO  # Default: INFO
+VOIKKO_PATH=path-to-voikko  # Required only for Finnish language support
 ```
 
-## Configuration Files
+## Parameter Configuration
 
-### Main Configuration (config.yaml)
+The analyzer uses Excel parameter files for configuration. Here's a detailed breakdown of the parameters:
+
+### Required Parameters
+
+These parameters must be specified in the parameter file:
 
 ```yaml
-# Global settings
-global:
-  environment: "local"  # or "azure"
-  log_level: "INFO"
-  project_root: null    # Auto-detected if null
-
-# Model settings
-model:
-  default_provider: "azure"  # or "openai"
-  default_model: "gpt-4"
-  temperature: 0.0
-  max_tokens: 2000
-
-# Logging settings
-logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  date_format: "%Y-%m-%d %H:%M:%S"
+# Sheet: General Parameters
+parameter            | value   | description
+--------------------|---------|-------------
+language            | en/fi   | Analysis language code (en or fi)
+max_keywords        | 10      | Maximum number of keywords to extract
+min_keyword_length  | 3       | Minimum length for keywords
+focus_on            | tech    | Analysis focus area (e.g., tech, business)
 ```
 
-## Excel Parameter Files
+### Optional Parameters with Defaults
 
-### General Parameters Sheet
-```
-Column Names:
-- parameter: Parameter name
-- value: Parameter value
-- description: Parameter description
+These parameters have default values but can be customized:
 
-Required Parameters:
-- max_keywords: Maximum keywords to extract
-- language: Analysis language (en/fi)
-- min_confidence: Minimum confidence threshold
-- focus_on: Analysis focus area
-```
-
-### Categories Sheet
-```
-Column Names:
-- category: Category name
-- description: Category description
-- keywords: Category-specific keywords
-- threshold: Category confidence threshold
-- parent: Optional parent category
+```yaml
+# Sheet: General Parameters
+parameter              | default | description
+----------------------|---------|-------------
+include_compounds      | true    | Include compound word analysis (Finnish only)
+max_themes            | 3       | Maximum number of themes to extract
+min_confidence        | 0.3     | Minimum confidence threshold for results
+column_name_to_analyze | text    | Column name containing text to analyze
+batch_size            | 3       | Number of texts to process in parallel
+timeout               | 30.0    | Analysis timeout in seconds
 ```
 
-### Keywords Sheet
+### Analysis Settings
+
+Optional settings to fine-tune the analysis:
+
+```yaml
+# Sheet: Analysis Settings
+setting                  | value | description
+------------------------|-------|-------------
+theme_analysis.enabled  | true  | Enable/disable theme extraction
+theme_analysis.min_confidence | 0.5 | Minimum confidence for themes
+weights.statistical     | 0.4   | Weight for statistical analysis (0-1)
+weights.llm            | 0.6   | Weight for LLM analysis (0-1)
 ```
-Column Names:
-- keyword: Keyword or phrase
-- importance: Weight/importance (0-1)
-- domain: Optional domain classification
+
+### Category Configuration
+
+Optional sheet for defining custom categories:
+
+```yaml
+# Sheet: Categories
+category   | description        | keywords          | parent
+-----------|-------------------|-------------------|--------
+technical  | Technical content | api,data,system   | 
+business   | Business content  | market,growth     | 
+education  | Educational      | course,learn      | technical
+```
+
+## Parameter File Format
+
+The parameter file supports both English and Finnish column names:
+
+### English Column Names
+- `parameter`: Parameter name
+- `value`: Parameter value
+- `description`: Parameter description
+
+### Finnish Column Names
+- `parametri`: Parameter name
+- `arvo`: Parameter value
+- `kuvaus`: Parameter description
+
+## Example Parameter File
+
+Here's a complete example of a parameter file structure:
+
+```yaml
+# Sheet: General Parameters
+parameter            | value   | description
+--------------------|---------|-------------
+language            | en      | Analysis language
+max_keywords        | 10      | Maximum keywords
+min_keyword_length  | 3       | Minimum keyword length
+focus_on           | tech    | Analysis focus
+include_compounds   | true    | Include compound words
+max_themes         | 3       | Maximum themes
+min_confidence     | 0.3     | Confidence threshold
+
+# Sheet: Analysis Settings
+setting                  | value
+------------------------|-------
+theme_analysis.enabled  | true
+theme_analysis.min_confidence | 0.5
+weights.statistical     | 0.4
+weights.llm            | 0.6
+
+# Sheet: Categories
+category   | description        | keywords
+-----------|-------------------|----------
+technical  | Technical content | api,data,system
+business   | Business content  | market,growth
 ```
 
 ## Logging Configuration
 
-Logging is managed through the `LoggingManager` class:
+Logging is configured automatically through the `EnvironmentManager`:
 
 ```python
-from src.nb_helpers.logging_manager import LoggingManager
+# Log level is set via environment variable or config
+log_level = os.getenv("APP_LOGGING_LEVEL", "INFO")
 
-# Initialize logging manager
-logging_manager = LoggingManager()
-
-# Configure logging
-logging_manager.configure_logging(
-    level="INFO",
-    format_string="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-
-# Set up debug logging for specific component
-logging_manager.setup_debug_logging("src.analyzers.keyword_analyzer")
-
-# Verify logging setup
-logging_manager.verify_logging_setup(show_hierarchy=True)
+# Format is standardized
+format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 ```
 
 ## Directory Structure
 
-The project uses a standardized directory structure:
+The default directory structure is:
 
 ```
 project_root/
 ├── data/
-│   ├── raw/         # Input data
-│   ├── interim/     # Intermediate files
-│   ├── processed/   # Analysis results
-│   ├── external/    # External resources
-│   ├── parameters/  # Parameter files
-│   └── config/      # Configuration files
-└── src/            # Source code
+│   ├── raw/          # Raw input data
+│   ├── interim/      # Intermediate processing files
+│   ├── processed/    # Final processed data
+│   ├── config/       # Configuration files
+│   ├── parameters/   # Parameter files
+│   └── logs/         # Log files
+├── notebooks/        # Jupyter notebooks
+├── docs/            # Documentation
+├── scripts/         # Utility scripts
+├── src/             # Source code
+├── reports/         # Analysis reports
+└── models/          # Trained models
 ```
 
-## Verification and Troubleshooting
-
-### Environment Verification
-
-```python
-# Verify environment setup
-status = env_manager.verify_environment()
-print("Environment Status:", status)
-
-# Display current configuration
-env_manager.display_configuration()
-
-# Get LLM information
-llm_info = env_manager.get_llm_info(analyzer, detailed=True)
-print("LLM Configuration:", llm_info)
-```
-
-### Common Configuration Issues
-
-1. **Environment Setup**:
-   - Use `env_manager.verify_environment()` to check setup
-   - Verify `.env` file is properly loaded
-   - Check project root detection
-
-2. **Logging**:
-   - Use `logging_manager.verify_logging_setup()` to check configuration
-   - Verify log levels are properly set
-   - Check handler configuration
-
-3. **LLM Configuration**:
-   - Verify API keys in `.env`
-   - Check model availability
-   - Use `get_llm_info()` to verify settings
-
-## Runtime Configuration
-
-### Analyzer Initialization
-```python
-from src.semantic_analyzer import SemanticAnalyzer
-from FileUtils import FileUtils
-
-# Initialize with custom configuration
-analyzer = SemanticAnalyzer(
-    parameter_file="parameters.xlsx",
-    file_utils=FileUtils(),
-    config={
-        "max_keywords": 10,
-        "min_confidence": 0.3,
-        "language": "en"
-    }
-)
-```
-
-## Best Practices
-
-1. Configuration Files
-   - Use `config.yaml` for base settings
-   - Use `config.dev.yaml` for development
-   - Keep sensitive data in environment variables
-
-2. Parameter Files
-   - Use separate files for different languages
-   - Keep category thresholds between 0.3-0.8
-   - Provide comprehensive category keywords
-
-3. Security
-   - Never commit API keys to version control
-   - Use secure credential management
-   - Validate all configuration inputs
-
-## Configuration Validation
-
-The analyzer validates configurations at multiple levels:
-
-1. Parameter validation
-2. LLM configuration validation
-3. Language support validation
-4. File path validation
-
-For troubleshooting configuration issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+You can customize this structure by providing a `custom_directory_structure` to `EnvironmentConfig`.

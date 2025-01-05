@@ -1,6 +1,6 @@
 # Semantic Text Analyzer
 
-A Python-based text analysis toolkit that combines LLMs and NLP techniques to extract insights from text data. Supports both English and Finnish languages, with easy configuration through Excel files.
+A powerful Python-based text analysis toolkit that combines LLMs and NLP techniques to extract insights from text data. Supports both English and Finnish languages, with easy configuration through Excel files.
 
 ## Features
 
@@ -149,28 +149,6 @@ semantic-text-analyzer/
 ## Example Notebooks
 
 See [demo notebook](notebooks/cross_env_analyzer_demo_nb.ipynb) for basic operations and examples.
-
-## Background and Use Cases
-
-In my previous job, I frequently encountered situations where valuable textual data remained underutilized. Often, due to time constraints or resource limitations, decisions and/or actions were based on arbitrary highlights rather than comprehensive analysis of available text data.
-
-This led me to develop a semantic text analyzer that combines Large Language Models (LLMs) and Natural Language Processing (NLP) techniques. The project served two purposes: to create a practical tool for better textual data analysis, and to deepen my understanding of LLMs, modern Python development tools and cloud services.
-
-Accessibility was a key priority in the design. To make the tool approachable for non-developers, all inputs (both content and parameters) can be provided through [Excel files](docs/INPUT_FILES.md), a format familiar to most business users.
-
-**Example Use Cases:**
-- Support ticket analysis and categorization
-- Product information tagging using category analyzer
-- Chatbot conversation analysis and insights extraction
-
-#### Note from the author
-This project was born out of everyday needs I encountered in data analysis and business development. Along the way, I used the development process as an opportunity to learn new concepts and explore LLMs, Langchain NLP, Python development and much more.
-
-Please note that I am not a professional software developer, and, for example, the code has not been heavily optimized or cleaned up. My focus was on functionality rather than fine-tuning or optimization.
-
-Active maintenance is not guaranteed, but I may occasionally revisit and update the code base when needed.
-Let me know if you find this useful :-)
-
 
 ## License
 

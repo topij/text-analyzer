@@ -7,32 +7,20 @@
 The `EnvironmentManager` class provides centralized environment setup and management.
 
 ```python
-from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
 # Initialize
-config = EnvironmentConfig(log_level="INFO")
+config = EnvironmentConfig(
+    log_level="INFO",
+    config_dir="config",
+    project_root=None,  # Auto-detected
+    custom_directory_structure=None  # Optional
+)
 env_manager = EnvironmentManager(config)
 
-# Methods
-env_manager.verify_environment()  # Check environment setup
-env_manager.display_configuration()  # Show current config
-env_manager.get_llm_info(analyzer)  # Get LLM details
-```
-
-### LoggingManager
-
-The `LoggingManager` class handles logging configuration and management.
-
-```python
-from src.nb_helpers.logging_manager import LoggingManager
-
-# Initialize
-logging_manager = LoggingManager()
-
-# Methods
-logging_manager.configure_logging(level="INFO")
-logging_manager.setup_debug_logging(module_name)
-logging_manager.verify_logging_setup()
+# Get initialized components
+components = env_manager.get_components()
 ```
 
 ## Core Classes
@@ -47,16 +35,15 @@ class SemanticAnalyzer:
         self,
         parameter_file: Optional[Union[str, Path]] = None,
         file_utils: Optional[FileUtils] = None,
-        llm: Optional[BaseChatModel] = None,
-        categories: Optional[Dict[str, CategoryConfig]] = None,
+        config_manager: Optional[ConfigManager] = None,
         **kwargs
-    ) -> None
+    ) -> None:
+        """Initialize analyzer with optional parameter file and components."""
 
     async def analyze(
         self,
         text: str,
         analysis_types: Optional[List[str]] = None,
-        timeout: float = 60.0,
         **kwargs
     ) -> CompleteAnalysisResult:
         """Analyze text with specified analysis types."""
@@ -65,27 +52,17 @@ class SemanticAnalyzer:
         self,
         texts: List[str],
         batch_size: int = 3,
-        timeout: float = 30.0,
+        analysis_types: Optional[List[str]] = None,
         **kwargs
     ) -> List[CompleteAnalysisResult]:
         """Process multiple texts with controlled concurrency."""
 
     def save_results(
         self,
-        results: CompleteAnalysisResult,
-        output_file: str,
-        output_type: str = "processed"
-    ) -> Path:
+        results: Union[CompleteAnalysisResult, List[CompleteAnalysisResult]],
+        output_file: str
+    ) -> None:
         """Save analysis results to file."""
-
-    @classmethod
-    def from_excel(
-        cls,
-        content_file: Union[str, Path],
-        parameter_file: Union[str, Path],
-        **kwargs
-    ) -> 'ExcelSemanticAnalyzer':
-        """Create Excel-aware analyzer instance."""
 ```
 
 ### KeywordAnalyzer
@@ -97,9 +74,14 @@ class KeywordAnalyzer:
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
-    )
+    ):
+        """Initialize keyword analyzer."""
 
-    async def analyze(self, text: str) -> KeywordOutput:
+    async def analyze(
+        self,
+        text: str,
+        **kwargs
+    ) -> KeywordAnalysisResult:
         """Extract keywords from text."""
 ```
 
@@ -112,9 +94,14 @@ class ThemeAnalyzer:
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
-    )
+    ):
+        """Initialize theme analyzer."""
 
-    async def analyze(self, text: str) -> ThemeOutput:
+    async def analyze(
+        self,
+        text: str,
+        **kwargs
+    ) -> ThemeAnalysisResult:
         """Identify themes in text."""
 ```
 
@@ -124,14 +111,38 @@ class ThemeAnalyzer:
 class CategoryAnalyzer:
     def __init__(
         self,
-        categories: Dict[str, CategoryConfig],
+        categories: Optional[Dict[str, CategoryConfig]] = None,
         llm: Optional[BaseChatModel] = None,
         config: Optional[Dict[str, Any]] = None,
         language_processor: Optional[BaseTextProcessor] = None
-    )
+    ):
+        """Initialize category analyzer."""
 
-    async def analyze(self, text: str) -> CategoryOutput:
+    async def analyze(
+        self,
+        text: str,
+        **kwargs
+    ) -> CategoryAnalysisResult:
         """Classify text into categories."""
+```
+
+### ConfigManager
+
+Configuration management with FileUtils integration.
+
+```python
+class ConfigManager:
+    def __init__(
+        self,
+        file_utils: Optional[FileUtils] = None,
+        config_dir: str = "config",
+        project_root: Optional[Path] = None,
+        custom_directory_structure: Optional[Dict[str, Any]] = None
+    ):
+        """Initialize configuration manager."""
+
+    def load_configurations(self) -> None:
+        """Load configurations from all sources."""
 ```
 
 ## Data Models
@@ -140,12 +151,21 @@ class CategoryAnalyzer:
 
 ```python
 class CompleteAnalysisResult(BaseModel):
-    keywords: KeywordAnalysisResult
-    themes: ThemeAnalysisResult
-    categories: CategoryAnalysisResult
+    keywords: Optional[KeywordAnalysisResult]
+    themes: Optional[ThemeAnalysisResult]
+    categories: Optional[CategoryAnalysisResult]
     language: str
     success: bool
     error: Optional[str]
+    processing_time: float
+```
+
+### KeywordAnalysisResult
+
+```python
+class KeywordAnalysisResult(BaseModel):
+    keywords: List[KeywordInfo]
+    language: str
     processing_time: float
 ```
 
@@ -159,6 +179,15 @@ class KeywordInfo(BaseModel):
     compound_parts: Optional[List[str]]
 ```
 
+### ThemeAnalysisResult
+
+```python
+class ThemeAnalysisResult(BaseModel):
+    themes: List[ThemeInfo]
+    language: str
+    processing_time: float
+```
+
 ### ThemeInfo
 
 ```python
@@ -170,15 +199,24 @@ class ThemeInfo(BaseModel):
     parent_theme: Optional[str]
 ```
 
+### CategoryAnalysisResult
+
+```python
+class CategoryAnalysisResult(BaseModel):
+    categories: List[CategoryMatch]
+    language: str
+    processing_time: float
+```
+
 ### CategoryMatch
 
 ```python
 class CategoryMatch(BaseModel):
     name: str
     confidence: float
-    description: str
-    evidence: List[Evidence]
-    themes: List[str]
+    description: Optional[str]
+    evidence: List[str]
+    themes: Optional[List[str]]
 ```
 
 ## Language Processing
@@ -192,7 +230,8 @@ class BaseTextProcessor(ABC):
         language: str,
         custom_stop_words: Optional[Set[str]] = None,
         config: Optional[Dict[str, Any]] = None
-    )
+    ):
+        """Initialize text processor."""
 
     @abstractmethod
     def get_base_form(self, word: str) -> str:
@@ -203,32 +242,8 @@ class BaseTextProcessor(ABC):
         """Tokenize text into words."""
 
     @abstractmethod
-    def is_compound_word(self, word: str) -> bool:
-        """Check if word is a compound word."""
-```
-
-## Configuration
-
-### ConfigManager
-
-```python
-class ConfigManager:
-    def __init__(
-        self,
-        file_utils: Optional[FileUtils] = None,
-        config_dir: str = "config",
-        project_root: Optional[Path] = None,
-        custom_directory_structure: Optional[Dict[str, Any]] = None
-    )
-
-    def get_config(self) -> GlobalConfig:
-        """Get complete configuration."""
-
-    def get_model_config(self) -> ModelConfig:
-        """Get model-specific configuration."""
-
-    def get_analyzer_config(self, analyzer_type: str) -> Dict[str, Any]:
-        """Get configuration for specific analyzer type."""
+    def is_stop_word(self, word: str) -> bool:
+        """Check if word is a stop word."""
 ```
 
 ## File Operations

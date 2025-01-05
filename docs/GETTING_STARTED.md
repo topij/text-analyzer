@@ -14,9 +14,6 @@ This guide will help you get up and running with the Semantic Text Analyzer.
    - Windows: Voikko installation from official site
    - macOS: `libvoikko` via Homebrew
 
-3. Optional:
-   - Azure subscription (if using Azure OpenAI)
-
 ## Basic Setup
 
 1. Create and activate environment:
@@ -33,135 +30,127 @@ pip install -e .
 3. Configure environment:
 Create a `.env` file in your project root with the following variables:
 ```bash
-# OpenAI
+# App Configuration
+APP_LOGGING_LEVEL=INFO
+
+# OpenAI Configuration
 OPENAI_API_KEY='your-key-here'
 
 # Or Azure OpenAI
 AZURE_OPENAI_API_KEY='your-key-here'
 AZURE_OPENAI_ENDPOINT='your-endpoint'
-AZURE_OPENAI_DEPLOYMENT_NAME='your-deployment'
 
-# Finnish support on Windows
-VOIKKO_PATH="C:\scripts\Voikko"
+# Finnish support (if needed)
+VOIKKO_PATH='/path/to/voikko'  # Required for Finnish
 ```
 
-4. Set up environment and verify installation:
+4. Set up environment:
 ```python
-from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
-# Initialize environment with logging
-config = EnvironmentConfig(log_level="INFO")
+# Initialize environment
+config = EnvironmentConfig(
+    log_level="INFO",
+    config_dir="config"  # Optional: specify config directory
+)
 env_manager = EnvironmentManager(config)
-
-# Verify setup
-status = env_manager.verify_environment()
-print("Environment Status:", status)
 ```
 
 ## First Analysis
 
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
-from src.nb_helpers.environment_manager import EnvironmentManager, EnvironmentConfig
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
 # Set up environment
 config = EnvironmentConfig(log_level="INFO")
 env_manager = EnvironmentManager(config)
+components = env_manager.get_components()
 
-async def first_analysis():
-    # Initialize analyzer
-    analyzer = SemanticAnalyzer()
-    
-    # Analyze text
-    result = await analyzer.analyze(
-        "Machine learning models process data efficiently.",
-        analysis_types=["keywords", "themes"]
-    )
-    
-    # Print results
-    print(f"Keywords: {result.keywords}")
-    print(f"Themes: {result.themes}")
-    
-    # Display LLM info
-    llm_info = env_manager.get_llm_info(analyzer, detailed=True)
-    print("\nLLM Configuration:", llm_info)
+# Initialize analyzer with environment components
+analyzer = SemanticAnalyzer(
+    file_utils=components["file_utils"],
+    config_manager=components["config_manager"]
+)
+
+# Analyze text
+result = await analyzer.analyze(
+    "Machine learning models process data efficiently.",
+    analysis_types=["keywords", "themes", "categories"]
+)
+
+# Print results
+print(f"Keywords: {result.keywords}")
+print(f"Themes: {result.themes}")
+print(f"Categories: {result.categories}")
 ```
 
 ## Excel Analysis
 
 ```python
-# Set up environment
-env_manager = EnvironmentManager(
-    EnvironmentConfig(log_level="INFO")
+# Initialize analyzer with parameter file
+analyzer = SemanticAnalyzer(
+    parameter_file="parameters.xlsx",
+    file_utils=components["file_utils"]
 )
 
-# Create analyzer for Excel processing
-analyzer = SemanticAnalyzer.from_excel(
-    content_file="input.xlsx",
-    parameter_file="parameters.xlsx"
+# Run batch analysis
+results = await analyzer.analyze_batch(
+    texts=["Text 1", "Text 2", "Text 3"],
+    batch_size=3,
+    analysis_types=["keywords", "themes"]
 )
 
-# Run analysis
-results_df = await analyzer.analyze_excel(
-    analysis_types=["keywords", "themes"],
-    batch_size=10,
-    save_results=True,
+# Save results
+analyzer.save_results(
+    results=results,
     output_file="results.xlsx"
 )
 ```
 
-## Configuration
+## Parameter Configuration
 
-1. Basic parameter file structure (Excel):
-   - General Parameters sheet: Basic settings
-   - Categories sheet: Category definitions
-   - Keywords sheet: Predefined keywords
-   - Settings sheet: Analysis settings
+The analyzer uses Excel parameter files for configuration. Required sheets:
 
-2. Main configuration file (config.yaml):
-```yaml
-# Global settings
-global:
-  environment: "local"  # or "azure"
-  log_level: "INFO"
-
-# Model settings
-model:
-  default_provider: "azure"  # or "openai"
-  default_model: "gpt-4"
-  temperature: 0.0
-
-# Logging settings
-logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  date_format: "%Y-%m-%d %H:%M:%S"
+1. General Parameters sheet:
 ```
+parameter            | value | description
+--------------------|-------|-------------
+max_keywords        | 10    | Maximum keywords to extract
+min_keyword_length  | 3     | Minimum keyword length
+language           | en    | Analysis language
+focus_on           | ...   | Analysis focus area
+```
+
+For full parameter configuration options, see [Configuration Guide](CONFIGURATION_GUIDE.md).
 
 ## Next Steps
 
-- Review [Examples](EXAMPLES.md) for more usage patterns
-- Check [Configuration Guide](CONFIGURATION_GUIDE.md) for detailed settings
-- See [API Reference](API_REFERENCE.md) for complete functionality
-- Review [Troubleshooting](TROUBLESHOOTING.md) for common issues
+- Check [Examples](EXAMPLES.md) for more usage patterns
+- See [Configuration Guide](CONFIGURATION_GUIDE.md) for detailed settings
+- Review [API Reference](API_REFERENCE.md) for complete functionality
+- Read [Input Files](INPUT_FILES.md) for file format details
+- Check [Troubleshooting](TROUBLESHOOTING.md) for common issues
 
 ## Common Issues
 
 1. Language Support:
-   - Verify Voikko installation for Finnish support
+   - Verify Voikko installation for Finnish
    - Check language settings in parameters
 
 2. LLM Connection:
-   - Verify API keys are set in `.env` file
-   - Check endpoint configuration for Azure
-   - Use `env_manager.get_llm_info()` to verify LLM setup
+   - Verify API keys in `.env`
+   - Check Azure endpoint configuration
+   - Ensure proper model access
 
 3. Environment Setup:
-   - Ensure environment variables are properly set in `.env`
-   - Check logging configuration in config.yaml
-   - Use `env_manager.verify_environment()` to check setup
+   - Check `.env` file exists and is loaded
+   - Verify logging level configuration
+   - Ensure all required components are initialized
 
 4. File Operations:
-   - Ensure proper file paths
-   - Check file permissions
-   - Verify directory structure with `env_manager.display_configuration()`
+   - Check file paths and permissions
+   - Verify parameter file format
+   - Ensure output directories exist

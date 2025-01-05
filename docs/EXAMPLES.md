@@ -2,19 +2,23 @@
 
 Comprehensive examples for using the Semantic Text Analyzer.
 
-## Usage Examples
-
 ## Basic Analysis
 
 ### Simple Text Analysis
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
-from pathlib import Path
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
 async def analyze_text():
-    # Initialize with parameters
+    # Set up environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Initialize analyzer
     analyzer = SemanticAnalyzer(
-        parameter_file=Path("parameters") / "parameters_en.xlsx"
+        file_utils=components["file_utils"],
+        config_manager=components["config_manager"]
     )
     
     # Analyze with specific types
@@ -22,14 +26,13 @@ async def analyze_text():
         text="""Machine learning models are trained using large datasets 
                 to recognize patterns. The neural network architecture 
                 includes multiple layers for feature extraction.""",
-        analysis_types=["keywords", "themes", "categories"],
-        timeout=60.0  # Optional timeout in seconds
+        analysis_types=["keywords", "themes", "categories"]
     )
     
     # Handle results
     if result.success:
         # Keywords
-        if result.keywords.success:
+        if result.keywords:
             print("\nKeywords:")
             for kw in result.keywords.keywords:
                 print(f"• {kw.keyword} (score: {kw.score:.2f})")
@@ -37,7 +40,7 @@ async def analyze_text():
                     print(f"  Domain: {kw.domain}")
         
         # Themes
-        if result.themes.success:
+        if result.themes:
             print("\nThemes:")
             for theme in result.themes.themes:
                 print(f"• {theme.name} ({theme.confidence:.2f})")
@@ -46,14 +49,14 @@ async def analyze_text():
                     print(f"  Parent: {theme.parent_theme}")
         
         # Categories
-        if result.categories.success:
+        if result.categories:
             print("\nCategories:")
-            for cat in result.categories.matches:
+            for cat in result.categories.categories:
                 print(f"• {cat.name} ({cat.confidence:.2f})")
                 if cat.evidence:
                     print("  Evidence:")
                     for ev in cat.evidence:
-                        print(f"    - {ev.text}")
+                        print(f"    - {ev}")
     else:
         print(f"Analysis failed: {result.error}")
 ```
@@ -61,18 +64,18 @@ async def analyze_text():
 ### Finnish Text Analysis
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
-from pathlib import Path
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
 async def analyze_finnish_text():
-    # Initialize with Finnish parameters
+    # Set up environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Initialize analyzer with Finnish parameters
     analyzer = SemanticAnalyzer(
-        parameter_file=Path("parameters") / "parameters_fi.xlsx",
-        config={
-            "language": "fi",
-            "features": {
-                "preserve_compounds": True
-            }
-        }
+        parameter_file="parameters_fi.xlsx",
+        file_utils=components["file_utils"]
     )
     
     text = """Koneoppimismalleja koulutetaan suurilla datajoukolla 
@@ -84,7 +87,7 @@ async def analyze_finnish_text():
         analysis_types=["keywords", "themes"]
     )
     
-    if result.success:
+    if result.success and result.keywords:
         # Show compound words
         print("\nCompound Words:")
         for kw in result.keywords.keywords:
@@ -94,77 +97,64 @@ async def analyze_finnish_text():
                 print(f"  Score: {kw.score:.2f}")
 ```
 
-### Excel Processing
+### Batch Processing
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
-from src.utils.formatting_config import ExcelOutputConfig, OutputDetail
-from pathlib import Path
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
-async def process_excel():
-    # Create Excel analyzer
-    analyzer = SemanticAnalyzer.from_excel(
-        content_file=Path("data") / "input.xlsx",
-        parameter_file=Path("parameters") / "parameters_en.xlsx"
+async def process_batch():
+    # Set up environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Initialize analyzer
+    analyzer = SemanticAnalyzer(
+        parameter_file="parameters.xlsx",
+        file_utils=components["file_utils"]
     )
     
-    # Configure output formatting
-    format_config = ExcelOutputConfig(
-        detail_level=OutputDetail.DETAILED,
-        include_confidence=True,
-        keywords_format={
-            "column_name": "keywords",
-            "format_template": "{keyword} ({confidence})",
-            "confidence_threshold": 0.3,
-            "max_items": 5
-        }
-    )
+    # Prepare texts
+    texts = [
+        "First document to analyze",
+        "Second document with different content",
+        "Third document about something else"
+    ]
     
     try:
-        # Process with progress tracking
-        results_df = await analyzer.analyze_excel(
-            analysis_types=["keywords", "themes", "categories"],
-            batch_size=10,
-            save_results=True,
-            output_file="results.xlsx",
-            show_progress=True,
-            format_config=format_config
+        # Process batch
+        results = await analyzer.analyze_batch(
+            texts=texts,
+            batch_size=3,
+            analysis_types=["keywords", "themes"]
         )
         
-        print(f"Processed {len(results_df)} documents")
+        # Save results
+        analyzer.save_results(
+            results=results,
+            output_file="results.xlsx"
+        )
+        
+        print(f"Processed {len(results)} documents")
         
     except Exception as e:
-        print(f"Excel processing failed: {str(e)}")
+        print(f"Batch processing failed: {str(e)}")
 ```
 
 ### Custom Categories
 ```python
 from src.semantic_analyzer import SemanticAnalyzer
-from src.schemas import CategoryConfig
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
 
-# Define categories
-categories = {
-    "technical": CategoryConfig(
-        description="Technical content",
-        keywords=["software", "api", "data"],
-        threshold=0.6
-    ),
-    "business": CategoryConfig(
-        description="Business content",
-        keywords=["revenue", "growth", "market"],
-        threshold=0.6
-    ),
-    "educational": CategoryConfig(
-        description="Educational content",
-        keywords=["learning", "teaching", "training"],
-        threshold=0.5,
-        parent="technical"  # Example of hierarchical categories
-    )
-}
+# Set up environment
+env_manager = EnvironmentManager(EnvironmentConfig())
+components = env_manager.get_components()
 
-# Initialize analyzer with categories
+# Initialize analyzer with parameter file containing categories
 analyzer = SemanticAnalyzer(
-    parameter_file="parameters.xlsx",
-    categories=categories
+    parameter_file="parameters.xlsx",  # Define categories in Excel
+    file_utils=components["file_utils"]
 )
 
 # Analyze with categories
@@ -174,20 +164,92 @@ result = await analyzer.analyze(
 )
 
 # Process category results
-if result.categories.success:
-    for cat in result.categories.matches:
+if result.success and result.categories:
+    for cat in result.categories.categories:
         print(f"\nCategory: {cat.name}")
         print(f"Confidence: {cat.confidence:.2f}")
-        print(f"Description: {cat.description}")
+        if cat.description:
+            print(f"Description: {cat.description}")
         if cat.evidence:
             print("Evidence:")
             for ev in cat.evidence:
-                print(f"- {ev.text} (relevance: {ev.relevance:.2f})")
+                print(f"- {ev}")
 ```
 
+### Parameter File Example
+```yaml
+# parameters.xlsx structure
+
+# Sheet: General Parameters
+parameter            | value | description
+--------------------|-------|-------------
+max_keywords        | 10    | Maximum keywords
+min_keyword_length  | 3     | Minimum length
+language           | en    | Language code
+focus_on           | tech  | Analysis focus
+
+# Sheet: Analysis Settings
+setting                  | value
+------------------------|-------
+theme_analysis.enabled  | true
+theme_analysis.min_confidence | 0.5
+weights.statistical     | 0.4
+weights.llm            | 0.6
+
+# Sheet: Categories
+category   | description        | keywords
+-----------|-------------------|----------
+technical  | Technical content | api,data,system
+business   | Business content  | market,growth
+```
+
+### Excel Processing
+```python
+from src.semantic_analyzer import SemanticAnalyzer
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
+
+async def process_excel():
+    # Set up environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Initialize analyzer
+    analyzer = SemanticAnalyzer(
+        parameter_file="parameters.xlsx",
+        file_utils=components["file_utils"]
+    )
+    
+    # Prepare Excel file
+    excel_file = "input.xlsx"
+    
+    try:
+        # Process Excel
+        results = await analyzer.analyze_excel(
+            excel_file=excel_file,
+            analysis_types=["keywords", "themes", "categories"],
+            batch_size=10,
+            save_results=True,
+            output_file="results.xlsx"
+        )
+        
+        print(f"Processed {len(results)} documents")
+        
+    except Exception as e:
+        print(f"Excel processing failed: {str(e)}")
+```
 
 ### Custom Configuration
 ```python
+from src.semantic_analyzer import SemanticAnalyzer
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
+
+# Set up environment
+env_manager = EnvironmentManager(EnvironmentConfig())
+components = env_manager.get_components()
+
+# Initialize analyzer with custom configuration
 config = {
     "analysis": {
         "keywords": {
@@ -209,13 +271,31 @@ config = {
     }
 }
 
-analyzer = SemanticAnalyzer(config=config)
+analyzer = SemanticAnalyzer(
+    config=config,
+    file_utils=components["file_utils"]
+)
 ```
 
 ### Error Handling
 ```python
+from src.semantic_analyzer import SemanticAnalyzer
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
+
 async def robust_analysis(text: str):
     try:
+        # Set up environment
+        env_manager = EnvironmentManager(EnvironmentConfig())
+        components = env_manager.get_components()
+        
+        # Initialize analyzer
+        analyzer = SemanticAnalyzer(
+            file_utils=components["file_utils"],
+            config_manager=components["config_manager"]
+        )
+        
+        # Analyze text
         result = await analyzer.analyze(text)
         
         if not result.success:
