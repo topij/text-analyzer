@@ -116,7 +116,7 @@ async def main():
         runner = SemanticAnalysisRunner()
 
         # Set up file paths
-        input_file = "test_content_short_en.xlsx"
+        input_file = "test_content_en.xlsx"
         output_file = "analysis_results_en.xlsx"
         parameter_file = "parameters_en.xlsx"
 

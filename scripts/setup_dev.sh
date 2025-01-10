@@ -202,6 +202,13 @@ main() {
         exit 1
     fi
     
+    # Initialize project structure and generate test data
+    log_msg "Initializing project structure..."
+    if ! "$CONDA_PREFIX/bin/python" "scripts/setup_project.py"; then
+        log_msg "Error: Project initialization failed"
+        exit 1
+    fi
+    
     log_msg "Setup completed successfully!"
     return 0
 }
