@@ -5,6 +5,42 @@ Voikko is a linguistic tool used for Finnish language processing in the semantic
 
 ## Installation
 
+### Automated Setup (Recommended)
+
+The easiest way to install Voikko is using the provided setup script:
+
+```bash
+# Run the setup script
+scripts/setup_dev.sh
+```
+
+The script will automatically:
+- Install Voikko and its dependencies
+- Configure the environment
+- Set up required paths
+
+### Manual Installation
+
+#### macOS
+1. **Using Homebrew**
+   ```bash
+   # Install Voikko
+   brew install libvoikko
+   ```
+
+2. **Verify Installation**
+   ```bash
+   # Check library location
+   ls -l /opt/homebrew/lib/libvoikko*
+   ```
+
+3. **Set Environment Variables**
+   ```bash
+   # Add to your .env file
+   VOIKKO_LIBRARY_PATH='/opt/homebrew/lib/libvoikko.dylib'
+   VOIKKO_DICT_PATH='/opt/homebrew/lib/voikko'
+   ```
+
 ### Windows
 
 1. **Download and Install**
@@ -104,6 +140,13 @@ min_keyword_length  | 3
    Error: DLL load failed / libvoikko.so.1: cannot open shared object file
    ```
    **Solution:**
+   - macOS: Check Homebrew installation and paths
+   ```bash
+   # Verify installation
+   brew list libvoikko
+   # Check library location
+   ls -l /opt/homebrew/lib/libvoikko*
+   ```
    - Windows: Verify `VOIKKO_PATH` environment variable
    - Linux: Check library installation with package manager
    ```bash
@@ -119,6 +162,13 @@ min_keyword_length  | 3
    Warning: Could not find Voikko dictionaries
    ```
    **Solution:**
+   - macOS: Check dictionary path
+   ```bash
+   # Verify dictionary location
+   ls -l /opt/homebrew/lib/voikko
+   # Reinstall if needed
+   brew reinstall libvoikko
+   ```
    - Windows: Check installation directory
    - Linux: Verify dictionary package installation
    ```bash

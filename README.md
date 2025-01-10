@@ -26,6 +26,24 @@ A Python-based text analysis toolkit that combines LLMs and NLP techniques to ex
 
 ### 1. Installation
 
+The easiest way to get started is to use the setup script:
+
+```bash
+# Run the setup script
+scripts/setup_dev.sh
+
+# Activate the environment
+conda activate semantic-analyzer
+```
+
+The setup script will:
+- Create and configure the conda environment
+- Install required packages
+- Set up NLTK data
+- Configure Voikko for Finnish language support
+
+Alternatively, you can perform the installation manually, but you may need to download and setup NLTK and Voikko library in addition to the basic environment. 
+
 ```bash
 # Create and activate environment
 conda env create -f environment.yaml
@@ -34,6 +52,14 @@ conda activate semantic-analyzer
 # Install package
 pip install -e .
 ```
+
+### Platform Support
+
+The package is tested on:
+- macOS (Darwin) with Apple Silicon and Intel processors
+- Linux (Ubuntu)
+
+For macOS users, Voikko is installed automatically via Homebrew during setup. The library is located at `/opt/homebrew/lib/libvoikko.dylib`.
 
 ### 2. Configuration
 
@@ -49,7 +75,9 @@ AZURE_OPENAI_API_KEY='your-key-here'
 AZURE_OPENAI_ENDPOINT='your-endpoint'
 
 # Optional: For Finnish language support
-VOIKKO_PATH='/path/to/voikko'  # Required for Finnish
+# Note: If using the setup script, Voikko is configured automatically
+VOIKKO_LIBRARY_PATH='/opt/homebrew/lib/libvoikko.dylib'  # macOS default path
+VOIKKO_DICT_PATH='/opt/homebrew/lib/voikko'  # macOS dictionary path
 ```
 
 ### 3. Basic Usage
@@ -124,8 +152,18 @@ For Finnish language support, see the [Voikko Installation Guide](docs/voikko_in
 
 - Python 3.9+
 - OpenAI API key or Azure OpenAI credentials
-- Voikko library (for Finnish language support)
 - Required packages listed in `environment.yaml`
+
+### Finnish Language Support (Voikko)
+- **macOS**: Installed automatically via setup script using Homebrew
+- **Linux**: Install `libvoikko` using your system's package manager
+  ```bash
+  # Ubuntu/Debian
+  sudo apt-get install libvoikko-dev
+  
+  # Fedora
+  sudo dnf install libvoikko-devel
+  ```
 
 ## Project Structure
 
