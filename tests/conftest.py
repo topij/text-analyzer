@@ -16,7 +16,7 @@ from FileUtils import FileUtils
 
 
 TEST_DIRECTORY_STRUCTURE = {
-    "data": ["raw", "processed", "config", "parameters"],
+    "data": ["raw", "processed", "config/stop_words", "parameters"],
     "logs": [],
     "reports": [],
     "models": [],
@@ -43,6 +43,41 @@ def pytest_configure(config):
 
     # Configure test markers
     config.addinivalue_line("markers", "asyncio: mark test as async")
+
+
+def copy_stopwords_files(test_root: Path) -> None:
+    """Copy stopwords files from repository to test directory."""
+    src_dir = Path(__file__).parent.parent / "data" / "config" / "stop_words"
+    dest_dir = test_root / "data" / "config" / "stop_words"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    
+    for file in ["en.txt", "fi.txt"]:
+        src_file = src_dir / file
+        if src_file.exists():
+            shutil.copy2(src_file, dest_dir / file)
+
+
+@pytest.fixture
+def test_root() -> Generator[Path, None, None]:
+    """Create a temporary test directory with required structure."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Create directory structure
+        for parent, children in TEST_DIRECTORY_STRUCTURE.items():
+            parent_dir = temp_path / parent
+            parent_dir.mkdir(exist_ok=True)
+            for child in children:
+                child_path = parent_dir / child
+                if "/" in child:
+                    child_path.mkdir(parents=True, exist_ok=True)
+                else:
+                    child_path.mkdir(exist_ok=True)
+        
+        # Copy stopwords files
+        copy_stopwords_files(temp_path)
+        
+        yield temp_path
 
 
 @pytest.fixture(scope="session")

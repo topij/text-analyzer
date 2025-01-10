@@ -19,10 +19,29 @@ languages:
     excluded_patterns:
       - "^\\d+$"                  # Numbers only
       - "^[^a-zA-ZäöåÄÖÅ0-9]+$"  # No alphanumeric characters (including Finnish letters)
-    voikko_paths:
-      - "/usr/lib/voikko"
-      - "/usr/local/lib/voikko"
-      - "/usr/share/voikko"
+    voikko:
+      paths:
+        darwin:  # Mac OS paths
+          lib_path:
+            - "/usr/local/lib/libvoikko.dylib"
+            - "/opt/homebrew/lib/libvoikko.dylib"
+          dict_path:
+            - "/usr/local/share/voikko"
+            - "/opt/homebrew/share/voikko"
+            - "~/Library/Spelling"
+        linux:  # Linux paths
+          lib_path:
+            - "/usr/lib/x86_64-linux-gnu/libvoikko.so.1"
+            - "/usr/lib/libvoikko.so.1"
+          dict_path:
+            - "/usr/lib/voikko"
+            - "/usr/share/voikko"
+            - "/usr/local/lib/voikko"
+        win32:  # Windows paths
+          lib_path:
+            - "C:\\Program Files\\Voikko\\libvoikko-1.dll"
+          dict_path:
+            - "C:\\Program Files\\Voikko"
     processing_options:
       preserve_compounds: true
       handle_particles: true

@@ -1,236 +1,210 @@
-#!/usr/bin/env python3
-"""
-Setup script for semantic-text-analyzer.
-Handles both local (Windows/Linux) and Azure ML environments.
-"""
+#!/bin/bash
 
-import argparse
-import logging
-import os
-import platform
-import subprocess
-import sys
-from pathlib import Path
-from typing import List, Optional, Tuple
+# Setup script for semantic text analyzer development environment
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+# Function to log messages
+log_msg() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
 
-class SetupManager:
-    """Manages setup process for semantic-text-analyzer."""
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to setup Voikko for Mac
+setup_voikko_mac() {
+    log_msg "Setting up Voikko for Mac..."
     
-    def __init__(self, env_type: str = "local"):
-        """Initialize setup manager.
-        
-        Args:
-            env_type: Type of environment ("local" or "azure")
-        """
-        self.env_type = env_type
-        self.project_root = Path(__file__).parent.resolve()
-        self.is_windows = platform.system().lower() == "windows"
-
-    def run_setup(self, force: bool = False) -> bool:
-        """Run complete setup process.
-        
-        Args:
-            force: Force recreation of environment
-            
-        Returns:
-            bool: Setup success status
-        """
-        try:
-            logger.info(f"Starting setup in {self.env_type} environment")
-            
-            # Verify system requirements
-            self._verify_requirements()
-            
-            # Set up environment
-            if self.env_type == "local":
-                success = self._setup_local_environment(force)
-            else:
-                success = self._setup_azure_environment()
-            
-            if success:
-                #self._setup_git_hooks()
-                self._create_env_files()
-                logger.info("Setup completed successfully")
-            
-            return success
-
-        except Exception as e:
-            logger.error(f"Setup failed: {str(e)}")
-            return False
-
-    def _verify_requirements(self) -> None:
-        """Verify system requirements are met."""
-        # Check Python version
-        py_version = sys.version_info
-        if py_version.major != 3 or py_version.minor < 9:
-            raise RuntimeError("Python 3.9 or higher required")
-            
-        # Check conda installation
-        if not self._check_command("conda"):
-            raise RuntimeError("Conda not found")
-            
-        # Check git installation
-        if not self._check_command("git"):
-            raise RuntimeError("Git not found")
-
-    def _setup_local_environment(self, force: bool) -> bool:
-        """Set up local development environment."""
-        env_name = "semantic-analyzer"
-        
-        # Remove existing environment if forced
-        if force:
-            self._run_command(["conda", "env", "remove", "-n", env_name])
-        
-        # Create conda environment
-        logger.info("Creating conda environment...")
-        result = self._run_command([
-            "conda", "env", "create",
-            "-f", "environment.yaml",
-            "-n", env_name
-        ])
-        
-        if not result:
-            return False
-        
-        # Download NLTK data
-        logger.info("Downloading NLTK data...")
-        self._run_python_code(
-            "import nltk; "
-            "nltk.download('punkt'); "
-            "nltk.download('averaged_perceptron_tagger'); "
-            "nltk.download('wordnet')"
-        )
-        
-        # Handle Voikko setup for Windows
-        if self.is_windows:
-            self._setup_voikko()
-        
-        return True
-
-    def _setup_azure_environment(self) -> bool:
-        """Set up Azure ML environment."""
-        try:
-            # Import Azure-specific modules
-            from azure.ai.ml import MLClient
-            from azure.identity import DefaultAzureCredential
-            
-            # Initialize Azure ML workspace
-            credential = DefaultAzureCredential()
-            ml_client = MLClient.from_config(credential=credential)
-            
-            # Create compute cluster if needed
-            self._ensure_compute_cluster(ml_client)
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Azure setup failed: {str(e)}")
-            return False
-
-    def _setup_voikko(self) -> None:
-        """Set up Voikko for Windows environment."""
-        voikko_path = Path("C:/scripts/Voikko")
-        if not voikko_path.exists():
-            logger.info("Setting up Voikko...")
-            voikko_path.parent.mkdir(parents=True, exist_ok=True)
-            # TODO: Add Voikko download and installation
-            # This would require implementing proper Voikko binary management
-
-    def _setup_git_hooks(self) -> None:
-        """Set up Git hooks for development."""
-        hooks_dir = self.project_root / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create pre-commit hook
-        hook_path = hooks_dir / "pre-commit"
-        with open(hook_path, "w") as f:
-            f.write("""#!/bin/bash
-echo "Running pre-commit checks..."
-
-# Run tests
-python -m pytest tests/ -v || exit 1
-
-# Run formatters
-python -m black . || exit 1
-python -m isort . || exit 1
-
-# Run linters
-python -m flake8 . || exit 1
-python -m mypy . || exit 1
-""")
-        
-        # Make hook executable
-        hook_path.chmod(0o755)
-
-    def _create_env_files(self) -> None:
-        """Create environment files if they don't exist."""
-        for env_file in [".env", ".env.test"]:
-            env_path = self.project_root / env_file
-            if not env_path.exists():
-                template_path = self.project_root / ".env.template"
-                if template_path.exists():
-                    template_path.copy(env_path)
-                    logger.info(f"Created {env_file} from template")
-
-    @staticmethod
-    def _check_command(cmd: str) -> bool:
-        """Check if a command is available."""
-        try:
-            subprocess.run([cmd, "--version"], capture_output=True)
-            return True
-        except FileNotFoundError:
-            return False
-
-    @staticmethod
-    def _run_command(cmd: List[str]) -> bool:
-        """Run a shell command."""
-        try:
-            subprocess.run(cmd, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Command failed: {e}")
-            return False
-
-    @staticmethod
-    def _run_python_code(code: str) -> bool:
-        """Run Python code in current environment."""
-        try:
-            subprocess.run([sys.executable, "-c", code], check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Python code execution failed: {e}")
-            return False
-
-def main():
-    """Main setup entry point."""
-    parser = argparse.ArgumentParser(
-        description="Setup semantic-text-analyzer environment"
-    )
-    parser.add_argument(
-        "--env",
-        choices=["local", "azure"],
-        default="local",
-        help="Environment type"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force environment recreation"
-    )
+    # Install libvoikko using Homebrew if not already installed
+    if ! command_exists voikkospell; then
+        if command_exists brew; then
+            brew install libvoikko
+        else
+            log_msg "Error: Homebrew is required for Mac installation. Please install it first."
+            return 1
+        fi
+    fi
     
-    args = parser.parse_args()
+    # Create Spelling directory if it doesn't exist
+    mkdir -p ~/Library/Spelling
     
-    setup_manager = SetupManager(args.env)
-    success = setup_manager.run_setup(args.force)
+    # Download and install Finnish dictionary
+    DICT_URL="https://www.puimula.org/htp/testing/voikko-snapshot/dict-morpho.zip"
+    TEMP_DIR=$(mktemp -d)
     
-    sys.exit(0 if success else 1)
+    log_msg "Downloading Voikko dictionary..."
+    if curl -L -o "$TEMP_DIR/dict-morpho.zip" "$DICT_URL"; then
+        cd "$TEMP_DIR" || exit
+        unzip dict-morpho.zip
+        cp -r 2/mor-morpho/* ~/Library/Spelling/
+        cd - || exit
+        rm -rf "$TEMP_DIR"
+        log_msg "Voikko dictionary installed successfully"
+    else
+        log_msg "Error: Failed to download Voikko dictionary"
+        rm -rf "$TEMP_DIR"
+        return 1
+    fi
+    
+    return 0
+}
 
-if __name__ == "__main__":
-    main()
+# Function to setup Voikko for Linux
+setup_voikko_linux() {
+    log_msg "Setting up Voikko for Linux..."
+    
+    # Install libvoikko and Finnish dictionary
+    if command_exists apt-get; then
+        sudo apt-get update
+        sudo apt-get install -y libvoikko-dev voikko-fi python3-libvoikko
+    elif command_exists dnf; then
+        sudo dnf install -y libvoikko-devel voikko-fi python3-libvoikko
+    else
+        log_msg "Error: Unsupported Linux distribution"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to setup Voikko for Windows
+setup_voikko_windows() {
+    log_msg "Setting up Voikko for Windows..."
+    
+    # Download and install Voikko
+    VOIKKO_WIN_URL="https://www.puimula.org/voikko/win/libvoikko-4.3.2.msi"
+    TEMP_DIR=$(mktemp -d)
+    
+    log_msg "Downloading Voikko installer..."
+    if curl -L -o "$TEMP_DIR/libvoikko.msi" "$VOIKKO_WIN_URL"; then
+        msiexec /i "$TEMP_DIR/libvoikko.msi" /quiet
+        rm -rf "$TEMP_DIR"
+        log_msg "Voikko installed successfully"
+    else
+        log_msg "Error: Failed to download Voikko installer"
+        rm -rf "$TEMP_DIR"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to setup NLTK data
+setup_nltk() {
+    log_msg "Setting up NLTK data..."
+    
+    # Create a Python script for NLTK setup
+    TEMP_SCRIPT=$(mktemp)
+    cat > "$TEMP_SCRIPT" << 'EOF'
+import nltk
+import ssl
+
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# Download essential NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+nltk.download('averaged_perceptron_tagger')
+EOF
+    
+    # Get conda environment Python path
+    CONDA_PYTHON="$CONDA_PREFIX/bin/python"
+    
+    # Run the NLTK setup script with conda environment's Python
+    if [ -x "$CONDA_PYTHON" ]; then
+        "$CONDA_PYTHON" "$TEMP_SCRIPT"
+        local result=$?
+        rm -f "$TEMP_SCRIPT"
+        
+        if [ $result -eq 0 ]; then
+            log_msg "NLTK setup completed successfully"
+            return 0
+        else
+            log_msg "Error: NLTK setup failed"
+            return 1
+        fi
+    else
+        log_msg "Error: Could not find Python in conda environment"
+        rm -f "$TEMP_SCRIPT"
+        return 1
+    fi
+}
+
+# Main setup function
+main() {
+    log_msg "Starting setup..."
+    
+    # Check Python version
+    if ! command_exists python3; then
+        log_msg "Error: Python 3 is required"
+        exit 1
+    fi
+    
+    # Check conda
+    if ! command_exists conda; then
+        log_msg "Error: conda is required"
+        exit 1
+    fi
+    
+    # Create conda environment
+    log_msg "Creating conda environment..."
+    if ! (conda env create -f environment.yaml || conda env update -f environment.yaml); then
+        log_msg "Error: Failed to create/update conda environment"
+        exit 1
+    fi
+    
+    # Activate conda environment
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    if ! conda activate semantic-analyzer; then
+        log_msg "Error: Failed to activate conda environment"
+        exit 1
+    fi
+    
+    # Verify conda environment is active
+    if [[ "$CONDA_DEFAULT_ENV" != "semantic-analyzer" ]]; then
+        log_msg "Error: Failed to activate semantic-analyzer environment"
+        exit 1
+    fi
+    
+    # Setup Voikko based on platform
+    local setup_result=0
+    case "$(uname -s)" in
+        Darwin*)
+            setup_voikko_mac || setup_result=$?
+            ;;
+        Linux*)
+            setup_voikko_linux || setup_result=$?
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            setup_voikko_windows || setup_result=$?
+            ;;
+        *)
+            log_msg "Error: Unsupported operating system"
+            exit 1
+            ;;
+    esac
+    
+    if [ $setup_result -ne 0 ]; then
+        log_msg "Error: Voikko setup failed"
+        exit 1
+    fi
+    
+    # Setup NLTK data
+    if ! setup_nltk; then
+        log_msg "Error: NLTK setup failed"
+        exit 1
+    fi
+    
+    log_msg "Setup completed successfully!"
+    return 0
+}
+
+# Run main function
+main

@@ -224,5 +224,3 @@ async def analyze_finnish_text():
 ## Additional Resources
 
 - [Voikko Official Documentation](https://voikko.puimula.org/)
-- [Python Libvoikko Documentation](https://github.com/voikko/python-libvoikko)
-- [Finnish Language Processing](https://www.kielipankki.fi/)
