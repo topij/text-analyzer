@@ -27,7 +27,7 @@ setup_voikko_mac() {
     fi
     
     # Create Spelling directory if it doesn't exist
-    mkdir -p ~/Library/Spelling
+    mkdir -p ~/Library/Spelling/voikko
     
     # Download and install Finnish dictionary
     DICT_URL="https://www.puimula.org/htp/testing/voikko-snapshot/dict-morpho.zip"
@@ -37,7 +37,7 @@ setup_voikko_mac() {
     if curl -L -o "$TEMP_DIR/dict-morpho.zip" "$DICT_URL"; then
         cd "$TEMP_DIR" || exit
         unzip dict-morpho.zip
-        cp -r 2/mor-morpho/* ~/Library/Spelling/
+        cp -r 2/mor-morpho/* ~/Library/Spelling/voikko/
         cd - || exit
         rm -rf "$TEMP_DIR"
         log_msg "Voikko dictionary installed successfully"

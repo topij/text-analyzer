@@ -685,18 +685,15 @@ class FinnishTextProcessor(BaseTextProcessor):
 
 
 class VoikkoHandler:
-    """Handler for Voikko initialization with configuration support."""
+    """Handler for Voikko library initialization and management."""
 
-    # Default paths as fallback
     DEFAULT_PATHS = {
         "win32": {
             "lib_path": [
-                r"C:\scripts\Voikko\libvoikko-1.dll",
                 r"C:\Program Files\Voikko\libvoikko-1.dll",
                 r"C:\Voikko\libvoikko-1.dll",
             ],
             "dict_path": [
-                r"C:\scripts\Voikko",
                 r"C:\Program Files\Voikko",
                 r"C:\Voikko",
             ],
@@ -709,6 +706,17 @@ class VoikkoHandler:
             "dict_path": [
                 "/usr/lib/voikko",
                 "/usr/share/voikko",
+            ],
+        },
+        "darwin": {
+            "lib_path": [
+                "/opt/homebrew/lib/libvoikko.dylib",
+                "/usr/local/lib/libvoikko.dylib",
+            ],
+            "dict_path": [
+                "/opt/homebrew/lib/voikko",
+                "/usr/local/lib/voikko",
+                "/usr/local/share/voikko",
             ],
         },
     }

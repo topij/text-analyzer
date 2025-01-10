@@ -14,6 +14,8 @@ from src.config.manager import ConfigManager
 from src.core.managers import EnvironmentManager, EnvironmentConfig
 from FileUtils import FileUtils
 
+# Configure logger
+logger = logging.getLogger(__name__)
 
 TEST_DIRECTORY_STRUCTURE = {
     "data": ["raw", "processed", "config/stop_words", "parameters"],
@@ -32,6 +34,7 @@ TEST_ENV_VARS = {
     "APP_LOGGING_LEVEL": "DEBUG",
     "APP_MODELS_DEFAULT_PROVIDER": "openai",
     "APP_MODELS_DEFAULT_MODEL": "gpt-4o-mini",
+    "VOIKKO_LIBRARY_PATH": "/opt/homebrew/lib/libvoikko.dylib",
 }
 
 
@@ -51,10 +54,23 @@ def copy_stopwords_files(test_root: Path) -> None:
     dest_dir = test_root / "data" / "config" / "stop_words"
     dest_dir.mkdir(parents=True, exist_ok=True)
     
+    logger.info(f"Copying stopwords files from {src_dir} to {dest_dir}")
+    
     for file in ["en.txt", "fi.txt"]:
         src_file = src_dir / file
         if src_file.exists():
+            logger.info(f"Found source file: {src_file}")
             shutil.copy2(src_file, dest_dir / file)
+            logger.info(f"Copied {file} to {dest_dir / file}")
+        else:
+            # Try absolute path from workspace root
+            workspace_src = Path.cwd() / "data" / "config" / "stop_words" / file
+            if workspace_src.exists():
+                logger.info(f"Found source file at workspace path: {workspace_src}")
+                shutil.copy2(workspace_src, dest_dir / file)
+                logger.info(f"Copied {file} to {dest_dir / file}")
+            else:
+                logger.warning(f"Stopwords file not found: {file} (tried {src_file} and {workspace_src})")
 
 
 @pytest.fixture
@@ -84,11 +100,18 @@ def test_root() -> Generator[Path, None, None]:
 def file_utils(tmp_path_factory) -> FileUtils:
     """Create FileUtils instance for testing."""
     tmp_path = tmp_path_factory.mktemp("test_data")
-    return FileUtils(
+    
+    # Initialize FileUtils
+    utils = FileUtils(
         project_root=tmp_path,
         directory_structure=TEST_DIRECTORY_STRUCTURE,
         create_directories=True,
     )
+    
+    # Copy stopwords files to the test data directory
+    copy_stopwords_files(tmp_path)
+    
+    return utils
 
 
 @pytest.fixture(scope="session")
@@ -173,6 +196,9 @@ def test_environment_manager(file_utils: FileUtils, test_config_manager: ConfigM
         config_dir = temp_path / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         
+        # Copy stopwords files
+        copy_stopwords_files(temp_path)
+        
         # Create config content
         config_content = """
 environment: production
@@ -204,6 +230,8 @@ languages:
     fi:
       name: Finnish
       code: fi
+      voikko_path: "/opt/homebrew/lib/libvoikko.dylib"
+      voikko_dict_path: "/opt/homebrew/lib/voikko"
 
 features:
   use_cache: true
