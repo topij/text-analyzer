@@ -391,69 +391,6 @@ class TestDataGenerator:
             }
         )
 
-    def generate_test_content(self, force: bool = False) -> Dict[str, Path]:
-        """Generate test content in both languages."""
-        output_dir = self.file_utils.get_data_path("raw")
-        files = {}
-
-        content = {
-            "en": {
-                "technical": [
-                    "Machine learning models are trained using large datasets to recognize patterns. Neural networks enable complex pattern recognition.",
-                    "Cloud computing services provide scalable infrastructure for deployments. APIs enable system integration.",
-                ],
-                "business": [
-                    "Q3 financial results show 15% revenue growth. Market expansion strategy focuses on emerging sectors.",
-                    "Strategic partnerships drive innovation. Customer satisfaction metrics show positive trends.",
-                ],
-            },
-            "fi": {
-                "technical": [
-                    "Koneoppimismallit koulutetaan suurilla datajoukolla tunnistamaan kaavoja. Neuroverkot mahdollistavat monimutkaisen hahmontunnistuksen.",
-                    "Pilvipalvelut tarjoavat skaalautuvan infrastruktuurin. Rajapinnat mahdollistavat järjestelmäintegraation.",
-                ],
-                "business": [
-                    "Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun. Markkinalaajennusstrategia keskittyy uusiin sektoreihin.",
-                    "Strategiset kumppanuudet edistävät innovaatiota. Asiakastyytyväisyysmittarit osoittavat positiivista kehitystä.",
-                ],
-            },
-        }
-
-        for lang, texts in content.items():
-            df = pd.DataFrame(
-                [
-                    {
-                        "id": f"{content_type}_{idx+1}",
-                        "type": content_type,
-                        "language": lang,
-                        "content": text,
-                    }
-                    for content_type, content_texts in texts.items()
-                    for idx, text in enumerate(content_texts)
-                ]
-            )
-
-            file_name = f"test_content_{lang}"
-            if not force and (output_dir / f"{file_name}.xlsx").exists():
-                logger.warning(
-                    f"Content file {file_name}.xlsx already exists, skipping..."
-                )
-                files[lang] = output_dir / f"{file_name}.xlsx"
-                continue
-
-            result = self.file_utils.save_data_to_storage(
-                data={file_name: df},
-                output_type="raw",
-                file_name=file_name,
-                output_filetype=OutputFileType.XLSX,
-                include_timestamp=False,
-            )
-
-            saved_path = Path(next(iter(result[0].values())))
-            files[lang] = saved_path
-
-        return files
-
     def _save_parameters(
         self,
         language: str,
@@ -492,30 +429,58 @@ class TestDataGenerator:
 
 
 def main():
-    """Generate all test data."""
+    """Run test data generation."""
     import argparse
+    from src.config.manager import ConfigManager
+    from src.core.managers.environment_manager import EnvironmentManager, EnvironmentConfig
+    from FileUtils import FileUtils
 
-    parser = argparse.ArgumentParser(
-        description="Generate test data for semantic analyzer"
-    )
-    parser.add_argument(
-        "--force", action="store_true", help="Force overwrite existing files"
-    )
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Generate test data for semantic analyzer")
+    parser.add_argument("--force", action="store_true", help="Force overwrite existing files")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
-    generator = TestDataGenerator()
-
     try:
+        # Create FileUtils instance
+        project_root = Path(__file__).resolve().parent.parent
+        file_utils = FileUtils(project_root=project_root)
+
+        # Initialize environment with ConfigManager
+        config_manager = ConfigManager(file_utils=file_utils)
+        config_manager.init_environment()
+        config_manager.init_paths()
+        config_manager.init_file_utils()
+        config_manager.load_configurations()
+
+        # Initialize environment manager with shared FileUtils
+        env_config = EnvironmentConfig(
+            env_type="development",
+            project_root=project_root,
+            log_level="INFO"
+        )
+        environment = EnvironmentManager(env_config)
+        
+        # Set up shared components
+        environment.file_utils = file_utils
+        environment.config_manager = config_manager
+        
+        # Make sure the environment is properly initialized
+        EnvironmentManager._instance = environment
+
+        # Generate test data using the shared environment
+        logger.info("Initializing project structure...")
+        generator = TestDataGenerator(file_utils=file_utils)
         files = generator.generate_all(force=args.force)
-        print("\nGenerated files:")
-        for file_type, paths in files.items():
-            print(f"\n{file_type.title()}:")
-            for path in paths:
-                print(f"  - {path}")
+        logger.info(f"Generated files: {files}")
+        return 0
+
     except Exception as e:
-        logger.error(f"Generation failed: {e}")
-        raise
+        logger.error(f"Error during project setup: {str(e)}")
+        return 1
 
 
 if __name__ == "__main__":
