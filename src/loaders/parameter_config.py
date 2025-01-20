@@ -3,6 +3,7 @@
 import logging
 from enum import Enum
 from typing import Any, Dict
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -286,9 +287,10 @@ class ParameterConfigurations:
     @classmethod
     def detect_language(cls, file_path: str) -> str:
         """Detect language from file name."""
-        file_path = file_path.lower()
+        # Only look at the filename, not the full path
+        filename = Path(file_path).name.lower()
         if any(
-            fi_indicator in file_path
+            fi_indicator in filename
             for fi_indicator in ["fi", "fin", "finnish", "suomi"]
         ):
             return "fi"
