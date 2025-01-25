@@ -1,7 +1,8 @@
 - refactor analyzer classes (DRY): Done 
 - prompt management system: for example, prompts stored in yaml files (one version already exists for a previous version of the analyzer)
-- configuration system optimization 
+- configuration system optimization: Done
+- update to support Langchain > 0.3. Supported schemas used with "with_structured_output" has changed and the current Pydantic implementation fails
 - Streamlit UI (one version already exists for a previous version of the analyzer)
-- general clean up and optimization
+- project setup clean up and update with support to Win/WSL, MacOS, and Linux: Done
+- general clean up and optimization: Done
 - agentic version of the analyzer
-- 

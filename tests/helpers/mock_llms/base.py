@@ -15,10 +15,33 @@ logger = logging.getLogger(__name__)
 class BaseMockLLM(BaseChatModel):
     """Base class for all mock LLMs with structured output support."""
 
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"
+
     def __init__(self):
         super().__init__()
-        self._call_history = []
-        self._current_output_class: Optional[Type[BaseModel]] = None
+        # Store state in a protected dict instead of direct attributes
+        self._state = {
+            "call_history": [],
+            "current_output_class": None
+        }
+
+    @property
+    def _call_history(self):
+        return self._state["call_history"]
+    
+    @_call_history.setter
+    def _call_history(self, value):
+        self._state["call_history"] = value
+
+    @property
+    def _current_output_class(self):
+        return self._state["current_output_class"]
+    
+    @_current_output_class.setter
+    def _current_output_class(self, value):
+        self._state["current_output_class"] = value
 
     def with_structured_output(
         self, output_class: Type[BaseModel]

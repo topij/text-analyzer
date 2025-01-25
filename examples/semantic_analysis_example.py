@@ -115,10 +115,11 @@ async def main():
         # Create runner
         runner = SemanticAnalysisRunner()
 
-        # Set up file paths
-        input_file = "test_content_en.xlsx"
-        output_file = "analysis_results_en.xlsx"
-        parameter_file = "parameters_en.xlsx"
+        # Set up file paths relative to project root
+        data_dir = Path().resolve() / "data"
+        input_file = data_dir / "raw" / "test_content_en.xlsx"
+        output_file = data_dir / "processed" / "analysis_results_en.xlsx"
+        parameter_file = data_dir / "parameters" / "parameters_en.xlsx"
 
         # Run analysis
         await runner.run_analysis(
