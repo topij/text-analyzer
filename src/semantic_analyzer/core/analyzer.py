@@ -1,3 +1,5 @@
+# src/semantic_analyzer/core/analyzer.py
+
 """Core semantic analysis functionality."""
 
 import asyncio
@@ -32,30 +34,13 @@ from ..base import (
     AnalyzerFactory,
     AnalysisError,
 )
+from ..analyzer import BaseAnalyzerConfig
 
 logger = logging.getLogger(__name__)
 
 
 class CoreSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Core semantic analysis functionality."""
-
-    ANALYZER_MAPPING = {
-        "keywords": {
-            "attr_name": "keyword_analyzer",
-            "class": KeywordAnalyzer,
-            "singular": "keyword",
-        },
-        "themes": {
-            "attr_name": "theme_analyzer",
-            "class": ThemeAnalyzer,
-            "singular": "theme",
-        },
-        "categories": {
-            "attr_name": "category_analyzer",
-            "class": CategoryAnalyzer,
-            "singular": "category",
-        },
-    }
 
     def __init__(
         self,
@@ -81,18 +66,20 @@ class CoreSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             **kwargs
         )
         self._init_categories(categories)
-        self._init_analyzers()
+        self._init_analyzers(use_excel=False)
 
     def _init_categories(self, categories: Optional[Dict[str, CategoryConfig]]) -> None:
         """Initialize categories with validation."""
         self.categories = categories or {}
 
-    def _init_analyzers(self) -> None:
+    def _init_analyzers(self, use_excel: bool = False) -> None:
         """Initialize individual analyzers."""
-        for analysis_type, config in self.ANALYZER_MAPPING.items():
+        analyzer_types = BaseAnalyzerConfig.ANALYZER_TYPES
+
+        for analysis_type, config in analyzer_types.items():
             analyzer = AnalyzerFactory.create_analyzer(
                 analyzer_type=analysis_type,
-                analyzer_class=config["class"],
+                analyzer_class=config["analyzer_class"],
                 llm=self.llm,
                 file_utils=self.file_utils,
                 categories=self.categories if analysis_type == "categories" else None,
@@ -106,11 +93,38 @@ class CoreSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         **kwargs,
     ) -> Awaitable[Any]:
         """Create analysis coroutine for specified type."""
-        config = self.ANALYZER_MAPPING[analysis_type]
+        config = BaseAnalyzerConfig.ANALYZER_TYPES[analysis_type]
         analyzer = getattr(self, config["attr_name"])
         return analyzer.analyze(text, **kwargs)
 
-    def analyze(
+    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
+        """Create error result for specific analysis type."""
+        error_results = {
+            "keywords": KeywordAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                success=False
+            ),
+            "themes": ThemeAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                themes=[],
+                theme_hierarchy={},
+                success=False
+            ),
+            "categories": CategoryAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                matches=[],
+                success=False
+            ),
+        }
+        return error_results.get(analysis_type, {"error": error})
+
+    async def analyze(
         self,
         text: str,
         analysis_types: Optional[List[str]] = None,
@@ -134,6 +148,8 @@ class CoreSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             AnalysisError: If analysis fails
         """
         try:
+            start_time = datetime.now()
+
             # Set language if specified
             if language:
                 self.set_language(language)
@@ -151,50 +167,92 @@ class CoreSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                 for analysis_type in types_to_run
             ]
 
-            # Run analyses
+            # Run analyses with timeout
             try:
-                results = asyncio.run(
-                    asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=timeout
-                    )
+                results = await asyncio.wait_for(
+                    asyncio.gather(*tasks, return_exceptions=True),
+                    timeout=timeout
                 )
-            except asyncio.TimeoutError as e:
-                raise AnalysisError(f"Analysis timed out after {timeout} seconds") from e
+            except asyncio.TimeoutError:
+                raise AnalysisError(f"Analysis timed out after {timeout} seconds")
 
-            # Process results
             processed_results = self._process_analysis_results(results, types_to_run)
+            processing_time = (datetime.now() - start_time).total_seconds()
 
             return CompleteAnalysisResult(
-                text=text,
-                language=language or "en",
-                results=processed_results,
-                timestamp=datetime.now(),
+                keywords=processed_results.get("keywords", KeywordAnalysisResult(
+                    language=self.parameters.general.language,
+                    keywords=[],
+                    compound_words=[],
+                    domain_keywords={},
+                    success=False
+                )),
+                themes=processed_results.get("themes", ThemeAnalysisResult(
+                    language=self.parameters.general.language,
+                    themes=[],
+                    theme_hierarchy={},
+                    success=False
+                )),
+                categories=processed_results.get("categories", CategoryAnalysisResult(
+                    language=self.parameters.general.language,
+                    matches=[],
+                    success=False
+                )),
+                language=self.parameters.general.language,
+                processing_time=processing_time,
+                metadata={
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "language": self.parameters.general.language,
+                }
             )
 
         except Exception as e:
-            logger.error(f"Analysis failed: {e}")
-            raise AnalysisError(f"Analysis failed: {e}") from e
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            raise AnalysisError(f"Analysis failed: {str(e)}")
 
-    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
-        """Create error result for specific analysis type."""
-        if analysis_type == "themes":
-            return ThemeAnalysisResult(
-                themes=[],
-                error=error,
-                timestamp=datetime.now(),
+    def _validate_analysis_types(
+        self, types: Optional[List[str]] = None
+    ) -> List[str]:
+        """Validate and normalize analysis types.
+
+        Args:
+            types: List of requested analysis types
+
+        Returns:
+            List of validated and normalized analysis type names
+
+        Raises:
+            ValueError: If any requested type is invalid
+        """
+        valid_types = set(BaseAnalyzerConfig.ANALYZER_TYPES.keys())
+        
+        if not types:
+            return list(valid_types)
+
+        # Normalize input types to plural form
+        normalized_types = []
+        for t in types:
+            # Handle both singular and plural forms
+            if t.endswith("y"):
+                plural = t[:-1] + "ies"
+            elif not t.endswith("s"):
+                plural = t + "s"
+            else:
+                plural = t
+
+            normalized_types.append(plural)
+
+        # Check for invalid types
+        invalid_types = set(normalized_types) - valid_types
+        if invalid_types:
+            valid_forms = []
+            for valid, config in BaseAnalyzerConfig.ANALYZER_TYPES.items():
+                singular = config["singular_name"]
+                valid_forms.extend([valid, singular])
+
+            raise ValueError(
+                f"Invalid analysis types: {invalid_types}. "
+                f"Valid types are: {', '.join(valid_forms)}"
             )
-        elif analysis_type == "categories":
-            return CategoryAnalysisResult(
-                categories=[],
-                error=error,
-                timestamp=datetime.now(),
-            )
-        elif analysis_type == "keywords":
-            return KeywordAnalysisResult(
-                keywords=[],
-                error=error,
-                timestamp=datetime.now(),
-            )
-        else:
-            return {"error": error, "timestamp": datetime.now()}
+
+        return normalized_types

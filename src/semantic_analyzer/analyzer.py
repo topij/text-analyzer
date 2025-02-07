@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Awaitable
+from typing import Any, Dict, List, Optional, Union, Awaitable, Type, TypeVar, Protocol
 
 import pandas as pd
 from langchain_core.language_models import BaseChatModel
@@ -56,21 +56,56 @@ logger = logging.getLogger(__name__)
 
 from tqdm import tqdm  # For progress reporting
 
+# Type variables for generic analyzer types
+T = TypeVar('T')
+
+class AnalyzerMapping(Protocol):
+    """Protocol for analyzer mapping configuration."""
+    analyzer_class: Type[T]
+    attr_name: str
+    singular_name: str = ''
+
+class BaseAnalyzerConfig:
+    """Base configuration for analyzer mappings."""
+    
+    ANALYZER_TYPES = {
+        "keywords": {
+            "analyzer_class": KeywordAnalyzer,
+            "attr_name": "keyword_analyzer",
+            "singular_name": "keyword",
+        },
+        "themes": {
+            "analyzer_class": ThemeAnalyzer,
+            "attr_name": "theme_analyzer",
+            "singular_name": "theme",
+        },
+        "categories": {
+            "analyzer_class": CategoryAnalyzer,
+            "attr_name": "category_analyzer",
+            "singular_name": "category",
+        },
+    }
+
+    EXCEL_ANALYZER_TYPES = {
+        "keywords": {
+            "analyzer_class": ExcelKeywordAnalyzer,
+            "attr_name": "keyword_analyzer",
+            "singular_name": "keyword",
+        },
+        "themes": {
+            "analyzer_class": ExcelThemeAnalyzer,
+            "attr_name": "theme_analyzer",
+            "singular_name": "theme",
+        },
+        "categories": {
+            "analyzer_class": ExcelCategoryAnalyzer,
+            "attr_name": "category_analyzer",
+            "singular_name": "category",
+        },
+    }
 
 class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Enhanced SemanticAnalyzer with Excel support."""
-
-    ANALYZER_MAPPING = {
-        "keywords": ("keyword_analyzer", KeywordAnalyzer),
-        "themes": ("theme_analyzer", ThemeAnalyzer),
-        "categories": ("category_analyzer", CategoryAnalyzer),
-    }
-
-    EXCEL_ANALYZER_MAPPING = {
-        "keywords": ("keyword_analyzer", ExcelKeywordAnalyzer),
-        "themes": ("theme_analyzer", ExcelThemeAnalyzer),
-        "categories": ("category_analyzer", ExcelCategoryAnalyzer),
-    }
 
     def __init__(
         self,
@@ -82,7 +117,6 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         **kwargs,
     ):
         """Initialize analyzer with Excel support and formatting."""
-        # Try to get FileUtils from EnvironmentManager first
         if file_utils is None:
             try:
                 environment = EnvironmentManager.get_instance()
@@ -94,7 +128,6 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                     "Use EnvironmentManager to get a shared FileUtils instance."
                 )
 
-        # Initialize base components with shared FileUtils
         super().__init__(
             parameter_file=parameter_file,
             file_utils=file_utils,
@@ -103,74 +136,42 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             **kwargs
         )
         
-        # Store file paths
         self.content_file = content_file
         self.parameter_file = parameter_file
-        
-        # Initialize analyzers
-        self._init_analyzers()
-        logger.info(
-            "Excel Semantic Analyzer initialized with formatting support"
-        )
+        self._init_analyzers(use_excel=True)
+        logger.info("Excel Semantic Analyzer initialized with formatting support")
 
-    def _init_analyzers(self) -> None:
+    def _init_analyzers(self, use_excel: bool = False) -> None:
         """Initialize individual analyzers with proper configuration."""
         language = self.parameters.general.language
         logger.info(f"Initializing analyzers for language: {language}")
 
-        # Choose appropriate mapping based on analyzer type
-        mapping = (
-            self.EXCEL_ANALYZER_MAPPING
-            if hasattr(self, 'content_file')
-            else self.ANALYZER_MAPPING
+        analyzer_types = (
+            BaseAnalyzerConfig.EXCEL_ANALYZER_TYPES if use_excel 
+            else BaseAnalyzerConfig.ANALYZER_TYPES
         )
 
-        for analyzer_type, (
-            attr_name,
-            analyzer_class,
-        ) in mapping.items():
+        for analyzer_type, config in analyzer_types.items():
             logger.debug(f"Initializing {analyzer_type} analyzer...")
             
-            # Initialize with appropriate parameters
-            if hasattr(self, 'content_file'):
-                analyzer = analyzer_class(
-                    content_file=self.content_file,
-                    parameter_file=self.parameter_file,
-                    llm=self.llm,
-                    file_utils=self.file_utils,
-                    content_column=getattr(self, 'content_column', 'content'),
-                )
+            analyzer_kwargs = {
+                "llm": self.llm,
+                "file_utils": self.file_utils,
+            }
+
+            if use_excel:
+                analyzer_kwargs.update({
+                    "content_file": self.content_file,
+                    "parameter_file": self.parameter_file,
+                    "content_column": getattr(self, 'content_column', 'content'),
+                })
             else:
-                analyzer = analyzer_class(
-                    llm=self.llm,
-                    file_utils=self.file_utils,
-                    config={"language": language},
-                )
-            setattr(self, attr_name, analyzer)
+                analyzer_kwargs["config"] = {"language": language}
 
-        logger.info(f"Successfully initialized all analyzers")
+            analyzer = config["analyzer_class"](**analyzer_kwargs)
+            setattr(self, config["attr_name"], analyzer)
 
-    def _verify_analyzers(self) -> None:
-        """Verify that all required analyzers are properly initialized."""
-        logger.debug("Verifying analyzer initialization...")
-        
-        # Check if any analyzers are initialized
-        if not any(hasattr(self, attr_name) for _, (attr_name, _) in self.EXCEL_ANALYZER_MAPPING.items()):
-            raise ValueError("No analyzers have been initialized")
-        
-        # Verify each analyzer
-        for analyzer_type, (attr_name, _) in self.EXCEL_ANALYZER_MAPPING.items():
-            if not hasattr(self, attr_name):
-                logger.warning(f"{analyzer_type} analyzer not initialized")
-                continue
-                
-            analyzer = getattr(self, attr_name)
-            if not analyzer:
-                raise ValueError(f"{analyzer_type} analyzer is None")
-                
-            logger.debug(f"Verified {analyzer_type} analyzer")
-            
-        logger.debug("All available analyzers verified successfully")
+        logger.info("Successfully initialized all analyzers")
 
     async def analyze_excel(
         self,
@@ -187,18 +188,14 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         start_time = datetime.now()
 
         try:
-            # Verify analyzers before starting
             self._verify_analyzers()
 
-            # Initialize formatter if needed
             if not hasattr(self, "formatter"):
                 self.formatter = ExcelAnalysisFormatter(
                     file_utils=self.file_utils,
-                    config=format_config
-                    or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
+                    config=format_config or ExcelOutputConfig(detail_level=OutputDetail.SUMMARY),
                 )
 
-            # Load content if provided
             if content_file is not None:
                 if isinstance(content_file, pd.DataFrame):
                     content_df = content_file
@@ -208,28 +205,25 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                     )
                 kwargs["content"] = content_df
 
-            # Validate analysis types
             types_to_run = self._validate_analysis_types(analysis_types)
             logger.debug(f"Running analysis types: {types_to_run}")
 
-            # Run analyses
-            analysis_results = await self._run_analyses(
-                types_to_run, batch_size, show_progress, **kwargs
-            )
+            analysis_tasks = []
+            for analyzer_type in types_to_run:
+                config = BaseAnalyzerConfig.EXCEL_ANALYZER_TYPES[analyzer_type]
+                analyzer = getattr(self, config["attr_name"])
+                
+                analysis_kwargs = {k: v for k, v in kwargs.items() if k != 'show_progress'}
+                task = analyzer.analyze_excel(batch_size=batch_size, **analysis_kwargs)
+                analysis_tasks.append(task)
 
-            # Format results
-            formatted_df = self.formatter.format_output(
-                analysis_results, types_to_run
-            )
+            results = await asyncio.gather(*analysis_tasks)
+            formatted_df = self.formatter.format_output(results, types_to_run)
 
-            # Add metadata
             formatted_df["analysis_timestamp"] = datetime.now()
-            formatted_df["processing_time"] = (
-                datetime.now() - start_time
-            ).total_seconds()
+            formatted_df["processing_time"] = (datetime.now() - start_time).total_seconds()
             formatted_df["language"] = self.parameters.general.language
 
-            # Save if requested
             if save_results and output_file:
                 logger.info(f"Saving results to {output_file}...")
                 self.formatter.save_excel_results(
@@ -242,119 +236,43 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             logger.error(f"Excel analysis failed: {str(e)}", exc_info=True)
             raise RuntimeError(f"Excel analysis failed: {str(e)}")
 
-    async def analyze_excel(
-        self,
-        analysis_types: Optional[List[str]] = None,
-        batch_size: int = 10,
-        show_progress: bool = True,
-        **kwargs,
-    ) -> pd.DataFrame:
-        """Run Excel analysis with specified types.
-
-        Args:
-            analysis_types: List of analysis types to run
-            batch_size: Size of processing batches
-            show_progress: Whether to show progress bar
-            **kwargs: Additional analysis parameters
-
-        Returns:
-            DataFrame with analysis results
-        """
-        try:
-            # Verify analyzers are ready
-            self._verify_analyzers()
-
-            # Load and validate Excel content
-            content_df = pd.read_excel(self.content_file)
-            if content_df.empty:
-                raise ValueError("Excel file contains no data")
-
-            # Validate analysis types
-            types_to_run = self._validate_analysis_types(analysis_types)
-            logger.info(f"Running analyses: {', '.join(types_to_run)}")
-
-            # Run analyses concurrently
-            analysis_tasks = []
-            for analyzer_type in types_to_run:
-                attr_name = self.EXCEL_ANALYZER_MAPPING[analyzer_type][0]
-                analyzer = getattr(self, attr_name)
+    def _verify_analyzers(self) -> None:
+        """Verify that all required analyzers are properly initialized."""
+        logger.debug("Verifying analyzer initialization...")
+        
+        analyzer_types = BaseAnalyzerConfig.EXCEL_ANALYZER_TYPES
+        if not any(hasattr(self, config["attr_name"]) for config in analyzer_types.values()):
+            raise ValueError("No analyzers have been initialized")
+        
+        for analyzer_type, config in analyzer_types.items():
+            attr_name = config["attr_name"]
+            if not hasattr(self, attr_name):
+                logger.warning(f"{analyzer_type} analyzer not initialized")
+                continue
                 
-                logger.info(f"Running {analyzer_type} analysis...")
-                # Remove show_progress from kwargs
-                analysis_kwargs = {k: v for k, v in kwargs.items() if k != 'show_progress'}
-                task = analyzer.analyze_excel(
-                    batch_size=batch_size,
-                    **analysis_kwargs
-                )
-                analysis_tasks.append(task)
+            analyzer = getattr(self, attr_name)
+            if not analyzer:
+                raise ValueError(f"{analyzer_type} analyzer is None")
+                
+            logger.debug(f"Verified {analyzer_type} analyzer")
+            
+        logger.debug("All available analyzers verified successfully")
 
-            # Wait for all analyses to complete
-            results = await asyncio.gather(*analysis_tasks)
-
-            # Combine results
-            combined_df = pd.concat(results, axis=1)
-            logger.info("Excel analysis completed successfully")
-
-            # Save results if output file is specified
-            if 'output_file' in kwargs:
-                output_path = Path(kwargs['output_file'])
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                combined_df.to_excel(output_path, index=False)
-                logger.info(f"Results saved to: {output_path}")
-
-            return combined_df
-
-        except Exception as e:
-            error_msg = f"Excel analysis failed: {str(e)}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
-
-    def _combine_results(
-        self, results: Dict[str, pd.DataFrame]
-    ) -> pd.DataFrame:
-        """Combine results from different analyzers.
-
-        Args:
-            results: Dict of DataFrames from each analyzer
-
-        Returns:
-            Combined DataFrame with all results
-        """
-        # Start with content DataFrame
+    def _combine_results(self, results: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Combine results from different analyzers."""
         combined_df = self.content.copy()
 
-        # Add results from each analyzer
         for analysis_type, df in results.items():
-            # Get result columns (excluding content column)
-            result_columns = [
-                col for col in df.columns if col != self.content_column
-            ]
-
-            # Add columns with analyzer prefix
+            result_columns = [col for col in df.columns if col != self.content_column]
             for col in result_columns:
-                new_col = (
-                    f"{analysis_type}_{col}"
-                    if not col.startswith(analysis_type)
-                    else col
-                )
+                new_col = f"{analysis_type}_{col}" if not col.startswith(analysis_type) else col
                 combined_df[new_col] = df[col]
 
         return combined_df
 
-    def _save_results(
-        self, results_df: pd.DataFrame, output_file: Union[str, Path]
-    ) -> Path:
-        """Save analysis results to Excel.
-
-        Args:
-            results_df: DataFrame with analysis results
-            output_file: Output file path
-
-        Returns:
-            Path to saved file
-        """
+    def _save_results(self, results_df: pd.DataFrame, output_file: Union[str, Path]) -> Path:
+        """Save analysis results to Excel."""
         try:
-            # Save using FileUtils
             saved_files, _ = self.file_utils.save_data_to_storage(
                 data={"Analysis Results": results_df},
                 output_type="processed",
@@ -371,9 +289,7 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             logger.error(f"Error saving results: {e}")
             raise
 
-    def _validate_analysis_types(
-        self, types: Optional[List[str]] = None
-    ) -> List[str]:
+    def _validate_analysis_types(self, types: Optional[List[str]] = None) -> List[str]:
         """Validate and return analysis types to run."""
         valid_types = {"keywords", "themes", "categories"}
 
@@ -389,31 +305,8 @@ class ExcelSemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
         return types
 
-
 class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     """Main interface for semantic text analysis."""
-
-    # Define valid types consistently using plural form
-    VALID_TYPES = {"keywords", "themes", "categories"}
-
-    # Mapping between analysis types and their analyzers
-    ANALYZER_MAPPING = {
-        "keywords": {
-            "attr_name": "keyword_analyzer",
-            "class": KeywordAnalyzer,
-            "singular": "keyword",
-        },
-        "themes": {
-            "attr_name": "theme_analyzer",
-            "class": ThemeAnalyzer,
-            "singular": "theme",
-        },
-        "categories": {
-            "attr_name": "category_analyzer",
-            "class": CategoryAnalyzer,
-            "singular": "category",
-        },
-    }
 
     def __init__(
         self,
@@ -427,13 +320,14 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     ):
         """Initialize analyzer with parameters and components."""
         try:
-            # Get components from environment manager if provided
             if environment_manager:
                 components = environment_manager.get_components()
                 file_utils = components["file_utils"]
                 config_manager = components["config_manager"]
 
-            # Initialize core components
+            # Store the base parameter file path
+            self._base_parameter_file = parameter_file
+
             super().__init__(
                 parameter_file=parameter_file,
                 file_utils=file_utils,
@@ -442,7 +336,7 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                 **kwargs
             )
             self._init_categories(categories)
-            self._init_analyzers()
+            self._init_analyzers(use_excel=False)
 
             logger.info("Semantic Analyzer initialized successfully")
 
@@ -450,64 +344,178 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             logger.error(f"Failed to initialize Semantic Analyzer: {e}")
             raise
 
-    def _init_parameters(
-        self, parameter_file: Optional[Union[str, Path]]
-    ) -> None:
-        """Initialize and validate parameters."""
-        if parameter_file:
-            param_path = (
-                Path(parameter_file)
-                if isinstance(parameter_file, Path)
-                else self.file_utils.get_data_path("parameters")
-                / parameter_file
-            )
-            if not param_path.exists():
-                raise FileNotFoundError(
-                    f"Parameter file not found: {param_path}"
-                )
-
-            self.parameter_handler = ParameterHandler(param_path)
-            self.parameters = self.parameter_handler.get_parameters()
-            logger.debug(f"Loaded parameters from {param_path}")
-        else:
-            logger.debug("Using default parameters")
-            self.parameter_handler = ParameterHandler()
-            self.parameters = self.parameter_handler.get_parameters()
-
-    def _init_categories(
-        self, categories: Optional[Dict[str, CategoryConfig]]
-    ) -> None:
+    def _init_categories(self, categories: Optional[Dict[str, CategoryConfig]]) -> None:
         """Initialize categories with validation."""
         self.categories = categories or self.parameters.categories or {}
         if not self.categories:
-            logger.warning(
-                "No categories available from parameters or explicit input"
+            logger.warning("No categories available from parameters or explicit input")
+
+    async def analyze(
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+        **kwargs
+    ) -> CompleteAnalysisResult:
+        """Run semantic analysis on text.
+
+        Args:
+            text: Text to analyze
+            analysis_types: List of analysis types to run
+            **kwargs: Additional analysis parameters. Special parameters:
+                - language: Language to use for analysis. Will be removed from kwargs.
+                - timeout: Timeout for analysis in seconds. Will be removed from kwargs.
+
+        Returns:
+            CompleteAnalysisResult with all analysis results
+        """
+        try:
+            start_time = datetime.now()
+            
+            # Handle special parameters
+            if 'language' in kwargs:
+                self.set_language(kwargs.pop('language'))
+            
+            # Remove timeout parameter if present since individual analyzers don't use it
+            if 'timeout' in kwargs:
+                kwargs.pop('timeout')
+            
+            self._verify_analyzers()
+            try:
+                types_to_run = self._validate_analysis_types(analysis_types)
+            except ValueError as e:
+                # Return a failed result with the validation error
+                return CompleteAnalysisResult(
+                    keywords=KeywordAnalysisResult(
+                        language=self.parameters.general.language,
+                        keywords=[],
+                        compound_words=[],
+                        domain_keywords={},
+                        success=False
+                    ),
+                    themes=ThemeAnalysisResult(
+                        language=self.parameters.general.language,
+                        themes=[],
+                        theme_hierarchy={},
+                        success=False
+                    ),
+                    categories=CategoryAnalysisResult(
+                        language=self.parameters.general.language,
+                        matches=[],
+                        success=False
+                    ),
+                    language=self.parameters.general.language,
+                    processing_time=0.0,
+                    success=False,
+                    error=str(e),
+                    metadata={
+                        "analysis_timestamp": datetime.now().isoformat(),
+                        "language": self.parameters.general.language,
+                    }
+                )
+
+            logger.debug(f"Running analysis types: {types_to_run}")
+
+            analysis_tasks = []
+            for analyzer_type in types_to_run:
+                config = BaseAnalyzerConfig.ANALYZER_TYPES[analyzer_type]
+                analyzer = getattr(self, config["attr_name"])
+                task = analyzer.analyze(text, **kwargs)
+                analysis_tasks.append(task)
+
+            results = await asyncio.gather(*analysis_tasks)
+            processed_results = self._process_analysis_results(results, types_to_run)
+
+            processing_time = (datetime.now() - start_time).total_seconds()
+
+            # Determine overall success based on individual analyzer successes
+            overall_success = all(
+                result.success
+                for analyzer_type in types_to_run
+                if (result := processed_results.get(analyzer_type)) is not None
             )
 
-    def _init_config_and_llm(self, llm: Optional[BaseChatModel]) -> None:
-        """Initialize configuration and LLM."""
-        if not hasattr(self, "analyzer_config"):
-            try:
-                environment = EnvironmentManager.get_instance()
-                components = environment.get_components()
-                self.config_manager = components["config_manager"]
-                self.analyzer_config = AnalyzerConfig(
-                    file_utils=self.file_utils,
-                    config_manager=self.config_manager
-                )
-            except RuntimeError:
-                raise ValueError(
-                    "EnvironmentManager must be initialized before creating SemanticAnalyzer. "
-                    "Initialize EnvironmentManager first."
-                )
+            return CompleteAnalysisResult(
+                keywords=processed_results.get("keywords", KeywordAnalysisResult(
+                    language=self.parameters.general.language,
+                    keywords=[],
+                    compound_words=[],
+                    domain_keywords={},
+                    success=False
+                )),
+                themes=processed_results.get("themes", ThemeAnalysisResult(
+                    language=self.parameters.general.language,
+                    themes=[],
+                    theme_hierarchy={},
+                    success=False
+                )),
+                categories=processed_results.get("categories", CategoryAnalysisResult(
+                    language=self.parameters.general.language,
+                    matches=[],
+                    success=False
+                )),
+                language=self.parameters.general.language,
+                processing_time=processing_time,
+                success=overall_success,
+                metadata={
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "language": self.parameters.general.language,
+                }
+            )
 
-        self.llm = llm or create_llm(
-            analyzer_config=self.analyzer_config,
-            provider=None,
-            model=None,
-        )
+        except Exception as e:
+            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
+            raise RuntimeError(f"Analysis failed: {str(e)}")
 
-    def _init_analyzers(self) -> None:
+    def _verify_analyzers(self) -> None:
+        """Verify that all required analyzers are properly initialized."""
+        logger.debug("Verifying analyzer initialization...")
+        
+        analyzer_types = BaseAnalyzerConfig.ANALYZER_TYPES
+        if not any(hasattr(self, config["attr_name"]) for config in analyzer_types.values()):
+            raise ValueError("No analyzers have been initialized")
+        
+        for analyzer_type, config in analyzer_types.items():
+            attr_name = config["attr_name"]
+            if not hasattr(self, attr_name):
+                logger.warning(f"{analyzer_type} analyzer not initialized")
+                continue
+                
+            analyzer = getattr(self, attr_name)
+            if not analyzer:
+                raise ValueError(f"{analyzer_type} analyzer is None")
+                
+            logger.debug(f"Verified {analyzer_type} analyzer")
+            
+        logger.debug("All available analyzers verified successfully")
+
+    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
+        """Create error result for specific analysis type."""
+        error_results = {
+            "keywords": KeywordAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                success=False
+            ),
+            "themes": ThemeAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                themes=[],
+                theme_hierarchy={},
+                success=False
+            ),
+            "categories": CategoryAnalysisResult(
+                error=error,
+                language=self.parameters.general.language,
+                matches=[],
+                success=False
+            ),
+        }
+        return error_results.get(analysis_type, {"error": error})
+
+    def _init_analyzers(self, use_excel: bool = False) -> None:
         """Initialize analyzers with proper configuration."""
         try:
             # Set up language configuration
@@ -591,15 +599,15 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                 raise ValueError("Language processor not initialized")
 
             # Check analyzers
-            for analysis_type, config in self.ANALYZER_MAPPING.items():
+            for analysis_type, config in BaseAnalyzerConfig.ANALYZER_TYPES.items():
                 attr_name = config["attr_name"]
-                expected_class = config["class"]
+                analyzer_class = config["analyzer_class"]
 
                 if not hasattr(self, attr_name):
                     raise ValueError(f"Missing required analyzer: {attr_name}")
 
                 analyzer = getattr(self, attr_name)
-                if not isinstance(analyzer, expected_class):
+                if not isinstance(analyzer, analyzer_class):
                     raise ValueError(
                         f"Invalid analyzer type for {attr_name}: {type(analyzer)}"
                     )
@@ -626,6 +634,8 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             base_name = "parameters"
             if self._base_parameter_file:
                 base_name = Path(self._base_parameter_file).stem.split("_")[0]
+            elif hasattr(self, "parameter_handler") and hasattr(self.parameter_handler, "parameter_file"):
+                base_name = Path(self.parameter_handler.parameter_file).stem.split("_")[0]
 
             # Construct language-specific parameter file path
             param_path = (
@@ -653,72 +663,6 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         except Exception as e:
             logger.error(f"Error setting language to {language}: {e}")
             raise
-
-    async def analyze(
-        self,
-        text: str,
-        analysis_types: Optional[List[str]] = None,
-        language: Optional[str] = None,
-        timeout: float = 60.0,
-        **kwargs,
-    ) -> CompleteAnalysisResult:
-        """Run analysis pipeline."""
-        start_time = datetime.now()
-
-        # Add debug logs for categories
-        if "categories" in (analysis_types or []):
-            logger.debug(
-                f"Category analyzer categories: {self.category_analyzer.categories}"
-            )
-
-        try:
-            types_to_run = self._validate_analysis_types(analysis_types)
-            tasks = []
-
-            for analysis_type in types_to_run:
-                # Skip category analysis if no categories configured
-                if (
-                    analysis_type == "categories"
-                    and not self.category_analyzer.categories
-                ):
-                    logger.warning(
-                        "Skipping category analysis - no categories configured"
-                    )
-                    continue
-
-                coro = await self._create_analysis_task(
-                    analysis_type, text, **kwargs
-                )
-                if coro:
-                    tasks.append(asyncio.create_task(coro))
-
-            results = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True), timeout=timeout
-            )
-
-            processed_results = self._process_analysis_results(
-                results, types_to_run
-            )
-
-            return CompleteAnalysisResult(
-                keywords=processed_results.get(
-                    "keywords", self._create_error_result_by_type("keywords")
-                ),
-                themes=processed_results.get(
-                    "themes", self._create_error_result_by_type("themes")
-                ),
-                categories=processed_results.get(
-                    "categories",
-                    self._create_error_result_by_type("categories"),
-                ),
-                language=self.parameters.general.language,
-                success=all(r.success for r in processed_results.values()),
-                processing_time=(datetime.now() - start_time).total_seconds(),
-            )
-
-        except Exception as e:
-            logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            return self._create_error_result(str(e), start_time)
 
     @classmethod
     def from_excel(
@@ -748,24 +692,20 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         **kwargs,
     ) -> Optional[Awaitable]:
         """Create analysis coroutine for specified type."""
-        analyzers = {
-            "keywords": (self.keyword_analyzer, "keyword_params"),
-            "themes": (self.theme_analyzer, "theme_params"),
-            "categories": (self.category_analyzer, "category_params"),
-        }
-
         try:
-            if analysis_type not in analyzers:
+            config = BaseAnalyzerConfig.ANALYZER_TYPES.get(analysis_type)
+            if not config:
                 logger.warning(f"Unknown analysis type: {analysis_type}")
                 return None
 
-            analyzer, param_key = analyzers[analysis_type]
+            attr_name = config["attr_name"]
+            analyzer = getattr(self, attr_name)
             logger.debug(f"Creating {analysis_type} analysis task")
 
             # Get type-specific parameters from kwargs
+            param_key = f"{config['singular_name']}_params"
             type_params = kwargs.get(param_key, {})
 
-            # Categories are already set in analyzer initialization
             return analyzer.analyze(text, **type_params)
 
         except Exception as e:
@@ -837,16 +777,16 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         """Analyze single text content from Excel."""
         results = {}
 
-        for analysis_type in self.VALID_TYPES:
+        for analysis_type in BaseAnalyzerConfig.ANALYZER_TYPES:
             try:
                 # Get analyzer configuration
-                analyzer_config = self.ANALYZER_MAPPING[analysis_type]
-                analyzer_attr = analyzer_config["attr_name"]
+                config = BaseAnalyzerConfig.ANALYZER_TYPES[analysis_type]
+                attr_name = config["attr_name"]
 
-                if not hasattr(self, analyzer_attr):
-                    raise AttributeError(f"Missing analyzer: {analyzer_attr}")
+                if not hasattr(self, attr_name):
+                    raise AttributeError(f"Missing analyzer: {attr_name}")
 
-                analyzer = getattr(self, analyzer_attr)
+                analyzer = getattr(self, attr_name)
                 result = await analyzer.analyze(text)
 
                 # Convert CategoryOutput to CategoryAnalysisResult
@@ -1063,8 +1003,25 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         Raises:
             ValueError: If any requested type is invalid
         """
+        # Create a mapping of valid types (both singular and plural)
+        valid_types = set()
+        valid_forms = []
+        for plural, config in BaseAnalyzerConfig.ANALYZER_TYPES.items():
+            singular = config["singular_name"]
+            valid_types.add(plural)
+            valid_types.add(singular)
+            valid_forms.extend([plural, singular])
+
         if not types:
-            return list(self.VALID_TYPES)
+            return list(BaseAnalyzerConfig.ANALYZER_TYPES.keys())
+
+        # Check for invalid types
+        invalid_types = set(types) - valid_types
+        if invalid_types:
+            raise ValueError(
+                f"Invalid analysis types: {invalid_types}. "
+                f"Valid types are: {', '.join(valid_forms)}"
+            )
 
         # Normalize input types to plural form
         normalized_types = []
@@ -1079,20 +1036,7 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
             normalized_types.append(plural)
 
-        # Check for invalid types
-        invalid_types = set(normalized_types) - self.VALID_TYPES
-        if invalid_types:
-            valid_forms = []
-            for valid in self.VALID_TYPES:
-                singular = self.ANALYZER_MAPPING[valid]["singular"]
-                valid_forms.extend([valid, singular])
-
-            raise ValueError(
-                f"Invalid analysis types: {invalid_types}. "
-                f"Valid types are: {', '.join(valid_forms)}"
-            )
-
-        return normalized_types
+        return list(set(normalized_types))
 
     def _create_error_result_by_type(self, analysis_type: str) -> Any:
         """Create appropriate error result for each type."""
@@ -1157,14 +1101,14 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
                         success=result.success,
                         error=result.error,
                     )
-                # elif analysis_type == "categories":
-                #     processed[analysis_type] = CategoryAnalysisResult(
-                #         matches=result.categories,  # Map categories to matches
-                #         language=result.language
-                #         or self.parameters.general.language,
-                #         success=result.success,
-                #         error=result.error,
-                #     )
+                    # elif analysis_type == "categories":
+                    #     processed[analysis_type] = CategoryAnalysisResult(
+                    #         matches=result.categories,  # Map categories to matches
+                    #         language=result.language
+                    #         or self.parameters.general.language,
+                    #         success=result.success,
+                    #         error=result.error,
+                    #     )
                 elif analysis_type == "categories":
                     logger.debug(
                         f"Processing category result type: {type(result)}"
@@ -1249,28 +1193,6 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             error=error,
             processing_time=processing_time,
         )
-
-    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
-        """Create error result for specific analysis type."""
-        base_error = {
-            "success": False,
-            "error": error,
-            "language": self.parameters.general.language,
-            "keywords": [],
-            "compound_words": [],
-            "domain_keywords": {},
-        }
-
-        if analysis_type == "keywords":
-            return KeywordAnalysisResult(**base_error)
-        elif analysis_type == "themes":
-            return ThemeAnalysisResult(
-                themes=[], theme_hierarchy={}, **base_error
-            )
-        elif analysis_type == "categories":
-            return CategoryAnalysisResult(matches=[], **base_error)
-
-        return base_error
 
     def change_llm_provider(
         self, provider: str, model: Optional[str] = None
