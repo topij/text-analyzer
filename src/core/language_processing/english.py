@@ -96,211 +96,8 @@ class EnglishTextProcessor(BaseTextProcessor):
             config: Configuration parameters
             file_utils: FileUtils instance for file operations
         """
-        super().__init__(
-            language=language,
-            custom_stop_words=custom_stop_words,
-            config=config,
-            file_utils=file_utils
-        )
-
-        # Initialize NLTK first
-        self._ensure_nltk_data()
-        self.lemmatizer = WordNetLemmatizer()
-
-    def _ensure_nltk_data(self):
-        """Initialize NLTK with required data."""
-        try:
-            for resource in [
-                "punkt_tab",
-                "averaged_perceptron_tagger",
-                "wordnet",
-            ]:
-                try:
-                    nltk.data.find(
-                        f"corpora/{resource}"
-                        if resource == "wordnet"
-                        else f"tokenizers/{resource}"
-                    )
-                except LookupError:
-                    nltk.download(resource, quiet=True)
-
-            # Force WordNet to load
-            from nltk.corpus import wordnet as wn
-
-            wn.synsets("test")
-
-        except Exception as e:
-            logger.warning(f"NLTK initialization warning: {e}")
-
-    def _load_stop_words(self) -> Set[str]:
-        """Load English stopwords from multiple sources."""
-        try:
-            stop_words = set()
-
-            # 1. Load NLTK stopwords
-            nltk_stops = set(
-                word.lower() for word in stopwords.words("english")
-            )
-            logger.debug(
-                f"Loaded {len(nltk_stops)} NLTK stopwords"
-            )  # Changed to DEBUG
-            stop_words.update(nltk_stops)
-
-            # 2. Load additional stopwords from file
-            config_dir = self.get_data_path("config")
-            stop_words_path = config_dir / "stop_words" / "en.txt"
-
-            if stop_words_path.exists():
-                with open(stop_words_path, "r", encoding="utf-8") as f:
-                    file_stops = {
-                        line.strip().lower() for line in f if line.strip()
-                    }
-                    logger.debug(
-                        f"Loaded {len(file_stops)} additional stopwords from file"
-                    )  # Changed to DEBUG
-                    stop_words.update(file_stops)
-
-            # 3. Add common contractions and special cases
-            contractions = {
-                "'s",
-                "'t",
-                "'re",
-                "'ve",
-                "'ll",
-                "'d",
-                "n't",
-                "i'm",
-                "you're",
-                "he's",
-                "she's",
-                "it's",
-                "we're",
-                "they're",
-                "i've",
-                "you've",
-                "we've",
-                "they've",
-                "won't",
-                "wouldn't",
-                "can't",
-                "cannot",
-                "couldn't",
-                "mustn't",
-                "shouldn't",
-                "wouldn't",
-            }
-            stop_words.update(contractions)
-
-            # Add common English words often not in NLTK's list
-            additional_words = {
-                # Modal verbs and auxiliaries
-                "would",
-                "could",
-                "should",
-                "must",
-                "might",
-                "may",
-                # Common adverbs and conjunctions
-                "really",
-                "actually",
-                "probably",
-                "usually",
-                "certainly",
-                "however",
-                "therefore",
-                "moreover",
-                "furthermore",
-                "nevertheless",
-                # Business/technical common words
-                "etc",
-                "eg",
-                "ie",
-                "example",
-                "use",
-                "using",
-                "used",
-                "new",
-                "way",
-                "ways",
-                "like",
-                "also",
-                "though",
-                "although",
-                # Numbers and measurements
-                "one",
-                "two",
-                "three",
-                "many",
-                "much",
-                "several",
-                "various",
-                # Common adjectives
-                "good",
-                "better",
-                "best",
-                "bad",
-                "worse",
-                "worst",
-                "big",
-                "biggest",
-                "small",
-                "smaller",
-                "smallest",
-                "high",
-                "higher",
-                "highest",
-                "low",
-                "lower",
-                "lowest",
-            }
-            stop_words.update(additional_words)
-
-            logger.debug(
-                f"Total English stopwords: {len(stop_words)}"
-            )  # Changed to DEBUG
-            return stop_words
-
-        except Exception as e:
-            logger.error(f"Error loading stopwords: {e}")
-            return set()
-
-    def get_base_form(self, word: str) -> str:
-        """Get base form with proper initialization check."""
-        if not word:
-            return ""
-
-        try:
-            word = self.handle_contractions(word)
-
-            # Get POS tag
-            pos = self._get_wordnet_pos(word)
-            if pos:
-                return self.lemmatizer.lemmatize(word.lower(), pos=pos)
-
-            # Try different POS tags
-            lemmas = [
-                self.lemmatizer.lemmatize(word.lower(), pos=p)
-                for p in ["n", "v", "a", "r"]
-            ]
-            return min(lemmas, key=len)
-
-        except Exception as e:
-            logger.debug(f"Error getting base form for '{word}': {e}")
-            return word.lower()
-
-    def handle_contractions(self, word: str) -> str:
-        """Handle contractions and possessives."""
-        if not word:
-            return ""
-
-        word_lower = word.lower()
-
-        # Split possessives from nouns
-        if word_lower.endswith("'s"):
-            return word[:-2]
-
-        # Map common contractions
-        contractions_map = {
+        # Initialize contractions first
+        self.contractions = {
             "i'm": "i",
             "you're": "you",
             "he's": "he",
@@ -318,10 +115,190 @@ class EnglishTextProcessor(BaseTextProcessor):
             "cannot": "can",
             "couldn't": "could",
             "shouldn't": "should",
-            "mustn't": "must",
+            "mustn't": "must"
         }
 
-        return contractions_map.get(word_lower, word)
+        # Initialize NLTK resources
+        self._ensure_nltk_data()
+        self.lemmatizer = WordNetLemmatizer()
+
+        # Call parent init after initializing our own attributes
+        super().__init__(
+            language=language,
+            custom_stop_words=custom_stop_words,
+            config=config,
+            file_utils=file_utils
+        )
+        
+        # Initialize stop words
+        self.stop_words = self._load_stop_words()
+
+    def _ensure_nltk_data(self):
+        """Initialize NLTK with required data."""
+        required_resources = {
+            'punkt': 'tokenizers/punkt',
+            'averaged_perceptron_tagger': 'taggers/averaged_perceptron_tagger',
+            'wordnet': 'corpora/wordnet',
+            'stopwords': 'corpora/stopwords'
+        }
+        
+        try:
+            # Verify required resources
+            for resource, path in required_resources.items():
+                try:
+                    nltk.data.find(path)
+                    logger.debug(f"Found NLTK resource: {resource}")
+                except LookupError as e:
+                    logger.error(f"Required NLTK resource '{resource}' not found. Please run setup_dev.sh to install all required resources.")
+                    continue
+
+            # Test core functionality
+            try:
+                # Test tokenizer
+                test_text = "test"
+                tokens = word_tokenize(test_text)
+                if tokens:
+                    logger.debug("Tokenizer working")
+
+                # Test POS tagger
+                try:
+                    tags = nltk.pos_tag([test_text])
+                    if tags:
+                        logger.debug("POS tagger working")
+                except LookupError:
+                    logger.warning("POS tagger not available, falling back to basic noun assumption")
+
+                # Test WordNet
+                try:
+                    from nltk.corpus import wordnet as wn
+                    if wn.synsets(test_text):
+                        logger.debug("WordNet working")
+                except LookupError:
+                    logger.warning("WordNet not available")
+
+                # Test stopwords
+                try:
+                    from nltk.corpus import stopwords
+                    if stopwords.words("english"):
+                        logger.debug("Stopwords working")
+                except LookupError:
+                    logger.warning("Stopwords not available")
+
+            except Exception as e:
+                logger.error(f"Functionality test failed: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error verifying NLTK resources: {str(e)}")
+            # Don't raise - allow fallback behavior for missing resources
+
+    def _get_stop_words(self) -> Set[str]:
+        """Get English stop words."""
+        try:
+            # Basic English stop words
+            stop_words = {
+                "a", "an", "and", "are", "as", "at", "be", "by", "for",
+                "from", "has", "he", "in", "is", "it", "its", "of", "on",
+                "that", "the", "to", "was", "were", "will", "with", "the",
+                "i", "you", "he", "she", "it", "we", "they",
+                "i'm", "you're"
+            }
+            
+            # Add contractions and their base forms
+            stop_words.update(self.contractions.keys())
+            stop_words.update(self.contractions.values())
+            
+            return stop_words
+            
+        except Exception as e:
+            logger.error(f"Error getting stop words: {str(e)}")
+            return set()
+
+    def _load_stop_words(self) -> Set[str]:
+        """Load English stopwords from multiple sources."""
+        try:
+            stop_words = set()
+
+            # 1. Load NLTK stopwords if available
+            try:
+                nltk.data.find('corpora/stopwords')
+                nltk_stops = set(word.lower() for word in stopwords.words("english"))
+                stop_words.update(nltk_stops)
+            except LookupError:
+                logger.debug("NLTK stopwords not available, using basic set")
+                # Use our basic set if NLTK's not available
+                stop_words.update(self._get_stop_words())
+
+            # 2. Load additional stopwords from file if available
+            if self.file_utils:
+                try:
+                    config_dir = self.file_utils.get_data_path("config")
+                    stop_words_path = config_dir / "stop_words" / "en.txt"
+                    if stop_words_path.exists():
+                        with open(stop_words_path, "r", encoding="utf-8") as f:
+                            file_stops = {line.strip().lower() for line in f if line.strip()}
+                            stop_words.update(file_stops)
+                except Exception as e:
+                    logger.debug(f"Could not load additional stopwords from file: {e}")
+
+            # 3. Add contractions and their base forms
+            stop_words.update(self.contractions.keys())
+            stop_words.update(self.contractions.values())
+
+            # 4. Add common English words often not in NLTK's list
+            additional_words = {
+                # Modal verbs and auxiliaries
+                "would", "could", "should", "must", "might", "may",
+                # Common adverbs and conjunctions
+                "really", "actually", "probably", "usually", "certainly",
+                "however", "therefore", "moreover", "furthermore", "nevertheless",
+                # Business/technical common words
+                "etc", "eg", "ie", "example", "use", "using", "used",
+                "new", "way", "ways", "like", "also", "though", "although",
+                # Numbers and measurements
+                "one", "two", "three", "many", "much", "several", "various",
+            }
+            stop_words.update(additional_words)
+
+            return stop_words
+
+        except Exception as e:
+            logger.error(f"Error loading stopwords: {e}")
+            # Fall back to basic stop words if loading fails
+            return self._get_stop_words()
+
+    def get_base_form(self, text: str) -> Optional[str]:
+        """Get base form of a word or phrase."""
+        try:
+            # Tokenize the text
+            tokens = word_tokenize(text.lower())
+            
+            # Get POS tags
+            try:
+                pos_tags = nltk.pos_tag(tokens)
+            except LookupError:
+                logger.warning("POS tagger not available, falling back to basic lemmatization")
+                return ' '.join(self.lemmatizer.lemmatize(word) for word in tokens)
+            
+            # Lemmatize based on POS
+            lemmatized = []
+            for word, pos in pos_tags:
+                # Convert Penn Treebank tag to WordNet tag
+                tag = self._get_wordnet_pos(pos)
+                if tag:
+                    lemma = self.lemmatizer.lemmatize(word, tag)
+                else:
+                    lemma = self.lemmatizer.lemmatize(word)
+                lemmatized.append(lemma)
+            
+            return ' '.join(lemmatized)
+            
+        except Exception as e:
+            logger.error(f"Error getting base form for '{text}': {str(e)}")
+            return text.strip()
+
+    def handle_contractions(self, word: str) -> str:
+        """Expand contractions to their base form."""
+        return self.contractions.get(word.lower(), word)
 
     def _get_wordnet_pos(self, word: str) -> Optional[str]:
         """Get WordNet POS tag for a word."""
@@ -387,7 +364,7 @@ class EnglishTextProcessor(BaseTextProcessor):
             return False
 
         # Always check lowercase version against stopwords
-        if word_lower in self._stop_words:
+        if word_lower in self.stop_words:
             return False
 
         # Skip single letters except 'a' and 'i'
@@ -471,17 +448,13 @@ class EnglishTextProcessor(BaseTextProcessor):
         return [word]
 
     def get_pos_tag(self, word: str) -> Optional[str]:
-        """Get part-of-speech tag for a word.
-
-        Args:
-            word: Word to analyze
-
-        Returns:
-            Optional[str]: POS tag or None if not determinable
-        """
+        """Get part-of-speech tag for a word."""
         try:
             if not word:
                 return None
+
+            # Clean the word - remove punctuation at the end
+            word = word.strip().rstrip('.,!?:;')
 
             # Check technical terms first
             tech_pos_map = {
@@ -490,17 +463,24 @@ class EnglishTextProcessor(BaseTextProcessor):
                 "data": "NN",
                 "code": "NN",
             }
-            if word.lower() in tech_pos_map:
-                return tech_pos_map[word.lower()]
+            word_lower = word.lower()
+            if word_lower in tech_pos_map:
+                return tech_pos_map[word_lower]
 
-            # Get NLTK tag
-            pos = nltk.pos_tag([word])[0][1]
-
-            # Handle special cases
+            # Handle special cases first
             if word.isupper() or "-" in word:  # Acronym or technical term
                 return "NN"
 
-            return pos
+            # Get NLTK tag with error handling
+            try:
+                pos = nltk.pos_tag([word])[0][1]
+                return pos
+            except LookupError:
+                logger.warning("POS tagger not available, falling back to basic noun assumption")
+                return "NN"  # Default to noun
+            except Exception as e:
+                logger.error(f"Error in POS tagging: {str(e)}")
+                return None
 
         except Exception as e:
             logger.error(f"Error getting POS tag for '{word}': {str(e)}")

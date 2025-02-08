@@ -11,6 +11,7 @@ from datetime import datetime
 import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
+import nltk
 
 # Add project root to Python path if needed
 project_root = str(Path().resolve())
@@ -40,6 +41,13 @@ if not root_logger.handlers:
     root_logger.addHandler(handler)
 
 logger = logging.getLogger(__name__)
+
+# Download required NLTK resources
+try:
+    nltk.download('averaged_perceptron_tagger')
+    nltk.download('punkt')
+except Exception as e:
+    logger.error(f"Failed to download NLTK resources: {e}")
 
 # Configure environment
 env_config = EnvironmentConfig(
@@ -341,34 +349,51 @@ async def main():
         # Create runner
         runner = LiteAnalysisRunner()
 
-        # Example 1: Single text analysis
-        print("\n=== Single Text Analysis ===")
-        text = "Artificial intelligence and machine learning are transforming the technology landscape. Cloud computing and data analytics enable businesses to make data-driven decisions. Cybersecurity remains a critical concern for organizations worldwide."
-        
-        # Get parameter file path using FileUtils
-        param_file = "parameters_en.xlsx"
+        # Example 1: English text analysis
+        print("\n=== English Text Analysis ===")
+        text_en = "Artificial intelligence and machine learning are transforming the technology landscape. Cloud computing and data analytics enable businesses to make data-driven decisions. Cybersecurity remains a critical concern for organizations worldwide."
         
         await runner.analyze_single_text(
-            text=text,
+            text=text_en,
             language="en",
             analysis_types=["keywords", "themes", "categories"],
-            parameter_file=param_file
+            parameter_file="parameters_en.xlsx"
         )
 
-        # Example 2: Excel file analysis
-        print("\n=== Excel File Analysis ===")
+        # Example 2: Finnish text analysis
+        print("\n=== Finnish Text Analysis ===")
+        text_fi = """Tekoäly ja koneoppiminen muuttavat teknologiakenttää merkittävästi. 
+                    Pilvipalvelut ja data-analytiikka mahdollistavat yrityksille 
+                    tietopohjaisen päätöksenteon. Kyberturvallisuus on edelleen 
+                    kriittinen huolenaihe organisaatioille maailmanlaajuisesti."""
         
-        # Use simple filenames - FileUtils will handle the paths
-        input_file = "test_content_en.xlsx"
-        output_file = "lite_analysis_results_en.xlsx"
-        parameter_file = "parameters_en.xlsx"
+        await runner.analyze_single_text(
+            text=text_fi,
+            language="fi",
+            analysis_types=["keywords", "themes", "categories"],
+            parameter_file="parameters_fi.xlsx"
+        )
 
+        # Example 3: Excel file analysis (English)
+        print("\n=== Excel File Analysis (English) ===")
         await runner.analyze_excel(
-            input_file=input_file,
-            output_file=output_file,
-            parameter_file=parameter_file,
+            input_file="test_content_en.xlsx",
+            output_file="lite_analysis_results_en.xlsx",
+            parameter_file="parameters_en.xlsx",
             content_column="content",
             language="en",
+            analysis_types=["keywords", "themes", "categories"],
+            batch_size=3
+        )
+
+        # Example 4: Excel file analysis (Finnish)
+        print("\n=== Excel File Analysis (Finnish) ===")
+        await runner.analyze_excel(
+            input_file="test_content_fi.xlsx",
+            output_file="lite_analysis_results_fi.xlsx",
+            parameter_file="parameters_fi.xlsx",
+            content_column="content",
+            language="fi",
             analysis_types=["keywords", "themes", "categories"],
             batch_size=3
         )
