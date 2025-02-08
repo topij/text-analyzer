@@ -78,7 +78,14 @@ class LiteSemanticAnalyzer:
         
         # Initialize parameters
         if parameter_file and file_utils:
-            self.parameter_handler = ParameterHandler(parameter_file)
+            # Convert parameter file to Path if it's a string
+            param_path = Path(parameter_file) if isinstance(parameter_file, str) else parameter_file
+            
+            # Use FileUtils to get the full path if needed
+            if not param_path.is_absolute() and file_utils:
+                param_path = file_utils.get_data_path("parameters") / param_path.name
+                
+            self.parameter_handler = ParameterHandler(param_path)
             self.parameters = self.parameter_handler.get_parameters()
         else:
             self.parameters = None
@@ -166,6 +173,12 @@ Please provide a structured analysis with the following components:"""
         """Process and clean keywords."""
         from nltk.stem import WordNetLemmatizer
         import nltk
+        
+        # Use FileUtils to manage NLTK data if available
+        if self.file_utils:
+            nltk_data_path = self.file_utils.get_data_path("nltk_data")
+            if nltk_data_path.exists():
+                nltk.data.path.append(str(nltk_data_path))
         
         try:
             nltk.data.find('tokenizers/punkt')

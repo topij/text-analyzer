@@ -95,7 +95,14 @@ class LiteAnalysisRunner:
             return set()
             
         try:
-            parameter_handler = ParameterHandler(parameter_file)
+            # Convert parameter file to Path if it's a string
+            param_path = Path(parameter_file) if isinstance(parameter_file, str) else parameter_file
+            
+            # Use FileUtils to get the full path if needed
+            if not param_path.is_absolute():
+                param_path = self.file_utils.get_data_path("parameters") / param_path.name
+                
+            parameter_handler = ParameterHandler(param_path)
             parameters = parameter_handler.get_parameters()
             return {cat for cat in parameters.categories.keys()} if parameters.categories else set()
         except Exception as e:
@@ -175,16 +182,31 @@ class LiteAnalysisRunner:
     ) -> None:
         """Run analysis on Excel file."""
         try:
-            # Load input data
-            df = self.file_utils.load_single_file(input_file, input_type="raw")
+            # Convert paths to Path objects and resolve them using FileUtils
+            input_path = self.file_utils.get_data_path("raw") / Path(input_file).name
+            
+            if output_file:
+                output_path = self.file_utils.get_data_path("processed") / Path(output_file).name
+            else:
+                # Generate default output filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = self.file_utils.get_data_path("processed") / f"lite_analysis_results_{language}_{timestamp}.xlsx"
+            
+            if parameter_file:
+                param_path = self.file_utils.get_data_path("parameters") / Path(parameter_file).name
+            else:
+                param_path = self.file_utils.get_data_path("parameters") / f"parameters_{language}.xlsx"
+            
+            # Load input data using FileUtils
+            df = self.file_utils.load_single_file(input_path, input_type="raw")
             
             # Get available categories from parameter file
-            available_categories = self._get_available_categories(parameter_file)
+            available_categories = self._get_available_categories(param_path)
             
             # Create analyzer
             analyzer = LiteSemanticAnalyzer(
                 llm=self.llm,
-                parameter_file=parameter_file,
+                parameter_file=param_path,
                 file_utils=self.file_utils,
                 language=language,
                 available_categories=available_categories
@@ -200,7 +222,7 @@ class LiteAnalysisRunner:
                 
                 # Only print analysis results if in debug mode
                 if logger.getEffectiveLevel() <= logging.DEBUG:
-                    await self.analyze_single_text(text, language, analysis_types, parameter_file)
+                    await self.analyze_single_text(text, language, analysis_types, param_path)
                 
                 # Format result for DataFrame
                 result_dict = {
@@ -323,20 +345,23 @@ async def main():
         print("\n=== Single Text Analysis ===")
         text = "Artificial intelligence and machine learning are transforming the technology landscape. Cloud computing and data analytics enable businesses to make data-driven decisions. Cybersecurity remains a critical concern for organizations worldwide."
         
+        # Get parameter file path using FileUtils
+        param_file = "parameters_en.xlsx"
+        
         await runner.analyze_single_text(
             text=text,
             language="en",
-            analysis_types=["keywords", "themes", "categories"]
+            analysis_types=["keywords", "themes", "categories"],
+            parameter_file=param_file
         )
 
         # Example 2: Excel file analysis
         print("\n=== Excel File Analysis ===")
         
-        # Set up file paths relative to project root
-        data_dir = Path().resolve() / "data"
-        input_file = data_dir / "raw" / "test_content_en.xlsx"
-        output_file = data_dir / "processed" / "lite_analysis_results_en.xlsx"
-        parameter_file = data_dir / "parameters" / "parameters_en.xlsx"
+        # Use simple filenames - FileUtils will handle the paths
+        input_file = "test_content_en.xlsx"
+        output_file = "lite_analysis_results_en.xlsx"
+        parameter_file = "parameters_en.xlsx"
 
         await runner.analyze_excel(
             input_file=input_file,
