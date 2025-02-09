@@ -29,16 +29,29 @@ from src.loaders.parameter_handler import ParameterHandler
 
 # Configure logging
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.ERROR)
+root_logger.setLevel(logging.WARNING)
 
 # Configure handler if none exists
 if not root_logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
+    # Console handler with WARNING level
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     ))
-    root_logger.addHandler(handler)
+    root_logger.addHandler(console_handler)
+    
+    # File handler with DEBUG level
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    file_handler = logging.FileHandler(log_dir / "lite_analysis.log")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    ))
+    root_logger.addHandler(file_handler)
 
 logger = logging.getLogger(__name__)
 
@@ -221,37 +234,48 @@ class LiteAnalysisRunner:
             )
 
             results = []
+            failed_records = []
             for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing texts", ncols=100):
-                text = str(row[content_column])
-                result = await analyzer.analyze(
-                    text=text,
-                    analysis_types=analysis_types
-                )
-                
-                # Only print analysis results if in debug mode
-                if logger.getEffectiveLevel() <= logging.DEBUG:
-                    await self.analyze_single_text(text, language, analysis_types, param_path)
-                
-                # Format result for DataFrame
-                result_dict = {
-                    content_column: text,
-                    "Analysis Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Processing Time (s)": f"{result.processing_time:.2f}",
-                    "Language": result.language,
-                    "Success": result.success,
+                try:
+                    text = str(row[content_column])
+                    result = await analyzer.analyze(
+                        text=text,
+                        analysis_types=analysis_types
+                    )
                     
-                    # Keywords section
-                    "Keywords": self._wrap_text(", ".join(f"{kw.keyword} ({kw.score:.2f})" for kw in result.keywords.keywords)),
+                    # Only print analysis results if in debug mode
+                    if logger.getEffectiveLevel() <= logging.DEBUG:
+                        await self.analyze_single_text(text, language, analysis_types, param_path)
                     
-                    # Themes section
-                    "Main Themes": self._wrap_text(", ".join(f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes.themes)),
-                    "Theme Hierarchy": self._format_theme_hierarchy(result.themes.theme_hierarchy),
-                    
-                    # Categories section
-                    "Categories": self._wrap_text(", ".join(f"{cat.name} ({cat.confidence:.2f})" for cat in result.categories.matches)),
-                    "Category Evidence": self._format_category_evidence(result.categories.matches)
-                }
-                results.append(result_dict)
+                    # Format result for DataFrame
+                    result_dict = {
+                        content_column: text,
+                        "Analysis Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Processing Time (s)": f"{result.processing_time:.2f}",
+                        "Language": result.language,
+                        "Success": result.success,
+                        
+                        # Keywords section
+                        "Keywords": self._wrap_text(", ".join(f"{kw.keyword} ({kw.score:.2f})" for kw in result.keywords.keywords)) if result.keywords and result.keywords.success else "",
+                        
+                        # Themes section
+                        "Main Themes": self._wrap_text(", ".join(f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes.themes)) if result.themes and result.themes.success else "",
+                        "Theme Hierarchy": self._format_theme_hierarchy(result.themes.theme_hierarchy) if result.themes and result.themes.success else "",
+                        
+                        # Categories section
+                        "Categories": self._wrap_text(", ".join(f"{cat.name} ({cat.confidence:.2f})" for cat in result.categories.matches)) if result.categories and result.categories.success else "",
+                        "Category Evidence": self._format_category_evidence(result.categories.matches) if result.categories and result.categories.success else ""
+                    }
+                    results.append(result_dict)
+                except Exception as e:
+                    logger.error(f"Failed to process record {idx}: {str(e)}")
+                    failed_records.append({
+                        content_column: text,
+                        "Analysis Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Error": str(e),
+                        "Success": False
+                    })
+                    continue
 
             # Create results DataFrame
             results_df = pd.DataFrame(results)
@@ -264,6 +288,8 @@ class LiteAnalysisRunner:
                 summary_data = {
                     "Metric": [
                         "Total Records",
+                        "Successfully Processed Records",
+                        "Failed Records",
                         "Records with Keywords",
                         "Records with Themes",
                         "Records with Categories",
@@ -273,24 +299,29 @@ class LiteAnalysisRunner:
                         "Language"
                     ],
                     "Value": [
-                        len(results_df),
+                        len(df),
+                        len(results),
+                        len(failed_records),
                         results_df["Keywords"].notna().sum(),
                         results_df["Main Themes"].notna().sum(),
                         results_df["Categories"].notna().sum(),
                         f"{results_df['Processing Time (s)'].astype(float).mean():.2f}",
-                        f"{(results_df['Success'] == True).mean() * 100:.1f}",
+                        f"{(len(results) / len(df) * 100):.1f}",
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         language
                     ]
                 }
                 summary_df = pd.DataFrame(summary_data)
                 
-                # Save both sheets
+                # Save results and failures to separate sheets
+                output_data = {
+                    "Analysis Results": results_df,
+                    "Failed Records": pd.DataFrame(failed_records) if failed_records else pd.DataFrame(),
+                    "Summary": summary_df
+                }
+                
                 self.file_utils.save_data_to_storage(
-                    data={
-                        "Analysis Results": results_df,
-                        "Summary": summary_df
-                    },
+                    data=output_data,
                     output_type="processed",
                     file_name=output_file_str,
                     output_filetype="xlsx",
@@ -325,20 +356,39 @@ class LiteAnalysisRunner:
         
         lines = []
         for cat in categories:
-            evidence = cat.evidence if hasattr(cat, 'evidence') and cat.evidence else []
-            themes = cat.themes if hasattr(cat, 'themes') and cat.themes else []
-            
-            evidence_str = f"Evidence: {', '.join(evidence)}" if evidence else ""
-            themes_str = f"Related Themes: {', '.join(themes)}" if themes else ""
-            
-            if evidence_str and themes_str:
-                lines.append(f"{cat.name} - {evidence_str}; {themes_str}")
-            elif evidence_str:
-                lines.append(f"{cat.name} - {evidence_str}")
-            elif themes_str:
-                lines.append(f"{cat.name} - {themes_str}")
-            else:
-                lines.append(cat.name)
+            try:
+                evidence = cat.evidence if hasattr(cat, 'evidence') and cat.evidence else []
+                themes = cat.themes if hasattr(cat, 'themes') and cat.themes else []
+                
+                # Extract text from Evidence objects with error handling
+                evidence_texts = []
+                for e in evidence:
+                    try:
+                        if hasattr(e, 'text'):
+                            evidence_texts.append(e.text)
+                        elif isinstance(e, str):
+                            evidence_texts.append(e)
+                        else:
+                            logger.warning(f"Unexpected evidence type: {type(e)}")
+                    except Exception as e:
+                        logger.warning(f"Error processing evidence: {str(e)}")
+                        continue
+                
+                evidence_str = f"Evidence: {', '.join(evidence_texts)}" if evidence_texts else ""
+                themes_str = f"Related Themes: {', '.join(themes)}" if themes else ""
+                
+                if evidence_str and themes_str:
+                    lines.append(f"{cat.name} - {evidence_str}; {themes_str}")
+                elif evidence_str:
+                    lines.append(f"{cat.name} - {evidence_str}")
+                elif themes_str:
+                    lines.append(f"{cat.name} - {themes_str}")
+                else:
+                    lines.append(cat.name)
+                    
+            except Exception as e:
+                logger.error(f"Error formatting category {getattr(cat, 'name', 'unknown')}: {str(e)}")
+                lines.append(getattr(cat, 'name', 'unknown category'))
                 
         return "\n".join(lines)
 
@@ -349,54 +399,82 @@ async def main():
         # Create runner
         runner = LiteAnalysisRunner()
 
-        # Example 1: English text analysis
-        print("\n=== English Text Analysis ===")
-        text_en = "Artificial intelligence and machine learning are transforming the technology landscape. Cloud computing and data analytics enable businesses to make data-driven decisions. Cybersecurity remains a critical concern for organizations worldwide."
-        
+        # Example 1: Business Content Analysis
+        print("\n=== Business Content Analysis (English) ===")
+        text_business_en = "Q3 financial results show 15% revenue growth. Market expansion strategy focuses on emerging sectors."
         await runner.analyze_single_text(
-            text=text_en,
+            text=text_business_en,
             language="en",
             analysis_types=["keywords", "themes", "categories"],
-            parameter_file="parameters_en.xlsx"
+            parameter_file="business_parameters_en.xlsx"
         )
 
-        # Example 2: Finnish text analysis
-        print("\n=== Finnish Text Analysis ===")
-        text_fi = """Tekoäly ja koneoppiminen muuttavat teknologiakenttää merkittävästi. 
-                    Pilvipalvelut ja data-analytiikka mahdollistavat yrityksille 
-                    tietopohjaisen päätöksenteon. Kyberturvallisuus on edelleen 
-                    kriittinen huolenaihe organisaatioille maailmanlaajuisesti."""
-        
+        # Example 2: Tech Support Analysis
+        print("\n=== Tech Support Analysis (English) ===")
+        text_support_en = "I'm having trouble logging into the admin dashboard. The system keeps showing 'Invalid credentials' even though I'm sure the password is correct."
         await runner.analyze_single_text(
-            text=text_fi,
-            language="fi",
-            analysis_types=["keywords", "themes", "categories"],
-            parameter_file="parameters_fi.xlsx"
-        )
-
-        # Example 3: Excel file analysis (English)
-        print("\n=== Excel File Analysis (English) ===")
-        await runner.analyze_excel(
-            input_file="test_content_en.xlsx",
-            output_file="lite_analysis_results_en.xlsx",
-            parameter_file="parameters_en.xlsx",
-            content_column="content",
+            text=text_support_en,
             language="en",
             analysis_types=["keywords", "themes", "categories"],
-            batch_size=3
+            parameter_file="support_parameters_en.xlsx"
         )
 
-        # Example 4: Excel file analysis (Finnish)
-        print("\n=== Excel File Analysis (Finnish) ===")
-        await runner.analyze_excel(
-            input_file="test_content_fi.xlsx",
-            output_file="lite_analysis_results_fi.xlsx",
-            parameter_file="parameters_fi.xlsx",
-            content_column="content",
+        # Example 3: Training Services Analysis
+        print("\n=== Training Services Analysis (English) ===")
+        text_training_en = "Hi, I'm interested in the Advanced Data Science course. What are the prerequisites and when does the next cohort start?"
+        await runner.analyze_single_text(
+            text=text_training_en,
+            language="en",
+            analysis_types=["keywords", "themes", "categories"],
+            parameter_file="training_parameters_en.xlsx"
+        )
+
+        # Example 4: Business Content Analysis (Finnish)
+        print("\n=== Business Content Analysis (Finnish) ===")
+        text_business_fi = "Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun. Markkinalaajennusstrategia keskittyy uusiin sektoreihin."
+        await runner.analyze_single_text(
+            text=text_business_fi,
             language="fi",
             analysis_types=["keywords", "themes", "categories"],
-            batch_size=3
+            parameter_file="business_parameters_fi.xlsx"
         )
+
+        # Example 5: Tech Support Analysis (Finnish)
+        print("\n=== Tech Support Analysis (Finnish) ===")
+        text_support_fi = "Minulla on ongelmia kirjautua hallintapaneeliin. Järjestelmä näyttää 'Virheelliset tunnukset' vaikka salasana on varmasti oikein."
+        await runner.analyze_single_text(
+            text=text_support_fi,
+            language="fi",
+            analysis_types=["keywords", "themes", "categories"],
+            parameter_file="support_parameters_fi.xlsx"
+        )
+
+        # Example 6: Training Services Analysis (Finnish)
+        print("\n=== Training Services Analysis (Finnish) ===")
+        text_training_fi = "Hei, olen kiinnostunut Edistynyt Data Science -kurssista. Mitkä ovat esitietovaatimukset ja milloin seuraava ryhmä alkaa?"
+        await runner.analyze_single_text(
+            text=text_training_fi,
+            language="fi",
+            analysis_types=["keywords", "themes", "categories"],
+            parameter_file="training_parameters_fi.xlsx"
+        )
+
+        # Example 7: Excel file analysis for each topic
+        topics = ["business", "support", "training"]
+        languages = ["en", "fi"]
+        
+        for topic in topics:
+            for lang in languages:
+                print(f"\n=== Excel File Analysis ({topic.title()}, {lang.upper()}) ===")
+                await runner.analyze_excel(
+                    input_file=f"{topic}_test_content_{lang}.xlsx",
+                    output_file=f"lite_analysis_results_{topic}_{lang}.xlsx",
+                    parameter_file=f"{topic}_parameters_{lang}.xlsx",
+                    content_column="content",
+                    language=lang,
+                    analysis_types=["keywords", "themes", "categories"],
+                    batch_size=3
+                )
 
     except Exception as e:
         logger.error(f"Failed to run example: {e}")

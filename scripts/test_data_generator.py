@@ -61,112 +61,166 @@ class TestDataGenerator:
         output_dir = self.file_utils.get_data_path("raw")
         files = {}
 
-        content = {
-            "en": {
-                "technical": [
-                    "Machine learning models are trained using large datasets to recognize patterns. Neural networks enable complex pattern recognition.",
-                    "Cloud computing services provide scalable infrastructure for deployments. APIs enable system integration.",
-                ],
-                "business": [
+        # Define topics and their content
+        topics = {
+            "business": {
+                "en": [
                     "Q3 financial results show 15% revenue growth. Market expansion strategy focuses on emerging sectors.",
                     "Strategic partnerships drive innovation. Customer satisfaction metrics show positive trends.",
+                    "New digital transformation initiative launched to improve operational efficiency.",
+                    "Market analysis indicates strong growth potential in APAC region.",
                 ],
-            },
-            "fi": {
-                "technical": [
-                    "Koneoppimismallit koulutetaan suurilla datajoukolla tunnistamaan kaavoja. Neuroverkot mahdollistavat monimutkaisen hahmontunnistuksen.",
-                    "Pilvipalvelut tarjoavat skaalautuvan infrastruktuurin. Rajapinnat mahdollistavat järjestelmäintegraation.",
-                ],
-                "business": [
+                "fi": [
                     "Q3 taloudelliset tulokset osoittavat 15% liikevaihdon kasvun. Markkinalaajennusstrategia keskittyy uusiin sektoreihin.",
                     "Strategiset kumppanuudet edistävät innovaatiota. Asiakastyytyväisyysmittarit osoittavat positiivista kehitystä.",
-                ],
+                    "Uusi digitaalinen transformaatiohanke käynnistetty toiminnan tehostamiseksi.",
+                    "Markkina-analyysi osoittaa vahvaa kasvupotentiaalia APAC-alueella.",
+                ]
             },
+            "support": {
+                "en": [
+                    "I'm having trouble logging into the admin dashboard. The system keeps showing 'Invalid credentials' even though I'm sure the password is correct.",
+                    "The export functionality is not working in the reporting module. When I click export to CSV, nothing happens.",
+                    "Getting error code E1234 when trying to sync data between mobile and desktop apps. Need urgent assistance.",
+                    "Can't access the API documentation. The link in the developer portal returns a 404 error.",
+                ],
+                "fi": [
+                    "Minulla on ongelmia kirjautua hallintapaneeliin. Järjestelmä näyttää 'Virheelliset tunnukset' vaikka salasana on varmasti oikein.",
+                    "Raporttien vientiominaisuus ei toimi. Kun klikkaan 'Vie CSV-muotoon', mitään ei tapahdu.",
+                    "Saan virhekoodin E1234 yrittäessäni synkronoida tietoja mobiili- ja työpöytäsovellusten välillä. Tarvitsen kiireellistä apua.",
+                    "En pääse käsiksi API-dokumentaatioon. Kehittäjäportaalin linkki palauttaa 404-virheen.",
+                ]
+            },
+            "training": {
+                "en": [
+                    "Hi, I'm interested in the Advanced Data Science course. What are the prerequisites and when does the next cohort start?",
+                    "Could you provide more information about the certification process for the Cloud Architecture program?",
+                    "I need to reschedule my upcoming Python Programming workshop. What's the process for this?",
+                    "Are there any group discounts available for corporate training packages? We have a team of 10 developers.",
+                ],
+                "fi": [
+                    "Hei, olen kiinnostunut Edistynyt Data Science -kurssista. Mitkä ovat esitietovaatimukset ja milloin seuraava ryhmä alkaa?",
+                    "Voisitteko kertoa lisätietoja Cloud Architecture -ohjelman sertifiointiprosessista?",
+                    "Minun täytyy siirtää tuleva Python-ohjelmoinnin työpaja. Mikä on prosessi tähän?",
+                    "Onko yrityskoulutuspaketteihin saatavilla ryhmäalennuksia? Meillä on 10 hengen kehittäjätiimi.",
+                ]
+            }
         }
 
-        for lang, texts in content.items():
-            df = pd.DataFrame(
-                [
-                    {
-                        "id": f"{content_type}_{idx+1}",
-                        "type": content_type,
-                        "language": lang,
-                        "content": text,
-                    }
-                    for content_type, content_texts in texts.items()
-                    for idx, text in enumerate(content_texts)
-                ]
-            )
-
-            file_name = f"test_content_{lang}"
-            if not force and (output_dir / f"{file_name}.xlsx").exists():
-                logger.warning(
-                    f"Content file {file_name}.xlsx already exists, skipping..."
+        # Generate content files for each topic and language
+        for topic, content in topics.items():
+            for lang, texts in content.items():
+                df = pd.DataFrame(
+                    [
+                        {
+                            "id": f"{topic}_{idx+1}",
+                            "type": topic,
+                            "language": lang,
+                            "content": text,
+                        }
+                        for idx, text in enumerate(texts)
+                    ]
                 )
-                files[lang] = output_dir / f"{file_name}.xlsx"
-                continue
 
-            result = self.file_utils.save_data_to_storage(
-                data={file_name: df},
-                output_type="raw",
-                file_name=file_name,
-                output_filetype=OutputFileType.XLSX,
-                include_timestamp=False,
-            )
+                file_name = f"{topic}_test_content_{lang}"
+                if not force and (output_dir / f"{file_name}.xlsx").exists():
+                    logger.warning(
+                        f"Content file {file_name}.xlsx already exists, skipping..."
+                    )
+                    files[f"{topic}_{lang}"] = output_dir / f"{file_name}.xlsx"
+                    continue
 
-            saved_path = Path(next(iter(result[0].values())))
-            files[lang] = saved_path
+                result = self.file_utils.save_data_to_storage(
+                    data={file_name: df},
+                    output_type="raw",
+                    file_name=file_name,
+                    output_filetype=OutputFileType.XLSX,
+                    include_timestamp=False,
+                )
+
+                saved_path = Path(next(iter(result[0].values())))
+                files[f"{topic}_{lang}"] = saved_path
 
         return files
 
     def generate_parameter_files(self, force: bool = False) -> Dict[str, Path]:
-        """Generate parameter files for both languages."""
+        """Generate parameter files for each topic and language."""
         output_dir = self.file_utils.get_data_path("parameters")
         files = {}
 
-        # Create parameter sheets for both languages
-        for language in ["en", "fi"]:
-            sheets = {
-                # Required general parameters sheet
-                ParameterSheets.get_sheet_name(
-                    "general", language
-                ): self._create_general_params(language),
-                # Optional sheets
-                ParameterSheets.get_sheet_name(
-                    "keywords", language
-                ): self._create_keywords_params(language),
-                ParameterSheets.get_sheet_name(
-                    "excluded", language
-                ): self._create_excluded_params(language),
-                ParameterSheets.get_sheet_name(
-                    "categories", language
-                ): self._create_categories_params(language),
-                ParameterSheets.get_sheet_name(
-                    "domains", language
-                ): self._create_domains_params(language),
-                ParameterSheets.get_sheet_name(
-                    "settings", language
-                ): self._create_settings_params(language),
-            }
+        # Define topics and their parameters
+        topics = ["business", "support", "training"]
+        
+        for topic in topics:
+            for language in ["en", "fi"]:
+                sheets = {
+                    # Required general parameters sheet
+                    ParameterSheets.get_sheet_name(
+                        "general", language
+                    ): self._create_general_params(language, topic),
+                    # Optional sheets
+                    ParameterSheets.get_sheet_name(
+                        "keywords", language
+                    ): self._create_keywords_params(language, topic),
+                    ParameterSheets.get_sheet_name(
+                        "excluded", language
+                    ): self._create_excluded_params(language, topic),
+                    ParameterSheets.get_sheet_name(
+                        "categories", language
+                    ): self._create_categories_params(language, topic),
+                    ParameterSheets.get_sheet_name(
+                        "domains", language
+                    ): self._create_domains_params(language, topic),
+                    ParameterSheets.get_sheet_name(
+                        "settings", language
+                    ): self._create_settings_params(language),
+                }
 
-            file_path = self._save_parameters(
-                language, sheets, output_dir, force
-            )
-            files[language] = file_path
+                file_name = f"{topic}_parameters_{language}"
+                if not force and (output_dir / f"{file_name}.xlsx").exists():
+                    logger.warning(
+                        f"Parameter file {file_name}.xlsx already exists, skipping..."
+                    )
+                    files[f"{topic}_{language}"] = output_dir / f"{file_name}.xlsx"
+                    continue
+
+                result = self.file_utils.save_data_to_storage(
+                    data=sheets,
+                    output_type="parameters",
+                    file_name=file_name,
+                    output_filetype=OutputFileType.XLSX,
+                    include_timestamp=False,
+                )
+
+                saved_path = Path(next(iter(result[0].values())))
+                files[f"{topic}_{language}"] = saved_path
+
+                # Validate generated file
+                handler = ParameterHandler(saved_path)
+                is_valid, warnings, errors = handler.validate()
+                if not is_valid:
+                    raise ValueError(
+                        f"Generated parameter file {saved_path} failed validation: {errors}"
+                    )
 
         return files
 
-    def _create_general_params(self, language: str) -> pd.DataFrame:
+    def _create_general_params(self, language: str, topic: str) -> pd.DataFrame:
         """Create general parameters DataFrame."""
         column_names = ParameterSheets.get_column_names("general", language)
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"][
-            "parameters"
-        ][language]
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["general"]["parameters"][language]
+
+        # Topic-specific focus areas
+        focus_areas = {
+            "business": "business content analysis",
+            "support": "technical support analysis",
+            "training": "training services analysis"
+        }
 
         internal_params = {
             # Required parameters
             "column_name_to_analyze": "content",
-            "focus_on": "general content analysis",
+            "focus_on": focus_areas.get(topic, "general content analysis"),
             "max_keywords": 10,
             # Optional parameters
             "language": language,
@@ -190,17 +244,15 @@ class TestDataGenerator:
                 column_names["parameter"]: list(display_params.keys()),
                 column_names["value"]: list(display_params.values()),
                 column_names["description"]: [
-                    (
-                        f"Description for {k}"
-                        if language == "en"
-                        else f"Kuvaus: {k}"
-                    )
+                    f"Parameter for {topic} analysis: {k}"
+                    if language == "en"
+                    else f"Parametri {topic}-analyysille: {k}"
                     for k in display_params.keys()
                 ],
             }
         )
 
-    def _create_excluded_params(self, language: str) -> pd.DataFrame:
+    def _create_excluded_params(self, language: str, topic: str) -> pd.DataFrame:
         """Create excluded keywords DataFrame."""
         column_names = ParameterSheets.get_column_names("excluded", language)
 
@@ -229,7 +281,7 @@ class TestDataGenerator:
             }
         )
 
-    def _create_domains_params(self, language: str) -> pd.DataFrame:
+    def _create_domains_params(self, language: str, topic: str) -> pd.DataFrame:
         """Create domains parameters DataFrame."""
         column_names = ParameterSheets.get_column_names("domains", language)
 
@@ -279,28 +331,81 @@ class TestDataGenerator:
             }
         )
 
-    def _create_keywords_params(self, language: str) -> pd.DataFrame:
+    def _create_keywords_params(self, language: str, topic: str) -> pd.DataFrame:
         """Create keywords parameters DataFrame."""
         column_names = ParameterSheets.get_column_names("keywords", language)
 
-        keywords_data = {
-            "en": [
-                ("machine learning", 1.0, "technical"),
-                ("data analysis", 0.9, "technical"),
-                ("cloud computing", 0.8, "technical"),
-                ("business intelligence", 0.9, "business"),
-                ("market analysis", 0.8, "business"),
-            ],
-            "fi": [
-                ("koneoppiminen", 1.0, "tekninen"),
-                ("data-analyysi", 0.9, "tekninen"),
-                ("pilvipalvelut", 0.8, "tekninen"),
-                ("liiketoimintatiedon hallinta", 0.9, "liiketoiminta"),
-                ("markkina-analyysi", 0.8, "liiketoiminta"),
-            ],
+        # Topic-specific keywords
+        topic_keywords = {
+            "business": {
+                "en": [
+                    ("revenue", 0.9, "Financial"),
+                    ("growth", 0.9, "Business"),
+                    ("market", 0.8, "Business"),
+                    ("strategy", 0.8, "Strategy"),
+                    ("metrics", 0.7, "Analytics"),
+                    ("performance", 0.8, "Business"),
+                    ("innovation", 0.7, "Strategy"),
+                    ("transformation", 0.8, "Strategy"),
+                ],
+                "fi": [
+                    ("liikevaihto", 0.9, "Talous"),
+                    ("kasvu", 0.9, "Liiketoiminta"),
+                    ("markkina", 0.8, "Liiketoiminta"),
+                    ("strategia", 0.8, "Strategia"),
+                    ("mittarit", 0.7, "Analytiikka"),
+                    ("suorituskyky", 0.8, "Liiketoiminta"),
+                    ("innovaatio", 0.7, "Strategia"),
+                    ("transformaatio", 0.8, "Strategia"),
+                ]
+            },
+            "support": {
+                "en": [
+                    ("login", 0.9, "Authentication"),
+                    ("error", 0.8, "System Issues"),
+                    ("bug", 0.8, "System Issues"),
+                    ("access", 0.8, "Authentication"),
+                    ("credentials", 0.8, "Authentication"),
+                    ("sync", 0.7, "System Features"),
+                    ("documentation", 0.7, "Resources"),
+                    ("API", 0.8, "Development"),
+                ],
+                "fi": [
+                    ("kirjautuminen", 0.9, "Tunnistautuminen"),
+                    ("virhe", 0.8, "Järjestelmäongelmat"),
+                    ("vika", 0.8, "Järjestelmäongelmat"),
+                    ("pääsy", 0.8, "Tunnistautuminen"),
+                    ("tunnukset", 0.8, "Tunnistautuminen"),
+                    ("synkronointi", 0.7, "Järjestelmäominaisuudet"),
+                    ("dokumentaatio", 0.7, "Resurssit"),
+                    ("rajapinta", 0.8, "Kehitys"),
+                ]
+            },
+            "training": {
+                "en": [
+                    ("course", 0.9, "Education"),
+                    ("workshop", 0.8, "Education"),
+                    ("certification", 0.9, "Education"),
+                    ("prerequisites", 0.7, "Education"),
+                    ("training", 0.8, "Education"),
+                    ("schedule", 0.7, "Planning"),
+                    ("enrollment", 0.8, "Administration"),
+                    ("discount", 0.7, "Pricing"),
+                ],
+                "fi": [
+                    ("kurssi", 0.9, "Koulutus"),
+                    ("työpaja", 0.8, "Koulutus"),
+                    ("sertifiointi", 0.9, "Koulutus"),
+                    ("esitietovaatimukset", 0.7, "Koulutus"),
+                    ("koulutus", 0.8, "Koulutus"),
+                    ("aikataulu", 0.7, "Suunnittelu"),
+                    ("ilmoittautuminen", 0.8, "Hallinto"),
+                    ("alennus", 0.7, "Hinnoittelu"),
+                ]
+            }
         }
 
-        data = keywords_data[language]
+        data = topic_keywords.get(topic, {}).get(language, [])
         return pd.DataFrame(
             {
                 column_names["keyword"]: [item[0] for item in data],
@@ -309,42 +414,51 @@ class TestDataGenerator:
             }
         )
 
-    def _create_categories_params(self, language: str) -> pd.DataFrame:
+    def _create_categories_params(self, language: str, topic: str) -> pd.DataFrame:
         """Create categories parameters DataFrame."""
         column_names = ParameterSheets.get_column_names("categories", language)
 
-        categories_data = {
-            "en": [
-                (
-                    "technical",
-                    "Technical content",
-                    "machine learning,api,data,system",
-                    0.6,
-                ),
-                (
-                    "business",
-                    "Business content",
-                    "revenue,growth,market,profit",
-                    0.6,
-                ),
-            ],
-            "fi": [
-                (
-                    "tekninen",
-                    "Tekninen sisältö",
-                    "koneoppiminen,järjestelmä,rajapinta,data",
-                    0.6,
-                ),
-                (
-                    "liiketoiminta",
-                    "Liiketoimintasisältö",
-                    "liikevaihto,kasvu,markkina,tuotto",
-                    0.6,
-                ),
-            ],
+        # Topic-specific categories
+        topic_categories = {
+            "business": {
+                "en": [
+                    ("financial_performance", "Financial results and metrics", "revenue,growth,profit,margin,performance", 0.6),
+                    ("market_strategy", "Market and strategy related", "market,strategy,expansion,innovation", 0.6),
+                    ("operational_efficiency", "Operational improvements", "efficiency,optimization,transformation,process", 0.6),
+                ],
+                "fi": [
+                    ("taloudellinen_tulos", "Taloudelliset tulokset ja mittarit", "liikevaihto,kasvu,tuotto,kannattavuus", 0.6),
+                    ("markkinastrategia", "Markkinoihin ja strategiaan liittyvä", "markkina,strategia,laajennus,innovaatio", 0.6),
+                    ("toiminnan_tehokkuus", "Toiminnan parannukset", "tehokkuus,optimointi,transformaatio,prosessi", 0.6),
+                ]
+            },
+            "support": {
+                "en": [
+                    ("login_issues", "Authentication and access problems", "login,password,credentials,authentication,access", 0.6),
+                    ("system_errors", "Technical errors and system failures", "error,bug,crash,failure,malfunction", 0.6),
+                    ("documentation_issues", "Documentation and API problems", "documentation,api,guide,manual,reference", 0.6),
+                ],
+                "fi": [
+                    ("kirjautumisongelmat", "Tunnistautumis- ja käyttöoikeusongelmat", "kirjautuminen,salasana,tunnukset,pääsy", 0.6),
+                    ("järjestelmävirheet", "Tekniset virheet ja häiriöt", "virhe,vika,kaatuminen,häiriö", 0.6),
+                    ("dokumentaatio-ongelmat", "Dokumentaatio- ja API-ongelmat", "dokumentaatio,api,ohje,manuaali", 0.6),
+                ]
+            },
+            "training": {
+                "en": [
+                    ("course_inquiry", "Course information requests", "course,training,workshop,program,schedule", 0.6),
+                    ("certification", "Certification related inquiries", "certification,qualification,exam,assessment", 0.6),
+                    ("pricing_inquiry", "Pricing and payment questions", "price,cost,payment,discount,fee", 0.6),
+                ],
+                "fi": [
+                    ("kurssitiedustelu", "Kurssitietojen kyselyt", "kurssi,koulutus,työpaja,ohjelma,aikataulu", 0.6),
+                    ("sertifiointi", "Sertifiointiin liittyvät kyselyt", "sertifiointi,pätevyys,koe,arviointi", 0.6),
+                    ("hintatiedustelu", "Hinnoittelu- ja maksukysymykset", "hinta,kustannus,maksu,alennus", 0.6),
+                ]
+            }
         }
 
-        data = categories_data[language]
+        data = topic_categories.get(topic, {}).get(language, [])
         return pd.DataFrame(
             {
                 column_names["category"]: [item[0] for item in data],
@@ -357,9 +471,7 @@ class TestDataGenerator:
     def _create_settings_params(self, language: str) -> pd.DataFrame:
         """Create settings parameters DataFrame."""
         column_names = ParameterSheets.get_column_names("settings", language)
-        param_mappings = ParameterSheets.PARAMETER_MAPPING["settings"][
-            "parameters"
-        ][language]
+        param_mappings = ParameterSheets.PARAMETER_MAPPING["settings"]["parameters"][language]
 
         settings = {
             "theme_analysis.min_confidence": 0.5,

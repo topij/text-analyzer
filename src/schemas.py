@@ -16,6 +16,18 @@ class KeywordInfo(BaseModel):
     compound_parts: Optional[List[str]] = Field(
         None, description="Parts if compound word"
     )
+    frequency: Optional[int] = Field(
+        default=0,
+        description="Number of occurrences in text"
+    )
+    is_compound: bool = Field(
+        default=False,
+        description="Whether this is a compound word/phrase"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Additional metadata about the keyword"
+    )
 
 
 class KeywordOutput(AnalyzerOutput):
