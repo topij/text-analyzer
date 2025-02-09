@@ -117,9 +117,9 @@ async def main():
 
         # Set up file paths relative to project root
         data_dir = Path().resolve() / "data"
-        input_file = data_dir / "raw" / "test_content_en.xlsx"
+        input_file = data_dir / "raw" / "training_test_content_fi.xlsx"
         output_file = data_dir / "processed" / "analysis_results_en.xlsx"
-        parameter_file = data_dir / "parameters" / "parameters_en.xlsx"
+        parameter_file = data_dir / "parameters" / "training_parameters_fi.xlsx"
 
         # Run analysis
         await runner.run_analysis(

@@ -318,4 +318,75 @@ async def robust_analysis(text: str):
         return None
 ```
 
+### Using the Lite Analyzer
+```python
+from src.analyzers.lite_analyzer import LiteSemanticAnalyzer
+from src.core.llm.factory import create_llm
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
+
+async def analyze_with_lite():
+    # Set up environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Create LLM instance
+    llm = create_llm()
+    
+    # Initialize lite analyzer
+    analyzer = LiteSemanticAnalyzer(
+        llm=llm,
+        language="en",
+        file_utils=components["file_utils"],
+        tfidf_weight=0.5,  # Balance between TF-IDF and LLM results
+        custom_stop_words={"custom", "stop", "words"}  # Optional
+    )
+    
+    # Analyze text
+    result = await analyzer.analyze(
+        text="""Machine learning models are trained using large datasets 
+                to recognize patterns. The neural network architecture 
+                includes multiple layers for feature extraction.""",
+        analysis_types=["keywords", "themes", "categories"]  # Optional - defaults to all
+    )
+    
+    # Process results
+    if result.success:
+        # Keywords with TF-IDF enhanced scoring
+        print("\nKeywords:")
+        for kw in result.keywords.keywords:
+            print(f"• {kw.keyword} (score: {kw.score:.2f})")
+            if kw.is_compound:
+                print("  (Compound word)")
+            if kw.frequency:
+                print(f"  Frequency: {kw.frequency}")
+        
+        # Themes with hierarchy
+        print("\nThemes:")
+        for theme in result.themes.themes:
+            print(f"• {theme.name} ({theme.confidence:.2f})")
+        
+        # Print theme hierarchy
+        if result.themes.theme_hierarchy:
+            print("\nTheme Hierarchy:")
+            for main_theme, sub_themes in result.themes.theme_hierarchy.items():
+                print(f"• {main_theme}")
+                for sub in sub_themes:
+                    print(f"  - {sub}")
+        
+        # Categories with evidence
+        print("\nCategories:")
+        for cat in result.categories.matches:
+            print(f"• {cat.name} ({cat.confidence:.2f})")
+            if cat.evidence:
+                print("  Evidence:")
+                for ev in cat.evidence:
+                    print(f"    - {ev.text} (relevance: {ev.relevance:.2f})")
+        
+        # Performance metrics
+        print(f"\nProcessing time: {result.processing_time:.2f}s")
+    else:
+        print(f"Analysis failed: {result.error}")
+```
+
 For complete API documentation, see [API_REFERENCE.md](API_REFERENCE.md).

@@ -9,6 +9,7 @@ A Python-based text analysis toolkit that combines LLMs and NLP techniques to ex
   - Theme identification with hierarchical relationships
   - Customizable category classification
   - Compound word support for Finnish language
+  - Lite analyzer for faster processing with single LLM call
 
 - **Integration & Processing**
   - OpenAI and Azure OpenAI integration via Langchain
@@ -141,6 +142,7 @@ async def analyze_excel():
 ## Documentation
 
 - [Getting Started](docs/GETTING_STARTED.md) - Setup and first steps
+- [Lite Analyzer](docs/LITE_ANALYZER.md) - Guide for using the Lite Analyzer
 - [Configuration](docs/CONFIGURATION_GUIDE.md) - Detailed configuration options
 - [Examples](docs/EXAMPLES.md) - Code examples and use cases
 - [API Reference](docs/API_REFERENCE.md) - Complete API documentation

@@ -65,6 +65,54 @@ class SemanticAnalyzer:
         """Save analysis results to file."""
 ```
 
+### LiteSemanticAnalyzer
+
+Lightweight analyzer that performs all analyses in a single LLM call.
+
+```python
+class LiteSemanticAnalyzer:
+    def __init__(
+        self,
+        llm: BaseChatModel,
+        parameter_file: Optional[Union[str, Path]] = None,
+        file_utils: Optional[FileUtils] = None,
+        available_categories: Optional[Set[str]] = None,
+        language: str = "en",
+        config: Optional[Dict] = None,
+        tfidf_weight: float = 0.5,
+        custom_stop_words: Optional[Set[str]] = None,
+        cache_size: int = 1000,
+    ):
+        """Initialize the lite analyzer.
+        
+        Args:
+            llm: Language model to use
+            parameter_file: Path to parameter file
+            file_utils: FileUtils instance for file operations
+            available_categories: Set of valid categories to choose from
+            language: Language of the text to analyze ('en' or 'fi')
+            config: Optional configuration dictionary
+            tfidf_weight: Weight given to TF-IDF results (0.0-1.0)
+            custom_stop_words: Optional set of additional stop words
+            cache_size: Maximum number of cached TF-IDF results
+        """
+
+    async def analyze(
+        self,
+        text: str,
+        analysis_types: Optional[List[str]] = None,
+    ) -> CompleteAnalysisResult:
+        """Perform semantic analysis on the text.
+        
+        Args:
+            text: Text to analyze
+            analysis_types: List of analysis types to perform. If None, performs all analyses.
+            
+        Returns:
+            CompleteAnalysisResult containing all analysis results
+        """
+```
+
 ### KeywordAnalyzer
 
 ```python
