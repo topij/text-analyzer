@@ -92,7 +92,7 @@ class LiteAnalysisRunner:
         # Get default provider and model from config
         model_config = config.get("models", {})
         provider = model_config.get("default_provider", "openai")
-        model = model_config.get("default_model", "gpt-3.5-turbo")
+        model = model_config.get("default_model", "gpt-4o-mini")
         
         # Create analyzer config
         base_config.update({
