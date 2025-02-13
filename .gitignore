@@ -173,6 +173,7 @@ cython_debug/
 
 # own
 _archive/
+old_code/
 *.xlsx
 *.csv
 *.json
