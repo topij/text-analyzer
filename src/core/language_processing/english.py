@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Set
+import os
 
 import nltk
 from nltk.corpus import stopwords
@@ -143,6 +144,12 @@ class EnglishTextProcessor(BaseTextProcessor):
         }
         
         try:
+            # Add conda environment's NLTK data path
+            nltk_data_path = os.path.join(os.environ.get('CONDA_PREFIX', ''), 'share', 'nltk_data')
+            if nltk_data_path not in nltk.data.path:
+                nltk.data.path.insert(0, nltk_data_path)
+                logger.debug(f"Added NLTK data path: {nltk_data_path}")
+
             # Verify required resources
             for resource, path in required_resources.items():
                 try:
@@ -162,11 +169,20 @@ class EnglishTextProcessor(BaseTextProcessor):
 
                 # Test POS tagger
                 try:
-                    tags = nltk.pos_tag([test_text])
+                    # First verify the tagger model is available
+                    nltk.data.find('taggers/averaged_perceptron_tagger')
+                    
+                    # Test the tagger
+                    from nltk.tag import PerceptronTagger
+                    tagger = PerceptronTagger()
+                    tags = tagger.tag([test_text])
                     if tags:
                         logger.debug("POS tagger working")
-                except LookupError:
-                    logger.warning("POS tagger not available, falling back to basic noun assumption")
+                        # Store the tagger instance for reuse
+                        self.pos_tagger = tagger
+                except (LookupError, ImportError) as e:
+                    logger.warning(f"POS tagger not available ({str(e)}), falling back to basic noun assumption")
+                    self.pos_tagger = None
 
                 # Test WordNet
                 try:
@@ -448,42 +464,23 @@ class EnglishTextProcessor(BaseTextProcessor):
         return [word]
 
     def get_pos_tag(self, word: str) -> Optional[str]:
-        """Get part-of-speech tag for a word."""
+        """Get part of speech tag for a word."""
         try:
             if not word:
                 return None
-
-            # Clean the word - remove punctuation at the end
-            word = word.strip().rstrip('.,!?:;')
-
-            # Check technical terms first
-            tech_pos_map = {
-                "api": "NN",
-                "cloud": "NN",
-                "data": "NN",
-                "code": "NN",
-            }
-            word_lower = word.lower()
-            if word_lower in tech_pos_map:
-                return tech_pos_map[word_lower]
-
-            # Handle special cases first
-            if word.isupper() or "-" in word:  # Acronym or technical term
-                return "NN"
-
-            # Get NLTK tag with error handling
-            try:
-                pos = nltk.pos_tag([word])[0][1]
-                return pos
-            except LookupError:
-                logger.warning("POS tagger not available, falling back to basic noun assumption")
-                return "NN"  # Default to noun
-            except Exception as e:
-                logger.error(f"Error in POS tagging: {str(e)}")
-                return None
-
+                
+            # Use stored tagger instance if available
+            if hasattr(self, 'pos_tagger') and self.pos_tagger is not None:
+                tags = self.pos_tagger.tag([word])
+                if tags and tags[0]:
+                    return tags[0][1]
+            
+            # Fallback to basic noun assumption
+            logger.debug(f"Using noun assumption for word: {word}")
+            return 'NN'  # Default to noun
+            
         except Exception as e:
-            logger.error(f"Error getting POS tag for '{word}': {str(e)}")
+            logger.warning(f"Error getting POS tag for '{word}': {str(e)}")
             return None
 
     def _evaluate_quality(self, word: str) -> float:

@@ -55,12 +55,10 @@ if not root_logger.handlers:
 
 logger = logging.getLogger(__name__)
 
-# Download required NLTK resources
-try:
-    nltk.download('averaged_perceptron_tagger')
-    nltk.download('punkt')
-except Exception as e:
-    logger.error(f"Failed to download NLTK resources: {e}")
+# Configure NLTK data path
+nltk_data_path = os.path.join(os.environ.get('CONDA_PREFIX', ''), 'share', 'nltk_data')
+if nltk_data_path not in nltk.data.path:
+    nltk.data.path.insert(0, nltk_data_path)
 
 # Configure environment
 env_config = EnvironmentConfig(

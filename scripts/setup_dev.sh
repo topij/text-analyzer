@@ -94,11 +94,21 @@ setup_voikko_windows() {
 setup_nltk() {
     log_msg "Setting up NLTK data..."
     
+    # Install NLTK package first
+    log_msg "Installing NLTK package..."
+    if ! pip install -U nltk; then
+        log_msg "Error: Failed to install NLTK package"
+        return 1
+    fi
+    
     # Create a Python script for NLTK setup
     TEMP_SCRIPT=$(mktemp)
     cat > "$TEMP_SCRIPT" << 'EOF'
 import nltk
 import ssl
+import os
+import zipfile
+from pathlib import Path
 
 try:
     _create_unverified_https_context = ssl._create_unverified_context
@@ -107,11 +117,41 @@ except AttributeError:
 else:
     ssl._create_default_https_context = _create_unverified_https_context
 
+# Set NLTK data path to conda environment
+nltk_data_path = os.path.join(os.environ.get('CONDA_PREFIX', ''), 'share', 'nltk_data')
+os.environ['NLTK_DATA'] = nltk_data_path
+nltk.data.path.insert(0, nltk_data_path)
+
 # Download essential NLTK data
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
-nltk.download('averaged_perceptron_tagger')
+nltk.download('punkt', download_dir=nltk_data_path)
+nltk.download('punkt_tab', download_dir=nltk_data_path)
+nltk.download('stopwords', download_dir=nltk_data_path)
+nltk.download('wordnet', download_dir=nltk_data_path)
+nltk.download('averaged_perceptron_tagger', download_dir=nltk_data_path)
+nltk.download('averaged_perceptron_tagger_eng', download_dir=nltk_data_path)
+
+# Get NLTK data path
+nltk_data_path = nltk.data.path[0]
+
+# Ensure all downloaded zip files are extracted
+corpora_path = Path(nltk_data_path) / 'corpora'
+if corpora_path.exists():
+    for zip_file in corpora_path.glob('*.zip'):
+        try:
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                zip_ref.extractall(corpora_path)
+            print(f"Extracted {zip_file.name}")
+        except Exception as e:
+            print(f"Error extracting {zip_file.name}: {e}")
+
+# Verify wordnet installation
+try:
+    from nltk.corpus import wordnet
+    synsets = wordnet.synsets('test')
+    print("Wordnet verification successful")
+except Exception as e:
+    print(f"Error verifying wordnet: {e}")
+    exit(1)
 EOF
     
     # Get conda environment Python path

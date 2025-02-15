@@ -630,17 +630,21 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     def set_language(self, language: str) -> None:
         """Update analyzer configuration for new language."""
         try:
-            # Get base parameter file name
-            base_name = "parameters"
+            # Get base parameter file name (topic)
+            topic = "business"  # default topic
             if self._base_parameter_file:
-                base_name = Path(self._base_parameter_file).stem.split("_")[0]
-            elif hasattr(self, "parameter_handler") and hasattr(self.parameter_handler, "parameter_file"):
-                base_name = Path(self.parameter_handler.parameter_file).stem.split("_")[0]
+                parts = Path(self._base_parameter_file).stem.split("_")
+                if len(parts) >= 2:
+                    topic = parts[0]
+            elif hasattr(self, "parameter_handler") and hasattr(self.parameter_handler, "file_path"):
+                parts = Path(self.parameter_handler.file_path).stem.split("_")
+                if len(parts) >= 2:
+                    topic = parts[0]
 
             # Construct language-specific parameter file path
             param_path = (
                 self.file_utils.get_data_path("parameters")
-                / f"{base_name}_{language}.xlsx"
+                / f"{topic}_parameters_{language}.xlsx"
             )
             logger.debug(f"Looking for parameter file: {param_path}")
 
