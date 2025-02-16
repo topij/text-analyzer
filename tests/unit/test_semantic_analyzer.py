@@ -6,11 +6,21 @@ import pytest
 import pandas as pd
 from typing import Dict, Any, Tuple
 from pathlib import Path
+from datetime import datetime
+import asyncio
 from langchain_core.language_models import BaseChatModel
 
 from src.semantic_analyzer import SemanticAnalyzer
 from src.loaders.models import CategoryConfig
-from src.schemas import CompleteAnalysisResult
+from src.schemas import (
+    CompleteAnalysisResult,
+    KeywordOutput,
+    ThemeOutput,
+    CategoryOutput,
+    KeywordAnalysisResult,
+    ThemeAnalysisResult,
+    CategoryAnalysisResult,
+)
 from src.config.manager import ConfigManager
 from FileUtils import FileUtils
 from tests.helpers.mock_llms.category_mock import CategoryMockLLM
@@ -46,7 +56,7 @@ class TestSemanticAnalyzer:
             file_name="test_params",
         )
 
-        # Create test categories - these are being set correctly
+        # Create test categories
         categories = {
             "Technical": CategoryConfig(
                 description="Technical content",
@@ -60,53 +70,78 @@ class TestSemanticAnalyzer:
             ),
         }
 
-        # Add debug logging for mock LLM
-        category_mock = CategoryMockLLM()
-        logger.debug("Created CategoryMockLLM for testing")
+        # Create analyzers with different mocks
+        analyzers = {
+            "keywords": SemanticAnalyzer(
+                parameter_file=file_path,
+                environment_manager=test_environment_manager,
+                llm=KeywordMockLLM().with_structured_output(KeywordOutput),
+                config_manager=config_manager,
+            ),
+            "themes": SemanticAnalyzer(
+                parameter_file=file_path,
+                environment_manager=test_environment_manager,
+                llm=ThemeMockLLM().with_structured_output(ThemeOutput),
+                config_manager=config_manager,
+            ),
+            "categories": SemanticAnalyzer(
+                parameter_file=file_path,
+                environment_manager=test_environment_manager,
+                llm=CategoryMockLLM().with_structured_output(CategoryOutput),
+                categories=categories,
+                config_manager=config_manager,
+            ),
+        }
 
         text = """Machine learning models are trained using large datasets.
                 Neural networks enable complex pattern recognition.
                 The system's performance metrics show significant improvements."""
 
-        # Initialize analyzer with environment manager
-        analyzer = SemanticAnalyzer(
-            parameter_file=file_path,
-            environment_manager=test_environment_manager,
-            llm=category_mock,
-            categories=categories,  # Pass categories here
-            config_manager=config_manager,  # Add config_manager
-        )
-
-        # Add debug logging
-        logger.debug(f"Input text: {text}")
-        logger.debug(f"Configured categories: {categories}")
-        logger.debug(
-            f"CategoryAnalyzer categories: {analyzer.category_analyzer.categories}"
-        )
-
-        # Run analysis with debugging
-        result = await analyzer.analyze(text, analysis_types=["categories"])
-        logger.debug(f"Raw analysis result: {result}")
-        if result.categories:
-            logger.debug(
-                f"Category matches: {[cat.name for cat in result.categories.matches]}"
-            )
-
-        # More detailed assertion with debugging
-        if not any(
-            cat.name == "Technical" for cat in result.categories.matches
-        ):
-            logger.error(
-                f"Expected 'Technical' category but found: {[cat.name for cat in result.categories.matches]}"
-            )
-            logger.error(
-                f"Full category details: {[(cat.name, cat.confidence) for cat in result.categories.matches]}"
-            )
-
-        assert result.categories.matches, "No category matches found"
-        assert any(
-            cat.name == "Technical" for cat in result.categories.matches
-        ), "Technical category not found in matches"
+        # Test each analyzer
+        for analysis_type, analyzer in analyzers.items():
+            result = await analyzer.analyze(text, analysis_types=[analysis_type])
+            
+            assert result.success, f"{analysis_type} analysis failed"
+            
+            if analysis_type == "keywords":
+                assert result.keywords is not None
+                assert result.keywords.success
+                assert len(result.keywords.keywords) > 0
+                assert any(
+                    "machine learning" in kw.keyword.lower()
+                    for kw in result.keywords.keywords
+                )
+                # Additional assertions for keyword structure
+                for kw in result.keywords.keywords:
+                    assert hasattr(kw, "score")
+                    assert 0 <= kw.score <= 1.0
+                    
+            elif analysis_type == "themes":
+                assert result.themes is not None
+                assert result.themes.success
+                assert len(result.themes.themes) > 0
+                assert any(
+                    "learning" in theme.name.lower()
+                    for theme in result.themes.themes
+                )
+                # Additional assertions for theme structure
+                for theme in result.themes.themes:
+                    assert hasattr(theme, "confidence")
+                    assert 0 <= theme.confidence <= 1.0
+                    
+            elif analysis_type == "categories":
+                assert result.categories is not None
+                assert result.categories.success
+                assert len(result.categories.matches) > 0
+                assert any(
+                    cat.name == "Technical"
+                    for cat in result.categories.matches
+                )
+                # Additional assertions for category structure
+                for cat in result.categories.matches:
+                    assert hasattr(cat, "confidence")
+                    assert 0 <= cat.confidence <= 1.0
+                    assert hasattr(cat, "evidence")
 
     def _create_parameter_df(
         self, test_parameters: Dict[str, Any], language: str = "en"
@@ -259,7 +294,7 @@ class TestSemanticAnalyzer:
         keyword_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=KeywordMockLLM(),  # Use keyword mock for keyword analysis
+            llm=KeywordMockLLM().with_structured_output(KeywordOutput),  # Configure for structured output
             categories=categories,
             config_manager=config_manager,
         )
@@ -268,6 +303,7 @@ class TestSemanticAnalyzer:
         result = await keyword_analyzer.analyze(text, analysis_types=["keywords"])
 
         # Only keywords should be analyzed
+        assert result.keywords is not None
         assert result.keywords.success
         assert len(result.keywords.keywords) > 0
         assert any(
@@ -279,7 +315,7 @@ class TestSemanticAnalyzer:
         theme_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=ThemeMockLLM(),  # Use theme mock for theme analysis
+            llm=ThemeMockLLM().with_structured_output(ThemeOutput),  # Configure for structured output
             categories=categories,
             config_manager=config_manager,
         )
@@ -287,6 +323,7 @@ class TestSemanticAnalyzer:
         theme_result = await theme_analyzer.analyze(
             text, analysis_types=["themes"]
         )
+        assert theme_result.themes is not None
         assert theme_result.themes.success
         assert len(theme_result.themes.themes) > 0
         assert any(
@@ -298,7 +335,7 @@ class TestSemanticAnalyzer:
         category_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=CategoryMockLLM(),  # Use category mock for category analysis
+            llm=CategoryMockLLM().with_structured_output(CategoryOutput),  # Configure for structured output
             categories=categories,
             config_manager=config_manager,
         )
@@ -306,6 +343,7 @@ class TestSemanticAnalyzer:
         category_result = await category_analyzer.analyze(
             text, analysis_types=["categories"]
         )
+        assert category_result.categories is not None
         assert category_result.categories.success
         assert len(category_result.categories.matches) > 0
         assert any(
@@ -353,12 +391,14 @@ class TestSemanticAnalyzer:
         keyword_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=KeywordMockLLM(),
+            llm=KeywordMockLLM().with_structured_output(KeywordOutput),
             categories=categories,
             config_manager=config_manager,
         )
         result = await keyword_analyzer.analyze("", analysis_types=["keywords"])
         assert not result.success
+        assert result.keywords is not None
+        assert not result.keywords.success
         assert result.keywords.error is not None
         assert "Empty input text" in result.keywords.error
 
@@ -366,12 +406,14 @@ class TestSemanticAnalyzer:
         theme_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=ThemeMockLLM(),
+            llm=ThemeMockLLM().with_structured_output(ThemeOutput),
             categories=categories,
             config_manager=config_manager,
         )
         result = await theme_analyzer.analyze("", analysis_types=["themes"])
         assert not result.success
+        assert result.themes is not None
+        assert not result.themes.success
         assert result.themes.error is not None
         assert "Empty input text" in result.themes.error
 
@@ -379,12 +421,14 @@ class TestSemanticAnalyzer:
         category_analyzer = SemanticAnalyzer(
             parameter_file=file_path,
             environment_manager=test_environment_manager,
-            llm=CategoryMockLLM(),
+            llm=CategoryMockLLM().with_structured_output(CategoryOutput),
             categories=categories,
             config_manager=config_manager,
         )
         result = await category_analyzer.analyze("", analysis_types=["categories"])
         assert not result.success
+        assert result.categories is not None
+        assert not result.categories.success
         assert result.categories.error is not None
         assert "Empty input text" in result.categories.error
 
@@ -392,98 +436,6 @@ class TestSemanticAnalyzer:
         result = await keyword_analyzer.analyze("test", analysis_types=["invalid"])
         assert not result.success
         assert "Invalid analysis types" in result.error
-
-    @pytest.mark.asyncio
-    async def test_complete_analysis(
-        self,
-        test_environment_manager,
-        test_parameters: Dict[str, Any],
-    ):
-        """Test complete analysis pipeline with all mock types."""
-        # Get components from environment manager
-        components = test_environment_manager.get_components()
-        file_utils = components["file_utils"]
-        config_manager = components["config_manager"]
-
-        # Create parameter file
-        sheet_name, param_df = self._create_parameter_df(test_parameters)
-        file_path = self._save_parameter_file(
-            file_utils=file_utils,
-            sheet_data={sheet_name: param_df},
-            file_name="test_params",
-        )
-
-        # Create test categories
-        categories = {
-            "Technical": CategoryConfig(
-                description="Technical content",
-                keywords=["software", "api", "data"],
-                threshold=0.6,
-            ),
-            "Business": CategoryConfig(
-                description="Business content",
-                keywords=["revenue", "growth", "market"],
-                threshold=0.6,
-            ),
-        }
-
-        # Create analyzers with different mocks
-        keyword_analyzer = SemanticAnalyzer(
-            parameter_file=file_path,
-            environment_manager=test_environment_manager,
-            llm=KeywordMockLLM(),
-            config_manager=config_manager,  # Add config_manager
-        )
-
-        theme_analyzer = SemanticAnalyzer(
-            parameter_file=file_path,
-            environment_manager=test_environment_manager,
-            llm=ThemeMockLLM(),
-            config_manager=config_manager,  # Add config_manager
-        )
-
-        category_analyzer = SemanticAnalyzer(
-            parameter_file=file_path,
-            environment_manager=test_environment_manager,
-            llm=CategoryMockLLM(),
-            categories=categories,  # Pass test categories
-            config_manager=config_manager,  # Add config_manager
-        )
-
-        text = """Machine learning models are trained using large datasets.
-                Neural networks enable complex pattern recognition.
-                The system's performance metrics show significant improvements."""
-
-        # Run analyses with specific types
-        keyword_result = await keyword_analyzer.analyze(
-            text, analysis_types=["keywords"]
-        )
-        assert keyword_result.keywords.success
-        assert len(keyword_result.keywords.keywords) > 0
-        assert any(
-            "machine learning" in kw.keyword.lower()
-            for kw in keyword_result.keywords.keywords
-        )
-
-        theme_result = await theme_analyzer.analyze(
-            text, analysis_types=["themes"]
-        )
-        assert theme_result.themes.success
-        assert len(theme_result.themes.themes) > 0
-        assert any(
-            "learning" in theme.name.lower()
-            for theme in theme_result.themes.themes
-        )
-
-        category_result = await category_analyzer.analyze(
-            text, analysis_types=["categories"]
-        )
-        assert category_result.categories.success
-        assert len(category_result.categories.matches) > 0
-        assert any(
-            cat.name == "Technical"  # Changed from "Machine Learning" to "Technical"
-            for cat in category_result.categories.matches
-        )
 
     @pytest.mark.asyncio
     async def test_finnish_analysis(
@@ -530,21 +482,21 @@ class TestSemanticAnalyzer:
             "keywords": SemanticAnalyzer(
                 parameter_file=file_path,
                 environment_manager=test_environment_manager,
-                llm=KeywordMockLLM(),
-                config_manager=config_manager,  # Add config_manager
+                llm=KeywordMockLLM().with_structured_output(KeywordOutput),
+                config_manager=config_manager,
             ),
             "themes": SemanticAnalyzer(
                 parameter_file=file_path,
                 environment_manager=test_environment_manager,
-                llm=ThemeMockLLM(),
-                config_manager=config_manager,  # Add config_manager
+                llm=ThemeMockLLM().with_structured_output(ThemeOutput),
+                config_manager=config_manager,
             ),
             "categories": SemanticAnalyzer(
                 parameter_file=file_path,
                 environment_manager=test_environment_manager,
-                llm=CategoryMockLLM(),
+                llm=CategoryMockLLM().with_structured_output(CategoryOutput),
                 categories=categories,
-                config_manager=config_manager,  # Add config_manager
+                config_manager=config_manager,
             ),
         }
 
@@ -558,16 +510,22 @@ class TestSemanticAnalyzer:
             )
             assert result.success
             if analysis_type == "keywords":
+                assert result.keywords is not None
+                assert result.keywords.success
                 assert any(
                     "koneoppiminen" in kw.keyword.lower()
                     for kw in result.keywords.keywords
                 )
             elif analysis_type == "themes":
+                assert result.themes is not None
+                assert result.themes.success
                 assert any(
                     "oppiminen" in theme.name.lower()
                     for theme in result.themes.themes
                 )
             elif analysis_type == "categories":
+                assert result.categories is not None
+                assert result.categories.success
                 assert any(
                     cat.name == "Technical"
                     for cat in result.categories.matches

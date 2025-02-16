@@ -49,6 +49,10 @@ class CategoryAnalyzer(TextAnalyzer):
         # Initialize configuration values
         self.min_confidence = config.get("min_confidence", 0.3)
 
+        # Pass configuration to LLM if it supports it
+        if hasattr(llm, '_config'):
+            llm._config = config
+
         # Create chain with structured output
         self.chain = self._create_chain()
 
@@ -76,11 +80,24 @@ class CategoryAnalyzer(TextAnalyzer):
 
             # If result is already a CategoryOutput, process it
             if isinstance(result, CategoryOutput):
+                # Log original confidence values
+                logger.debug(f"Original categories with confidence: {[{'name': c.name, 'confidence': c.confidence} for c in result.categories]}")
+                
                 # Filter categories by confidence
                 result.categories = [
-                    cat for cat in result.categories 
+                    CategoryMatch(
+                        name=cat.name,
+                        confidence=cat.confidence,  # Explicitly preserve confidence
+                        description=cat.description,
+                        evidence=cat.evidence,
+                        themes=cat.themes
+                    )
+                    for cat in result.categories 
                     if cat.confidence >= self.min_confidence
                 ]
+                
+                # Log filtered categories
+                logger.debug(f"Filtered categories with confidence: {[{'name': c.name, 'confidence': c.confidence} for c in result.categories]}")
                 
                 # Ensure predefined categories have proper descriptions
                 for cat in result.categories:
@@ -92,16 +109,24 @@ class CategoryAnalyzer(TextAnalyzer):
             # If we got a dict or other format, convert it
             processed = self._post_process_llm_output(result)
             
+            # Log processed categories
+            logger.debug(f"Processed categories with confidence: {[{'name': c.get('name'), 'confidence': c.get('confidence')} for c in processed['categories']]}")
+            
             # Create CategoryOutput from processed result
-            return CategoryOutput(
+            output = CategoryOutput(
                 categories=[CategoryMatch(**cat) for cat in processed["categories"]],
                 language=processed["language"],
                 success=processed["success"],
                 error=processed.get("error")
             )
+            
+            # Log final output
+            logger.debug(f"Final output categories with confidence: {[{'name': c.name, 'confidence': c.confidence} for c in output.categories]}")
+            
+            return output
 
         except Exception as e:
-            logger.error(f"CategoryAnalyzer.analyze: Exception occurred: {e}")
+            logger.error(f"CategoryAnalyzer.analyze: Exception occurred: {e}", exc_info=True)
             return CategoryOutput(
                 categories=[],
                 language=self._get_language(),
@@ -427,19 +452,12 @@ Required:
                 if not category_name:  # Skip categories without names
                     continue
                     
+                # Use the original confidence value from the LLM response
                 confidence = cat.get("confidence", 0.0)
                 evidence = cat.get("evidence", [])
                 
-                # Calculate score based on category type and evidence
-                score = self._calculate_match_score(
-                    category_name,
-                    str(evidence),  # Convert evidence to string for keyword matching
-                    evidence,
-                    None  # Theme context would be passed here if available
-                )
-                
                 # Include if meets confidence threshold
-                if score >= self.min_confidence:
+                if confidence >= self.min_confidence:
                     # For predefined categories, use config description
                     if category_name in self.categories:
                         description = self.categories[category_name].description
@@ -450,7 +468,7 @@ Required:
                         
                     processed_categories.append({
                         "name": category_name,
-                        "confidence": score,
+                        "confidence": confidence,  # Use original confidence value
                         "description": description,
                         "evidence": evidence,
                         "themes": cat.get("themes", []),

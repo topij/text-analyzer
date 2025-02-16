@@ -31,6 +31,7 @@ from src.schemas import (
     CategoryOutput,
     CompleteAnalysisResult,
     KeywordAnalysisResult,
+    KeywordOutput,
     ThemeAnalysisResult,
     ThemeOutput,
 )
@@ -51,6 +52,7 @@ from src.schemas import CompleteAnalysisResult
 from src.core.llm.factory import create_llm
 from FileUtils import FileUtils
 from .base import BaseSemanticAnalyzer, ResultProcessingMixin, AnalyzerFactory
+from src.semantic_analyzer.base import AnalysisTypeError
 
 logger = logging.getLogger(__name__)
 
@@ -356,137 +358,82 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         analysis_types: Optional[List[str]] = None,
         **kwargs
     ) -> CompleteAnalysisResult:
-        """Run semantic analysis on text.
-
-        Args:
-            text: Text to analyze
-            analysis_types: List of analysis types to run
-            **kwargs: Additional analysis parameters. Special parameters:
-                - language: Language to use for analysis. Will be removed from kwargs.
-                - timeout: Timeout for analysis in seconds. Will be removed from kwargs.
-
-        Returns:
-            CompleteAnalysisResult with all analysis results
-        """
+        """Analyze text using specified analysis types."""
+        start_time = datetime.now()
+        
         try:
-            start_time = datetime.now()
+            types_to_run = self._validate_analysis_types(analysis_types)
+
+            # Create tasks for each analysis type
+            tasks = [
+                self._create_analysis_task(t, text, **kwargs)
+                for t in types_to_run
+            ]
+
+            # Run analyses concurrently and await results
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            # Handle special parameters
-            if 'language' in kwargs:
-                self.set_language(kwargs.pop('language'))
-            
-            # Remove timeout parameter if present since individual analyzers don't use it
-            if 'timeout' in kwargs:
-                kwargs.pop('timeout')
-            
-            self._verify_analyzers()
-            try:
-                types_to_run = self._validate_analysis_types(analysis_types)
-            except ValueError as e:
-                # Return a failed result with the validation error
-                return CompleteAnalysisResult(
-                    keywords=KeywordAnalysisResult(
-                        language=self.parameters.general.language,
-                        keywords=[],
-                        compound_words=[],
-                        domain_keywords={},
-                        success=False
-                    ),
-                    themes=ThemeAnalysisResult(
-                        language=self.parameters.general.language,
-                        themes=[],
-                        theme_hierarchy={},
-                        success=False
-                    ),
-                    categories=CategoryAnalysisResult(
-                        language=self.parameters.general.language,
-                        matches=[],
-                        success=False
-                    ),
-                    language=self.parameters.general.language,
-                    processing_time=0.0,
-                    success=False,
-                    error=str(e),
-                    metadata={
-                        "analysis_timestamp": datetime.now().isoformat(),
-                        "language": self.parameters.general.language,
-                    }
-                )
-
-            logger.debug(f"Running analysis types: {types_to_run}")
-
-            results = []
-            theme_result = None
-
-            # First run theme analysis if requested
-            if "themes" in types_to_run:
-                logger.debug("Running theme analysis first")
-                theme_task = self._create_analysis_task("themes", text, **kwargs)
-                theme_result = await theme_task
-                results.append(theme_result)
-                types_to_run.remove("themes")  # Remove from list since it's already processed
-
-            # Then run other analyses with theme context
-            remaining_tasks = []
-            for analyzer_type in types_to_run:
-                task = self._create_analysis_task(
-                    analyzer_type, 
-                    text,
-                    theme_context=theme_result if theme_result and theme_result.success else None,
-                    **kwargs
-                )
-                remaining_tasks.append(task)
-
-            if remaining_tasks:
-                other_results = await asyncio.gather(*remaining_tasks)
-                results.extend(other_results)
-
-            # Reorder results to match original types order
+            # Initialize processed_results dictionary
             processed_results = {}
-            for analyzer_type in self._validate_analysis_types(analysis_types):
-                result = next((r for r in results if isinstance(r, self._get_result_type(analyzer_type))), None)
-                processed_results[analyzer_type] = result
+            
+            # Process results
+            for result, analysis_type in zip(results, types_to_run):
+                if isinstance(result, Exception):
+                    processed_results[analysis_type] = self._create_error_result_by_type(
+                        analysis_type,
+                        str(result)
+                    )
+                else:
+                    processed_results[analysis_type] = self._process_analysis_results(result, analysis_type)
 
-            processing_time = (datetime.now() - start_time).total_seconds()
+            # For analysis types not run, create empty results
+            all_types = {"keywords", "themes", "categories"}
+            for t in all_types - set(types_to_run):
+                processed_results[t] = self._create_error_result_by_type(t, "Analysis not performed")
 
-            # Determine overall success based on individual analyzer successes
+            # Check success status only for requested types
             overall_success = all(
                 result.success
-                for analyzer_type in types_to_run
-                if (result := processed_results.get(analyzer_type)) is not None
+                for type_, result in processed_results.items()
+                if type_ in types_to_run
             )
 
-            return CompleteAnalysisResult(
-                keywords=processed_results.get("keywords", KeywordAnalysisResult(
-                    language=self.parameters.general.language,
-                    keywords=[],
-                    compound_words=[],
-                    domain_keywords={},
-                    success=False
-                )),
-                themes=processed_results.get("themes", ThemeAnalysisResult(
-                    language=self.parameters.general.language,
-                    themes=[],
-                    theme_hierarchy={},
-                    success=False
-                )),
-                categories=processed_results.get("categories", CategoryAnalysisResult(
-                    language=self.parameters.general.language,
-                    matches=[],
-                    success=False
-                )),
+            # Get error message if any
+            error_msg = None
+            if not overall_success:
+                error_msg = "; ".join(
+                    f"{k}: {v.error}"
+                    for k, v in processed_results.items()
+                    if k in types_to_run and not v.success
+                )
+
+            # Create complete result
+            result = CompleteAnalysisResult(
+                keywords=processed_results.get("keywords"),
+                themes=processed_results.get("themes"),
+                categories=processed_results.get("categories"),
                 language=self.parameters.general.language,
-                processing_time=processing_time,
                 success=overall_success,
-                metadata={
-                    "analysis_timestamp": datetime.now().isoformat(),
-                    "language": self.parameters.general.language,
-                }
+                error=error_msg,
+                processing_time=(datetime.now() - start_time).total_seconds(),
             )
 
+            return result
+
+        except AnalysisTypeError as e:
+            logger.error(f"Invalid analysis types: {str(e)}", exc_info=True)
+            return CompleteAnalysisResult(
+                keywords=self._create_error_result_by_type("keywords"),
+                themes=self._create_error_result_by_type("themes"),
+                categories=self._create_error_result_by_type("categories"),
+                language=self.parameters.general.language,
+                success=False,
+                error=str(e),
+                processing_time=(datetime.now() - start_time).total_seconds(),
+            )
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}", exc_info=True)
-            raise RuntimeError(f"Analysis failed: {str(e)}")
+            return self._create_error_result(str(e), start_time)
 
     def _verify_analyzers(self) -> None:
         """Verify that all required analyzers are properly initialized."""
@@ -510,32 +457,35 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             
         logger.debug("All available analyzers verified successfully")
 
-    def _create_type_error_result(self, analysis_type: str, error: str) -> Any:
-        """Create error result for specific analysis type."""
-        error_results = {
-            "keywords": KeywordAnalysisResult(
-                error=error,
-                language=self.parameters.general.language,
+    def _create_error_result_by_type(self, analysis_type: str, error: str = "Analysis not performed") -> Any:
+        """Create appropriate error result for each type."""
+        if not error:
+            error = "Analysis not performed"
+            
+        if analysis_type == "keywords":
+            return KeywordAnalysisResult(
                 keywords=[],
                 compound_words=[],
                 domain_keywords={},
-                success=False
-            ),
-            "themes": ThemeAnalysisResult(
-                error=error,
                 language=self.parameters.general.language,
+                success=False,
+                error=error,
+            )
+        elif analysis_type == "themes":
+            return ThemeAnalysisResult(
                 themes=[],
                 theme_hierarchy={},
-                success=False
-            ),
-            "categories": CategoryAnalysisResult(
-                error=error,
                 language=self.parameters.general.language,
+                success=False,
+                error=error,
+            )
+        elif analysis_type == "categories":
+            return CategoryAnalysisResult(
                 matches=[],
-                success=False
-            ),
-        }
-        return error_results.get(analysis_type, {"error": error})
+                language=self.parameters.general.language,
+                success=False,
+                error=error,
+            )
 
     def _init_analyzers(self, use_excel: bool = False) -> None:
         """Initialize analyzers with proper configuration."""
@@ -716,27 +666,30 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         analysis_type: str,
         text: str,
         **kwargs,
-    ) -> Optional[Awaitable]:
-        """Create analysis coroutine for specified type."""
+    ) -> Optional[Any]:
+        """Create and execute an analysis task for the specified type."""
         try:
-            config = BaseAnalyzerConfig.ANALYZER_TYPES.get(analysis_type)
-            if not config:
+            # Remove timeout from kwargs if present since analyze() doesn't accept it
+            kwargs.pop('timeout', None)
+            
+            if not text.strip():
+                return self._create_error_result_by_type(analysis_type, "Empty input text")
+            
+            if analysis_type == "keywords":
+                return await self.keyword_analyzer.analyze(text, **kwargs)
+            elif analysis_type == "themes":
+                return await self.theme_analyzer.analyze(text, **kwargs)
+            elif analysis_type == "categories":
+                return await self.category_analyzer.analyze(text, **kwargs)
+            else:
                 logger.warning(f"Unknown analysis type: {analysis_type}")
                 return None
-
-            attr_name = config["attr_name"]
-            analyzer = getattr(self, attr_name)
-            logger.debug(f"Creating {analysis_type} analysis task")
-
-            # Get type-specific parameters from kwargs
-            param_key = f"{config['singular_name']}_params"
-            type_params = kwargs.get(param_key, {})
-
-            return analyzer.analyze(text, **type_params)
-
         except Exception as e:
-            logger.error(f"Error creating {analysis_type} task: {e}")
-            return None
+            logger.error(
+                f"Error creating analysis task for {analysis_type}: {e}",
+                exc_info=True,
+            )
+            return e
 
     def _convert_theme_output(self, output: ThemeOutput) -> ThemeAnalysisResult:
         """Convert ThemeOutput to ThemeAnalysisResult."""
@@ -1064,116 +1017,89 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
         return list(set(normalized_types))
 
-    def _create_error_result_by_type(self, analysis_type: str) -> Any:
-        """Create appropriate error result for each type."""
-        if analysis_type == "keywords":
-            return KeywordAnalysisResult(
-                keywords=[],
-                compound_words=[],
-                domain_keywords={},
-                language=self.parameters.general.language,
-                success=False,
-                error="Analysis failed",
-            )
-        elif analysis_type == "themes":
-            return ThemeAnalysisResult(
-                themes=[],
-                theme_hierarchy={},
-                language=self.parameters.general.language,
-                success=False,
-                error="Analysis failed",
-            )
-        elif analysis_type == "categories":
-            return CategoryAnalysisResult(
-                matches=[],
-                language=self.parameters.general.language,
-                success=False,
-                error="Analysis failed",
-            )
-
     def _process_analysis_results(
         self,
-        results: List[Any],
-        types: List[str],
-    ) -> Dict[str, Any]:
-        """Process and convert analysis results to correct types."""
-        processed = {}
+        result: Any,
+        analysis_type: str,
+    ) -> Any:
+        """Process analysis results based on type."""
+        if result is None:
+            return self._create_error_result_by_type(analysis_type)
 
-        for analysis_type, result in zip(types, results):
-            logger.debug(f"Processing {analysis_type} result: {result}")
+        try:
+            # First check if result is already an analysis result type
+            if isinstance(result, (KeywordAnalysisResult, ThemeAnalysisResult, CategoryAnalysisResult)):
+                return result
 
-            if isinstance(result, Exception):
-                logger.error(f"Error in {analysis_type} analysis: {result}")
-                processed[analysis_type] = self._create_error_result_by_type(
-                    analysis_type
+            # Handle KeywordOutput
+            if isinstance(result, KeywordOutput) or (hasattr(result, 'keywords') and hasattr(result, 'compound_words')):
+                return KeywordAnalysisResult(
+                    keywords=result.keywords,
+                    compound_words=result.compound_words,
+                    domain_keywords=result.domain_keywords,
+                    language=result.language,
+                    success=result.success if hasattr(result, 'success') else True,
+                    error=result.error if hasattr(result, 'error') else None
                 )
-            else:
+            
+            # Handle ThemeOutput
+            if isinstance(result, ThemeOutput) or (hasattr(result, 'themes') and hasattr(result, 'theme_hierarchy')):
+                return ThemeAnalysisResult(
+                    themes=result.themes,
+                    theme_hierarchy=result.theme_hierarchy,
+                    language=result.language,
+                    success=result.success if hasattr(result, 'success') else True,
+                    error=result.error if hasattr(result, 'error') else None
+                )
+            
+            # Handle CategoryOutput
+            if isinstance(result, CategoryOutput) or (hasattr(result, 'categories') and hasattr(result, 'language')):
+                return CategoryAnalysisResult(
+                    matches=result.categories,  # Map categories to matches
+                    language=result.language,
+                    success=result.success if hasattr(result, 'success') else True,
+                    error=result.error if hasattr(result, 'error') else None
+                )
+
+            # Handle dictionary responses (from mock LLMs)
+            if isinstance(result, dict):
                 if analysis_type == "keywords":
-                    processed[analysis_type] = KeywordAnalysisResult(
-                        keywords=result.keywords,
-                        compound_words=result.compound_words,  # Now available
-                        domain_keywords=result.domain_keywords,
-                        language=result.language
-                        or self.parameters.general.language,
-                        success=result.success,
-                        error=result.error,
+                    return KeywordAnalysisResult(
+                        keywords=result.get("keywords", []),
+                        compound_words=result.get("compound_words", []),
+                        domain_keywords=result.get("domain_keywords", {}),
+                        language=result.get("language", self._get_language()),
+                        success=result.get("success", True),
+                        error=result.get("error")
                     )
                 elif analysis_type == "themes":
-                    processed[analysis_type] = ThemeAnalysisResult(
-                        themes=result.themes,
-                        theme_hierarchy=result.theme_hierarchy,
-                        language=result.language
-                        or self.parameters.general.language,
-                        success=result.success,
-                        error=result.error,
+                    return ThemeAnalysisResult(
+                        themes=result.get("themes", []),
+                        theme_hierarchy=result.get("theme_hierarchy", {}),
+                        language=result.get("language", self._get_language()),
+                        success=result.get("success", True),
+                        error=result.get("error")
                     )
-                    # elif analysis_type == "categories":
-                    #     processed[analysis_type] = CategoryAnalysisResult(
-                    #         matches=result.categories,  # Map categories to matches
-                    #         language=result.language
-                    #         or self.parameters.general.language,
-                    #         success=result.success,
-                    #         error=result.error,
-                    #     )
                 elif analysis_type == "categories":
-                    logger.debug(
-                        f"Processing category result type: {type(result)}"
+                    return CategoryAnalysisResult(
+                        matches=result.get("categories", []),
+                        language=result.get("language", self._get_language()),
+                        success=result.get("success", True),
+                        error=result.get("error")
                     )
-                    logger.debug(f"Raw category result: {result}")
 
-                    # Explicitly handle CategoryOutput
-                    category_result = None
-                    try:
-                        if isinstance(result, CategoryOutput):
-                            category_result = CategoryAnalysisResult(
-                                matches=result.categories,  # Map categories to matches
-                                language=result.language
-                                or self.parameters.general.language,
-                                success=result.success,
-                                error=result.error,
-                            )
-                        else:
-                            logger.warning(
-                                f"Unexpected category result type: {type(result)}"
-                            )
-                            category_result = self._create_error_result_by_type(
-                                "categories"
-                            )
-
-                        processed[analysis_type] = category_result
-                        logger.debug(
-                            f"Processed category result: {category_result}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing category result: {e}",
-                            exc_info=True,
-                        )
-                        processed[analysis_type] = (
-                            self._create_error_result_by_type("categories")
-                        )
-
-        return processed
+            # If we get here, we have an unexpected result type
+            logger.error(f"Unexpected result type: {type(result)}")
+            return self._create_error_result_by_type(
+                analysis_type,
+                error=f"Unexpected result type: {type(result)}"
+            )
+        except Exception as e:
+            logger.error(f"Error processing result: {str(e)}", exc_info=True)
+            return self._create_error_result_by_type(
+                analysis_type,
+                error=f"Failed to process result: {str(e)}"
+            )
 
     def _process_batch_results(
         self,
@@ -1181,13 +1107,53 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
     ) -> List[CompleteAnalysisResult]:
         """Process batch analysis results."""
         processed = []
+        
         for result in results:
-            if isinstance(result, Exception):
-                processed.append(
-                    self._create_error_result(str(result), datetime.now())
+            try:
+                # If result is already a CompleteAnalysisResult, append it directly
+                if isinstance(result, CompleteAnalysisResult):
+                    processed.append(result)
+                    continue
+
+                # Process each analysis type if present in the result
+                keywords = self._process_analysis_results(result.keywords, "keywords") if hasattr(result, 'keywords') else None
+                themes = self._process_analysis_results(result.themes, "themes") if hasattr(result, 'themes') else None
+                categories = self._process_analysis_results(result.categories, "categories") if hasattr(result, 'categories') else None
+
+                # Fill in any missing results with empty ones
+                if keywords is None:
+                    keywords = self._create_error_result_by_type("keywords", "Analysis not performed")
+                if themes is None:
+                    themes = self._create_error_result_by_type("themes", "Analysis not performed")
+                if categories is None:
+                    categories = self._create_error_result_by_type("categories", "Analysis not performed")
+
+                # Determine overall success and error
+                success = all(r.success for r in [keywords, themes, categories] if r is not None)
+                error = "; ".join(f"{t}: {r.error}" for t, r in [
+                    ("keywords", keywords), ("themes", themes), ("categories", categories)
+                ] if r is not None and not r.success and r.error)
+
+                # Create the complete result
+                processed_result = CompleteAnalysisResult(
+                    keywords=keywords,
+                    themes=themes,
+                    categories=categories,
+                    language=getattr(result, 'language', self._get_language()),
+                    success=success,
+                    error=error if error else None,
+                    processing_time=getattr(result, 'processing_time', 0.0)
                 )
-            else:
-                processed.append(result)
+                processed.append(processed_result)
+            except Exception as e:
+                # If conversion fails, create an error result
+                processed.append(
+                    self._create_error_result(
+                        f"Failed to process result: {str(e)}", 
+                        datetime.now()
+                    )
+                )
+
         return processed
 
     def _create_error_result(
@@ -1327,3 +1293,7 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
             "categories": CategoryAnalysisResult
         }
         return type_mapping.get(analysis_type)
+
+    def _get_language(self) -> str:
+        """Get the current language from parameters."""
+        return getattr(self.parameters.general, 'language', 'en')

@@ -132,7 +132,7 @@ class TestCategoryAnalyzer:
 
     @pytest.mark.asyncio
     async def test_configuration_handling(
-        self, test_environment_manager, mock_llm, test_categories
+        self, test_environment_manager, test_categories
     ):
         """Test configuration handling."""
         config = {
@@ -141,8 +141,12 @@ class TestCategoryAnalyzer:
             "focus_on": "general content analysis",
         }
         
+        # Create separate mock LLM instances for each analyzer
+        mock_llm_1 = CategoryMockLLM()
+        mock_llm_2 = CategoryMockLLM()
+        
         analyzer = CategoryAnalyzer(
-            llm=mock_llm,
+            llm=mock_llm_1,
             config=config,
             categories=test_categories,
         )
@@ -155,7 +159,7 @@ class TestCategoryAnalyzer:
         }
         
         analyzer_custom = CategoryAnalyzer(
-            llm=mock_llm,
+            llm=mock_llm_2,
             config=custom_config,
             categories=test_categories,
         )
