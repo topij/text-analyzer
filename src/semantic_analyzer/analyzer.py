@@ -415,15 +415,37 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
 
             logger.debug(f"Running analysis types: {types_to_run}")
 
-            analysis_tasks = []
-            for analyzer_type in types_to_run:
-                config = BaseAnalyzerConfig.ANALYZER_TYPES[analyzer_type]
-                analyzer = getattr(self, config["attr_name"])
-                task = analyzer.analyze(text, **kwargs)
-                analysis_tasks.append(task)
+            results = []
+            theme_result = None
 
-            results = await asyncio.gather(*analysis_tasks)
-            processed_results = self._process_analysis_results(results, types_to_run)
+            # First run theme analysis if requested
+            if "themes" in types_to_run:
+                logger.debug("Running theme analysis first")
+                theme_task = self._create_analysis_task("themes", text, **kwargs)
+                theme_result = await theme_task
+                results.append(theme_result)
+                types_to_run.remove("themes")  # Remove from list since it's already processed
+
+            # Then run other analyses with theme context
+            remaining_tasks = []
+            for analyzer_type in types_to_run:
+                task = self._create_analysis_task(
+                    analyzer_type, 
+                    text,
+                    theme_context=theme_result if theme_result and theme_result.success else None,
+                    **kwargs
+                )
+                remaining_tasks.append(task)
+
+            if remaining_tasks:
+                other_results = await asyncio.gather(*remaining_tasks)
+                results.extend(other_results)
+
+            # Reorder results to match original types order
+            processed_results = {}
+            for analyzer_type in self._validate_analysis_types(analysis_types):
+                result = next((r for r in results if isinstance(r, self._get_result_type(analyzer_type))), None)
+                processed_results[analyzer_type] = result
 
             processing_time = (datetime.now() - start_time).total_seconds()
 
@@ -1296,3 +1318,12 @@ class SemanticAnalyzer(BaseSemanticAnalyzer, ResultProcessingMixin):
         except Exception as e:
             logger.error(f"Failed to get available providers: {e}", exc_info=True)
             return []
+
+    def _get_result_type(self, analysis_type: str) -> Type:
+        """Get the result type class for a given analysis type."""
+        type_mapping = {
+            "keywords": KeywordAnalysisResult,
+            "themes": ThemeAnalysisResult,
+            "categories": CategoryAnalysisResult
+        }
+        return type_mapping.get(analysis_type)

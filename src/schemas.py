@@ -187,6 +187,50 @@ class ThemeAnalysisResult(BaseModel):
     )
 
 
+class ThemeContext(BaseModel):
+    """Context information from theme analysis to be used in other analyses."""
+
+    main_themes: List[str] = Field(
+        default_factory=list,
+        description="List of main themes identified in the text"
+    )
+    theme_hierarchy: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Hierarchical relationships between themes"
+    )
+    theme_descriptions: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Descriptions for each identified theme"
+    )
+    theme_confidence: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Confidence scores for each theme"
+    )
+    theme_keywords: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description="Keywords associated with each theme"
+    )
+
+    @classmethod
+    def from_theme_result(cls, result: ThemeAnalysisResult) -> "ThemeContext":
+        """Create ThemeContext from ThemeAnalysisResult."""
+        if not result or not result.success:
+            return cls()
+
+        main_themes = [theme.name for theme in result.themes if not theme.parent_theme]
+        theme_descriptions = {theme.name: theme.description for theme in result.themes}
+        theme_confidence = {theme.name: theme.confidence for theme in result.themes}
+        theme_keywords = {theme.name: theme.keywords for theme in result.themes if theme.keywords}
+
+        return cls(
+            main_themes=main_themes,
+            theme_hierarchy=result.theme_hierarchy,
+            theme_descriptions=theme_descriptions,
+            theme_confidence=theme_confidence,
+            theme_keywords=theme_keywords
+        )
+
+
 class AnalysisParameters(BaseModel):
     """Essential parameters for text analysis."""
 
