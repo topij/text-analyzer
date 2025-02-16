@@ -535,7 +535,6 @@ Base all keywords on actual content and evidence from the text."""
                 "error": str(e)
             }
 
-    # temporary fix for the test failure
     async def analyze(self, text: str) -> KeywordOutput:
         """Analyze text with proper AIMessage handling."""
         if text is None:
@@ -578,16 +577,50 @@ Base all keywords on actual content and evidence from the text."""
                         error=f"Error parsing response: {str(e)}",
                     )
 
-            # Filter keywords by confidence
+            # Filter keywords by confidence and apply lemmatization
             if getattr(result, "keywords", None):
-                result.keywords = [
-                    kw
-                    for kw in result.keywords
-                    if kw.score >= self.min_confidence
-                ]
+                processed_keywords = []
+                for kw in result.keywords:
+                    if kw.score >= self.min_confidence:
+                        # Apply lemmatization if language processor is available
+                        if self.language_processor:
+                            # Handle hyphenated compound words
+                            if "-" in kw.keyword:
+                                # Split by hyphen, lemmatize parts separately, then rejoin
+                                parts = kw.keyword.split("-")
+                                lemmatized_parts = [
+                                    self.language_processor.get_base_form(part)
+                                    for part in parts
+                                ]
+                                lemmatized_keyword = "-".join(lemmatized_parts)
+                            else:
+                                # Regular lemmatization for non-hyphenated words
+                                lemmatized_keyword = self.language_processor.get_base_form(kw.keyword)
+                            
+                            kw.keyword = lemmatized_keyword
+                            
+                            # Handle compound parts similarly
+                            if hasattr(kw, 'compound_parts') and kw.compound_parts:
+                                processed_parts = []
+                                for part in kw.compound_parts:
+                                    if "-" in part:
+                                        # Handle hyphenated compound parts
+                                        subparts = part.split("-")
+                                        lemmatized_subparts = [
+                                            self.language_processor.get_base_form(subpart)
+                                            for subpart in subparts
+                                        ]
+                                        processed_parts.append("-".join(lemmatized_subparts))
+                                    else:
+                                        processed_parts.append(
+                                            self.language_processor.get_base_form(part)
+                                        )
+                                kw.compound_parts = processed_parts
+                        
+                        processed_keywords.append(kw)
 
                 # Limit number of keywords
-                result.keywords = result.keywords[: self.max_keywords]
+                result.keywords = processed_keywords[:self.max_keywords]
 
                 # Update domain keywords
                 if hasattr(result, "domain_keywords"):
@@ -608,58 +641,6 @@ Base all keywords on actual content and evidence from the text."""
                 error=str(e),
             )
 
-    # don't remove, this is the working production version
-    # async def analyze(self, text: str) -> KeywordOutput:
-    #     """Analyze text with structured output and error handling."""
-    #     print("KeywordAnalyzer.analyze: Starting analysis")
-    #     if text is None:
-    #         raise ValueError("Input text cannot be None")
-
-    #     if not text:
-    #         return KeywordOutput(
-    #             keywords=[],
-    #             compound_words=[],
-    #             domain_keywords={},
-    #             language=self._get_language(),
-    #             success=False,
-    #             error="Empty input text",
-    #         )
-
-    #     try:
-    #         print(
-    #             f"KeywordAnalyzer.analyze: Using chain type: {type(self.chain)}"
-    #         )
-    #         result = await self.chain.ainvoke(text)
-    #         print(f"KeywordAnalyzer.analyze: Chain result type: {type(result)}")
-    #         print(f"KeywordAnalyzer.analyze: Chain result: {result}")
-
-    #         # Try to see what's in the result
-    #         if hasattr(result, "__dict__"):
-    #             print(
-    #                 f"KeywordAnalyzer.analyze: Result attributes: {result.__dict__}"
-    #             )
-
-    #         # Filter keywords by confidence
-    #         result.keywords = [
-    #             kw for kw in result.keywords if kw.score >= self.min_confidence
-    #         ]
-
-    #         # Limit number of keywords
-    #         result.keywords = result.keywords[: self.max_keywords]
-
-    #         # Update domain keywords
-    #         result.domain_keywords = self._group_by_domain(result.keywords)
-
-    #         return result
-
-    #     except Exception as e:
-    #         # logger.error(f"Analysis failed: {str(e)}")
-    #         print(f"KeywordAnalyzer.analyze: Exception occurred: {str(e)}")
-    #         logger.error(f"Analysis failed: {str(e)}")
-    #         return KeywordOutput(
-    #             keywords=[],
-    #             compound_words=[],
-    #             domain_keywords={},
     def _group_by_domain(self, keywords: List[KeywordInfo]) -> Dict[str, List[str]]:
         """Group keywords by their domain."""
         domain_groups: Dict[str, List[str]] = defaultdict(list)

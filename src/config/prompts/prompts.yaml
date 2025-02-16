@@ -40,6 +40,10 @@ templates:
           - Tärkeät käsitteet ja teemat
           - Erisnimet ja nimetyt kohteet
           - Yhdyssanat ja monisanaiset ilmaisut
+          
+          Tärkeää:
+          - Palauta kaikki avainsanat perusmuodossa (esim. "yrityskoulutuspaketteihin" → "yrityskoulutuspaketti")
+          - Yhdyssanojen osat tulee myös olla perusmuodossa
         
         main_prompt: |
           Erittele avainsanat tästä tekstistä:
@@ -50,6 +54,7 @@ templates:
           - Huomioi nämä tilastolliset avainsanat: {statistical_keywords}
           - Minimipituus: {min_length} merkkiä
           - Keskity aiheeseen: {focus}
+          - Palauta kaikki sanat perusmuodossa
 
   theme_analysis:
     version: "1.0.0"
