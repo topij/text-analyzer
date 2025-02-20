@@ -18,28 +18,39 @@ class KeywordMockLLM(BaseMockLLM):
 
     def _get_mock_response(
         self, messages: List[BaseMessage]
-    ) -> Dict[str, Any]:
+    ) -> KeywordOutput:
         """Get keyword-specific mock response."""
         last_message = messages[-1].content if messages else ""
 
         if not last_message or not last_message.strip():
-            return {
-                "keywords": [],
-                "compound_words": [],
-                "domain_keywords": {},
-                "language": "en",
-                "success": False,
-                "error": "Empty input text"
-            }
+            return KeywordOutput(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language="en",
+                success=False,
+                error="Empty input text"
+            )
 
         language, content_type = self._detect_content_type(last_message)
 
         # Get appropriate response based on language and content
-        return (
+        response_dict = (
             self._get_finnish_response(content_type)
             if language == "fi"
             else self._get_english_response(content_type)
         )
+
+        # Convert keywords to KeywordInfo objects
+        keywords = [KeywordInfo(**kw) for kw in response_dict["keywords"]]
+        response_dict["keywords"] = keywords
+
+        # Ensure success and error fields are set
+        response_dict["success"] = True
+        response_dict["error"] = None
+
+        # Convert to KeywordOutput
+        return KeywordOutput(**response_dict)
 
     def _get_english_response(self, content_type: str) -> Dict[str, Any]:
         """Get English keyword response."""
@@ -51,17 +62,23 @@ class KeywordMockLLM(BaseMockLLM):
                         "score": 0.9,
                         "domain": "technical",
                         "compound_parts": ["machine", "learning"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "neural network",
                         "score": 0.85,
                         "domain": "technical",
                         "compound_parts": ["neural", "network"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "data",
                         "score": 0.8,
-                        "domain": "technical"
+                        "domain": "technical",
+                        "frequency": 1,
+                        "metadata": {}
                     },
                 ],
                 "compound_words": ["machine learning", "neural network"],
@@ -69,7 +86,8 @@ class KeywordMockLLM(BaseMockLLM):
                     "technical": ["machine learning", "neural network", "data"]
                 },
                 "language": "en",
-                "success": True
+                "success": True,
+                "error": None
             }
         else:  # business content
             return {
@@ -79,12 +97,16 @@ class KeywordMockLLM(BaseMockLLM):
                         "score": 0.9,
                         "domain": "business",
                         "compound_parts": ["revenue", "growth"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "market share",
                         "score": 0.85,
                         "domain": "business",
                         "compound_parts": ["market", "share"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                 ],
                 "compound_words": ["revenue growth", "market share"],
@@ -92,7 +114,8 @@ class KeywordMockLLM(BaseMockLLM):
                     "business": ["revenue growth", "market share"]
                 },
                 "language": "en",
-                "success": True
+                "success": True,
+                "error": None
             }
 
     def _get_finnish_response(self, content_type: str) -> Dict[str, Any]:
@@ -104,18 +127,24 @@ class KeywordMockLLM(BaseMockLLM):
                         "keyword": "tekoäly",
                         "score": 0.9,
                         "domain": "technical",
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "koneoppiminen",
                         "score": 0.85,
                         "domain": "technical",
                         "compound_parts": ["kone", "oppiminen"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "ohjelmistokehitys",
                         "score": 0.8,
                         "domain": "technical",
                         "compound_parts": ["ohjelmisto", "kehitys"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                 ],
                 "compound_words": ["koneoppiminen", "ohjelmistokehitys"],
@@ -123,7 +152,8 @@ class KeywordMockLLM(BaseMockLLM):
                     "technical": ["tekoäly", "koneoppiminen", "ohjelmistokehitys"]
                 },
                 "language": "fi",
-                "success": True
+                "success": True,
+                "error": None
             }
         else:  # business content
             return {
@@ -133,12 +163,16 @@ class KeywordMockLLM(BaseMockLLM):
                         "score": 0.9,
                         "domain": "business",
                         "compound_parts": ["liike", "vaihto", "kasvu"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                     {
                         "keyword": "markkinaosuus",
                         "score": 0.85,
                         "domain": "business",
                         "compound_parts": ["markkina", "osuus"],
+                        "frequency": 1,
+                        "metadata": {}
                     },
                 ],
                 "compound_words": ["liikevaihdon kasvu", "markkinaosuus"],
@@ -146,7 +180,8 @@ class KeywordMockLLM(BaseMockLLM):
                     "business": ["liikevaihdon kasvu", "markkinaosuus"]
                 },
                 "language": "fi",
-                "success": True
+                "success": True,
+                "error": None
             }
 
     def _detect_content_type(self, message: str) -> Tuple[str, str]:

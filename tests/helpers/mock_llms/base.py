@@ -8,6 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import BaseModel
+from langchain_core.callbacks import CallbackManagerForLLMRun
 
 logger = logging.getLogger(__name__)
 
@@ -55,37 +56,58 @@ class BaseMockLLM(BaseChatModel):
         self,
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
-        run_manager: Optional[Any] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """Generate mock response matching LangChain's expected flow."""
+        """Generate mock response."""
         try:
-            # Get mock response
             mock_response = self._get_mock_response(messages)
-
-            # Convert to dict if needed
-            if isinstance(mock_response, BaseModel):
-                content = mock_response.model_dump()
-            elif isinstance(mock_response, str):
-                content = json.loads(mock_response)
-            elif isinstance(mock_response, dict):
-                content = mock_response
-            else:
-                raise ValueError(
-                    f"Unexpected response type: {type(mock_response)}"
+            
+            # If we have a structured output class configured
+            if self._current_output_class is not None:
+                # If the response is already an instance of the expected class, use it directly
+                if isinstance(mock_response, self._current_output_class):
+                    structured_output = mock_response
+                # Otherwise, try to convert it to the expected class
+                elif isinstance(mock_response, (dict, BaseModel)):
+                    structured_output = self._current_output_class(**mock_response)
+                else:
+                    raise ValueError(f"Unexpected response type: {type(mock_response)}")
+                
+                # Return the structured output wrapped in an AIMessage
+                return ChatResult(
+                    generations=[
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="",  # Empty content since we're using structured output
+                                additional_kwargs={"structured_output": structured_output}
+                            )
+                        )
+                    ]
                 )
-
-            # Convert to JSON string - this matches what a real LLM returns
-            json_str = json.dumps(content)
-
-            # Create AIMessage with JSON string
-            message = AIMessage(content=json_str)
-
-            # Return ChatResult as LangChain expects
+            
+            # For non-structured output, ensure we have a proper message
+            if isinstance(mock_response, BaseMessage):
+                message = mock_response
+            elif isinstance(mock_response, str):
+                message = AIMessage(content=mock_response)
+            elif isinstance(mock_response, BaseModel):
+                # For Pydantic models, use their json() method
+                message = AIMessage(content=mock_response.json())
+            elif isinstance(mock_response, dict):
+                message = AIMessage(content=json.dumps(mock_response))
+            else:
+                # Convert any other type to string and wrap in AIMessage
+                message = AIMessage(content=str(mock_response))
+            
+            # Ensure the message has content
+            if not hasattr(message, 'content') or not message.content:
+                message = AIMessage(content=str(mock_response))
+            
             return ChatResult(generations=[ChatGeneration(message=message)])
-
+            
         except Exception as e:
-            logger.error(f"Error in mock LLM generation: {e}", exc_info=True)
+            logger.error(f"Error in mock LLM generation: {str(e)}", exc_info=True)
             raise
 
     def _detect_content_type(self, message: str) -> Tuple[str, str]:

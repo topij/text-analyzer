@@ -13,6 +13,7 @@ import nltk
 from src.config.manager import ConfigManager
 from src.core.llm.factory import create_llm
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage
 from src.core.language_processing.base import BaseTextProcessor
 from src.core.config import AnalyzerConfig
 
@@ -223,6 +224,7 @@ class KeywordAnalyzer(TextAnalyzer):
         self.weights = self._initialize_weights(config)
         self.min_confidence = config.get("min_confidence", 0.3)
         self.max_keywords = config.get("max_keywords", 10)
+        self.language = self._get_language()
 
         # Create chain with structured output
         self.chain = self._create_chain()
@@ -277,6 +279,10 @@ class KeywordAnalyzer(TextAnalyzer):
 
     def _create_chain(self) -> RunnableSequence:
         """Create LangChain processing chain with theme context support."""
+        # Configure LLM for structured output first
+        if hasattr(self.llm, "with_structured_output"):
+            self.llm = self.llm.with_structured_output(KeywordOutput)
+
         template = ChatPromptTemplate.from_messages([
             (
                 "system",
@@ -304,7 +310,8 @@ Base all keywords on actual content and evidence from the text."""
             ),
         ])
 
-        return (
+        # Create chain with structured output
+        chain = (
             {
                 "text": RunnablePassthrough(),
                 "language": lambda _: self._get_language(),
@@ -312,8 +319,10 @@ Base all keywords on actual content and evidence from the text."""
                 "theme_context_prompt": lambda x: self._get_theme_context_prompt(x.get("theme_context") if isinstance(x, dict) else None),
             }
             | template
-            | self.llm.with_structured_output(KeywordOutput)
+            | self.llm
         )
+
+        return chain
 
     def _format_theme_context(self, theme_context: Optional[ThemeContext]) -> str:
         """Format theme context for prompt if available."""
@@ -576,7 +585,7 @@ Base all keywords on actual content and evidence from the text."""
             logger.debug(f"Error checking phrase validity: {e}")
             return False  # Be conservative if check fails
 
-    def _create_error_result(self) -> KeywordAnalysisResult:
+    def _create_error_result(self, error: str = "Analysis failed") -> KeywordAnalysisResult:
         """Create error result."""
         return KeywordAnalysisResult(
             keywords=[],
@@ -584,7 +593,7 @@ Base all keywords on actual content and evidence from the text."""
             domain_keywords={},
             language=self._get_language(),
             success=False,
-            error="Analysis failed",
+            error=error,
         )
 
     def _handle_error(self, error: str) -> KeywordOutput:
@@ -725,71 +734,96 @@ Base all keywords on actual content and evidence from the text."""
             return self.language_processor.get_base_form(word) or word
         return word
 
-    async def analyze(self, text: str) -> KeywordOutput:
-        """Analyze text with enhanced keyword processing."""
+    async def analyze(self, text: str) -> KeywordAnalysisResult:
+        """Analyze text for keyword extraction."""
         try:
-            # Calculate dynamic keyword limit
-            max_keywords = self.calculate_dynamic_keyword_limit(text)
-            
-            # Get initial results from LLM
-            llm_result = await self.chain.ainvoke(text)
-            if not llm_result:
-                return self._create_error_result()
-            
-            # Process keywords with enhanced metadata
-            processed_keywords = []
-            seen_keywords = {}
-            
-            for kw in llm_result.keywords:
-                # Get base form with special handling for compounds
-                processed_keyword = self._get_base_form(kw.keyword)
-                key = processed_keyword.lower()
-                
-                if key not in seen_keywords:
-                    # Enhanced metadata
-                    kw.keyword = processed_keyword  # Use the processed form
-                    kw.metadata = {
-                        "is_technical": self._is_technical_term(processed_keyword),
-                        "is_proper_noun": processed_keyword[0].isupper(),
-                        "is_valid_phrase": len(processed_keyword.split()) > 1 and self._is_valid_phrase(processed_keyword),
-                        "word_count": len(processed_keyword.split()),
-                        "predefined": key in self.config.get("predefined_keywords", set())
-                    }
-                    
-                    # Recalculate score with enhanced factors
-                    kw.score = self._calculate_score(
-                        word=processed_keyword,
-                        base_score=kw.score,
-                        domain=getattr(kw, "domain", None),
-                        compound_parts=getattr(kw, "compound_parts", None),
-                        theme_context=getattr(self, "theme_context", None),
-                        frequency=getattr(kw, "frequency", None)
+            if text is None:
+                raise ValueError("Input text cannot be None")
+            if not text.strip():
+                return KeywordAnalysisResult(
+                    keywords=[],
+                    compound_words=[],
+                    domain_keywords={},
+                    language=self.language,
+                    success=False,
+                    error="Empty input text"
+                )
+
+            # Get LLM response
+            llm_result = await self._get_llm_response(text)
+
+            # Handle direct KeywordOutput
+            if isinstance(llm_result, KeywordOutput):
+                return KeywordAnalysisResult(
+                    keywords=llm_result.keywords,
+                    compound_words=llm_result.compound_words,
+                    domain_keywords=llm_result.domain_keywords,
+                    language=llm_result.language,
+                    success=llm_result.success,
+                    error=llm_result.error
+                )
+
+            # Handle string or dict response
+            if isinstance(llm_result, str):
+                try:
+                    llm_result = json.loads(llm_result)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse LLM response as JSON: {e}")
+                    return KeywordAnalysisResult(
+                        keywords=[],
+                        compound_words=[],
+                        domain_keywords={},
+                        language=self.language,
+                        success=False,
+                        error=f"Invalid LLM response format: {e}"
                     )
-                    
-                    seen_keywords[key] = kw
-            
-            # Sort by score and apply dynamic limit
-            keywords = sorted(
-                seen_keywords.values(),
-                key=lambda x: (x.score, getattr(x, "frequency", 0)),
-                reverse=True
-            )[:max_keywords]
-            
-            # Create result
-            result = KeywordAnalysisResult(
-                keywords=keywords,
-                compound_words=[kw.keyword for kw in keywords if getattr(kw, "is_compound", False) or '-' in kw.keyword],
-                domain_keywords=self._group_by_domain(keywords),
-                language=self._get_language(),
-                success=True,
-                error=None
+
+            if isinstance(llm_result, dict):
+                try:
+                    keyword_output = KeywordOutput(**llm_result)
+                    return KeywordAnalysisResult(
+                        keywords=keyword_output.keywords,
+                        compound_words=keyword_output.compound_words,
+                        domain_keywords=keyword_output.domain_keywords,
+                        language=keyword_output.language,
+                        success=keyword_output.success,
+                        error=keyword_output.error
+                    )
+                except ValidationError as e:
+                    logger.error(f"Failed to validate LLM response: {e}")
+                    return KeywordAnalysisResult(
+                        keywords=[],
+                        compound_words=[],
+                        domain_keywords={},
+                        language=self.language,
+                        success=False,
+                        error=f"Invalid LLM response structure: {e}"
+                    )
+
+            # If we get here, the response format is invalid
+            logger.error(f"Invalid LLM response type: {type(llm_result)}")
+            return KeywordAnalysisResult(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language=self.language,
+                success=False,
+                error=f"Invalid LLM response type: {type(llm_result)}"
             )
-            
-            return result
-            
+
+        except ValueError as e:
+            # Re-raise validation errors
+            raise
         except Exception as e:
-            logger.error(f"KeywordAnalyzer.analyze: Exception occurred: {e}", exc_info=True)
-            return self._create_error_result()
+            logger.error(f"Error in keyword analysis: {e}")
+            return KeywordAnalysisResult(
+                keywords=[],
+                compound_words=[],
+                domain_keywords={},
+                language=self.language,
+                success=False,
+                error=str(e)
+            )
 
     def _group_by_domain(self, keywords: List[KeywordInfo]) -> Dict[str, List[str]]:
         """Group keywords by their domain."""
@@ -800,3 +834,40 @@ Base all keywords on actual content and evidence from the text."""
                 domain_groups[kw.domain].append(kw.keyword)
         
         return dict(domain_groups)
+
+    async def _get_llm_response(self, text: str) -> Any:
+        """Get LLM response with proper error handling."""
+        try:
+            if not text or not text.strip():
+                raise ValueError("Empty input text")
+
+            # Get response from chain
+            result = await self.chain.ainvoke(text)
+            logger.debug(f"LLM response: {result}")
+
+            # Handle structured output
+            if isinstance(result, KeywordOutput):
+                return result
+
+            # Handle AIMessage with structured output
+            if isinstance(result, BaseMessage):
+                if hasattr(result, "additional_kwargs") and "structured_output" in result.additional_kwargs:
+                    return result.additional_kwargs["structured_output"]
+                return result.content
+
+            # Handle dict response
+            if isinstance(result, dict):
+                return result
+
+            # Handle string response
+            if isinstance(result, str):
+                try:
+                    return json.loads(result)
+                except json.JSONDecodeError:
+                    return result
+
+            raise ValueError(f"Unexpected response type: {type(result)}")
+
+        except Exception as e:
+            logger.error(f"Error getting LLM response: {e}")
+            return self._handle_error(str(e))
