@@ -292,6 +292,13 @@ class KeywordAnalyzer(TextAnalyzer):
 3. Calculate relevance scores
 4. Group keywords by domain relevance
 
+For Finnish text:
+- Return keywords in their base dictionary form (nominative singular for nouns, infinitive for verbs)
+- Preserve meaningful compound words as single keywords (e.g., "yrityskoulutuspaketti", "Python-ohjelmointi")
+- Only split compound words if each part carries significant independent meaning
+- For number expressions (e.g., "10 hengen"), convert the word part to base form ("10 henki")
+- For hyphenated technical terms (e.g., "Python-ohjelmointi"), keep them as single keywords
+
 {theme_context_prompt}
 
 Focus on keywords that are clearly supported by the text content.
@@ -305,7 +312,12 @@ Do not generate generic keywords that could apply to any text."""
 Language: {language}
 {theme_context_str}
 
-Required: Extract keywords with scores, identify compound words, and consider domain relevance.
+Required: 
+1. Extract keywords with scores
+2. Preserve meaningful compound words as single keywords
+3. Consider domain relevance
+4. For Finnish text, ensure all keywords are in their base dictionary form while keeping compound words intact when meaningful
+
 Base all keywords on actual content and evidence from the text."""
             ),
         ])
@@ -678,25 +690,61 @@ Base all keywords on actual content and evidence from the text."""
             for kw in data.get("keywords", []):
                 # Handle both string and dict formats for keywords
                 if isinstance(kw, str):
+                    # Get base form for the entire keyword phrase
+                    keyword = kw.strip()
+                    if self.language_processor:
+                        keyword = self.language_processor.get_base_form(keyword)
                     transformed = {
-                        "keyword": kw,
+                        "keyword": keyword,
                         "score": 0.5,
                         "domain": None,
                         "compound_parts": [],
                     }
                 else:
+                    # Get base form for the keyword and its parts
+                    keyword = kw.get("keyword", kw.get("text", "")).strip()
+                    if self.language_processor:
+                        keyword = self.language_processor.get_base_form(keyword)
+                    
+                    # Process compound parts if available
+                    compound_parts = kw.get("compound_parts", [])
+                    if self.language_processor:
+                        compound_parts = [
+                            self.language_processor.get_base_form(part.strip())
+                            for part in compound_parts
+                        ]
+                    
                     transformed = {
-                        "keyword": kw.get("keyword", kw.get("text", "")),
+                        "keyword": keyword,
                         "score": kw.get("score", kw.get("confidence", 0.5)),
                         "domain": kw.get("domain"),
-                        "compound_parts": kw.get("compound_parts", []),
+                        "compound_parts": compound_parts,
                     }
                 transformed_keywords.append(transformed)
 
+            # Convert compound words to base form
+            compound_words = []
+            for word in data.get("compound_words", []):
+                if self.language_processor:
+                    compound_words.append(self.language_processor.get_base_form(word.strip()))
+                else:
+                    compound_words.append(word.strip())
+
+            # Convert domain keywords to base form
+            domain_keywords = {}
+            for domain, keywords in data.get("domain_keywords", {}).items():
+                if self.language_processor:
+                    domain_keywords[domain] = [
+                        self.language_processor.get_base_form(kw.strip())
+                        for kw in keywords
+                    ]
+                else:
+                    domain_keywords[domain] = [kw.strip() for kw in keywords]
+
             return {
                 "keywords": transformed_keywords,
-                "compound_words": data.get("compound_words", []),
-                "domain_keywords": data.get("domain_keywords", {}),
+                "compound_words": compound_words,
+                "domain_keywords": domain_keywords,
                 "language": data.get("language", self._get_language()),
                 "success": data.get("success", True)
             }
@@ -713,14 +761,44 @@ Base all keywords on actual content and evidence from the text."""
             }
 
     def _get_base_form(self, word: str) -> str:
-        """Get base form of a word with special handling for hyphenated compounds."""
+        """Get base form of a word with special handling for compound words."""
         if not word:
             return word
             
-        # Special handling for hyphenated words
+        # Get language for specific handling
+        language = self._get_language()
+        
+        # Special handling for Finnish compound words
+        if language == "fi":
+            # Handle number expressions (e.g., "10 hengen" -> "10 henki")
+            if any(c.isdigit() for c in word):
+                parts = word.split()
+                if len(parts) > 1:
+                    number_part = next((p for p in parts if any(c.isdigit() for c in p)), None)
+                    word_parts = [p for p in parts if not any(c.isdigit() for c in p)]
+                    if number_part and word_parts and self.language_processor:
+                        base_words = [self.language_processor.get_base_form(p) or p for p in word_parts]
+                        return f"{number_part} {' '.join(base_words)}"
+            
+            # Handle hyphenated words
+            if '-' in word:
+                parts = word.split('-')
+                if self.language_processor:
+                    base_parts = [
+                        self.language_processor.get_base_form(part) or part
+                        for part in parts
+                    ]
+                    return '-'.join(base_parts)
+                return word
+            
+            # Use language processor for base form
+            if self.language_processor:
+                return self.language_processor.get_base_form(word) or word
+            return word
+        
+        # Special handling for hyphenated words in other languages
         if '-' in word:
             parts = word.split('-')
-            # Get base form for each part if language processor is available
             if self.language_processor:
                 base_parts = [
                     self.language_processor.get_base_form(part) or part

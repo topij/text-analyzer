@@ -49,14 +49,35 @@ class ExcelKeywordAnalyzer(KeywordAnalyzer, ExcelAnalysisBase):
         # Get analyzer config from parameters
         config = self.parameters.get_analyzer_config("keywords")
 
-        # Create language processor
+        # Create language processor with proper configuration for Finnish
         language_processor = create_text_processor(
-            language=config["language"], config=config
+            language=config["language"],
+            config={
+                "min_word_length": config.get("min_keyword_length", 3),
+                "include_compounds": config.get("include_compounds", True),
+                "language_specific": {
+                    "fi": {
+                        "voikko": {
+                            "use_base_forms": True,
+                            "handle_compounds": True,
+                            "compound_handling": {
+                                "split_compounds": True,
+                                "preserve_case": False,
+                                "handle_numbers": True
+                            }
+                        }
+                    }
+                }
+            },
+            file_utils=file_utils
         )
 
-        # Initialize keyword analyzer with config
+        # Initialize keyword analyzer with config and language processor
         KeywordAnalyzer.__init__(
-            self, llm=llm, config=config, language_processor=language_processor
+            self,
+            llm=llm,
+            config=config,
+            language_processor=language_processor
         )
 
     async def analyze_excel(

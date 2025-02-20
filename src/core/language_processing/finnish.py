@@ -291,12 +291,74 @@ class FinnishTextProcessor(BaseTextProcessor):
         if not word:
             return ""
 
-        analysis = self._analyze_word_safe(word)
-        if analysis and "BASEFORM" in analysis:
-            base = analysis["BASEFORM"]
-            logger.debug(f"Base form for {word}: {base}")
-            return base.lower()
-        return word.lower()
+        try:
+            # Handle number expressions (e.g., "10 hengen" -> "10 henki")
+            if any(c.isdigit() for c in word):
+                parts = word.split()
+                if len(parts) > 1:
+                    number_part = next((p for p in parts if any(c.isdigit() for c in p)), None)
+                    word_parts = [p for p in parts if not any(c.isdigit() for c in p)]
+                    if number_part and word_parts and self.voikko:
+                        base_words = []
+                        for part in word_parts:
+                            analyses = self.voikko.analyze(part)
+                            if analyses:
+                                base_form = analyses[0].get("BASEFORM", "").lower()
+                                # Try alternative analyses if first one doesn't give a good base form
+                                if not base_form or base_form == part.lower():
+                                    for analysis in analyses[1:]:
+                                        alt_base = analysis.get("BASEFORM", "").lower()
+                                        if alt_base and alt_base != part.lower():
+                                            base_form = alt_base
+                                            break
+                                base_words.append(base_form or part.lower())
+                            else:
+                                base_words.append(part.lower())
+                        return f"{number_part} {' '.join(base_words)}"
+
+            # Handle hyphenated words
+            if '-' in word:
+                parts = word.split('-')
+                if self.voikko:
+                    base_parts = []
+                    for part in parts:
+                        analyses = self.voikko.analyze(part)
+                        if analyses:
+                            base_form = analyses[0].get("BASEFORM", "").lower()
+                            # Try alternative analyses if first one doesn't give a good base form
+                            if not base_form or base_form == part.lower():
+                                for analysis in analyses[1:]:
+                                    alt_base = analysis.get("BASEFORM", "").lower()
+                                    if alt_base and alt_base != part.lower():
+                                        base_form = alt_base
+                                        break
+                            base_parts.append(base_form or part.lower())
+                        else:
+                            base_parts.append(part.lower())
+                    return '-'.join(base_parts)
+                return word.lower()
+
+            # Get base form from Voikko
+            if self.voikko:
+                analyses = self.voikko.analyze(word)
+                if analyses:
+                    # Try to find the best base form from all analyses
+                    best_base = None
+                    for analysis in analyses:
+                        base_form = analysis.get("BASEFORM", "").lower()
+                        if base_form:
+                            # Prefer shorter base forms that are different from the input
+                            if not best_base or (
+                                base_form != word.lower() and len(base_form) < len(best_base)
+                            ):
+                                best_base = base_form
+                    return best_base or word.lower()
+
+            return word.lower()
+
+        except Exception as e:
+            logger.error(f"Error getting base form for {word}: {e}")
+            return word.lower()
 
     def _analyze_word_safe(self, word: str) -> Optional[Dict[str, Any]]:
         """Thread-safe word analysis with fallback."""
