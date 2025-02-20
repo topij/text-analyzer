@@ -7,6 +7,8 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
+import math
+import nltk
 
 from src.config.manager import ConfigManager
 from src.core.llm.factory import create_llm
@@ -381,6 +383,22 @@ Base all keywords on actual content and evidence from the text."""
 4. Look for keywords that bridge multiple themes"""
         return ""  # Return empty string if no theme context
 
+    def calculate_dynamic_keyword_limit(
+        self, text: str, base_limit: int = 8, max_limit: int = 15
+    ) -> int:
+        """Calculate dynamic keyword limit based on text length.
+        
+        Args:
+            text: Input text
+            base_limit: Minimum number of keywords
+            max_limit: Maximum number of keywords
+            
+        Returns:
+            Calculated keyword limit
+        """
+        word_count = len(text.split())
+        return min(max(base_limit, word_count // 50), max_limit)
+
     def _calculate_score(
         self,
         word: str,
@@ -388,25 +406,175 @@ Base all keywords on actual content and evidence from the text."""
         domain: Optional[str] = None,
         compound_parts: Optional[List[str]] = None,
         theme_context: Optional[ThemeContext] = None,
+        frequency: Optional[int] = None
     ) -> float:
-        """Calculate final score with optional theme context consideration."""
-        # Start with base statistical/positional score
+        """Calculate final score with enhanced scoring factors."""
+        # Start with base score
         score = base_score
-
-        # Apply domain-specific adjustments
+        word_lower = word.lower()
+        
+        # Predefined keywords get a significant boost
+        if word_lower in self.config.get("predefined_keywords", set()):
+            score *= 1.3
+            return min(score, 0.98)  # Cap at 0.98 for predefined keywords
+        
+        # Domain-specific boost
         if domain:
             score *= 1.2  # 20% boost for domain-relevant terms
-
-        # Adjust for compound words
+        
+        # Multi-word phrase scoring
+        words = word.split()
+        if len(words) > 1:
+            if self._is_valid_phrase(word):
+                score *= 1.15  # More moderate boost for valid phrases
+            else:
+                score *= 0.8  # Less aggressive penalty
+        
+        # Compound word handling
         if compound_parts:
-            score *= 1.1  # 10% boost for compound words
-
-        # Apply theme-based scoring only if theme context is available
+            score *= 1.1  # 10% boost for verified compounds
+        
+        # Technical term handling
+        if self._is_technical_term(word):
+            score *= 1.15  # More moderate boost
+        
+        # Proper noun handling
+        if word[0].isupper() and not word.isupper():
+            score *= 1.1  # More moderate boost
+        
+        # Length-based adjustments
+        length = len(word)
+        if length < 4:
+            score *= 0.8
+        elif length > 20:
+            score *= 0.9
+        
+        # Frequency bonus with moderate scaling
+        if frequency:
+            freq_bonus = min(0.1, 0.03 * math.log(1 + frequency))
+            score += freq_bonus
+        
+        # Theme-based scoring
         if theme_context and theme_context.main_themes:
-            score = self._adjust_score_with_themes(word, score, theme_context)
+            theme_relevance = self._calculate_theme_keyword_relevance(word, theme_context)
+            score *= (1.0 + theme_relevance * 0.3)  # Up to 30% boost
+        
+        return min(score, 0.95)
 
-        # Ensure score stays in valid range
-        return min(max(score, 0.0), 1.0)
+    def _is_technical_term(self, word: str) -> bool:
+        """Check if a word is likely a technical term."""
+        technical_patterns = {
+            "en": [
+                r"^[A-Z]{2,}$",  # Acronyms
+                r"\d+",  # Numbers
+                r"^(api|sdk|ui|ux|ai|ml|nlp|http|sql|nosql)",  # Common tech abbreviations
+                r"(format|protocol|framework|platform|service|system|engine|api|data|cloud)$"
+            ],
+            "fi": [
+                r"^[A-Z]{2,}$",  # Acronyms
+                r"\d+",  # Numbers
+                r"(järjestelmä|palvelu|alusta|rajapinta|protokolla|moottori)$"
+            ]
+        }
+        
+        import re
+        patterns = technical_patterns.get(self._get_language(), technical_patterns["en"])
+        return any(re.search(pattern, word.lower()) for pattern in patterns)
+
+    def _is_valid_phrase(self, phrase: str) -> bool:
+        """Check if a multi-word phrase is valid and meaningful."""
+        try:
+            # Split into words
+            words = phrase.split()
+            if len(words) < 2:
+                return True  # Single words are valid
+                
+            # Skip phrases with stopwords in the middle
+            if self.language_processor and any(
+                self.language_processor.is_stop_word(w.lower()) for w in words[1:-1]
+            ):
+                return False
+                
+            # Known high-value phrases are always valid
+            known_phrases = {
+                "artificial intelligence",
+                "machine learning",
+                "deep learning",
+                "cloud computing",
+                "data analytics",
+                "business intelligence",
+                "neural network",
+                "natural language",
+                "computer vision",
+                "internet of things",
+                "blockchain technology",
+                "quantum computing",
+                "edge computing",
+                "digital transformation",
+                "cyber security",
+                "data science",
+                "big data",
+                "real time",
+                "open source",
+                "user experience",
+                "business model",
+                "market analysis",
+                "risk management",
+                "strategic planning",
+                "customer experience",
+                "value proposition",
+                "supply chain",
+                "decision making"
+            }
+            if phrase.lower() in known_phrases:
+                return True
+                
+            # Get POS tags if available
+            if nltk:
+                pos_tags = nltk.pos_tag(words)
+                
+                # Valid phrase patterns
+                valid_patterns = [
+                    ['JJ', 'NN'],  # Adjective + Noun
+                    ['NN', 'NN'],  # Noun + Noun
+                    ['JJ', 'JJ', 'NN'],  # Adj + Adj + Noun
+                    ['JJ', 'NN', 'NN'],  # Adj + Noun + Noun
+                    ['NN', 'NN', 'NN'],  # Noun + Noun + Noun
+                    ['VBG', 'NN'],  # Gerund + Noun
+                    ['NN', 'CC', 'NN'],  # Noun + Conjunction + Noun
+                    ['NN', 'IN', 'NN'],  # Noun + Preposition + Noun
+                ]
+                
+                pattern = [tag for word, tag in pos_tags]
+                
+                # Check pattern validity
+                for valid_pattern in valid_patterns:
+                    if len(pattern) == len(valid_pattern):
+                        if pattern == valid_pattern:
+                            return True
+                        if all(p.startswith('NN') for p in pattern):
+                            return True
+                        if len(pattern) == 2 and pattern[0] in ['JJ', 'VBG'] and pattern[1] == 'NN':
+                            return True
+            
+            # Special cases
+            if self._is_technical_term(phrase) or any(self._is_technical_term(w) for w in words):
+                return True
+                
+            if '-' in phrase:
+                return True
+                
+            # Check if all parts are in domain terms
+            if all(w.lower() in self.DOMAIN_TERMS[DomainType.TECHNICAL].terms or 
+                   w.lower() in self.DOMAIN_TERMS[DomainType.BUSINESS].terms 
+                   for w in words):
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking phrase validity: {e}")
+            return False  # Be conservative if check fails
 
     def _create_error_result(self) -> KeywordAnalysisResult:
         """Create error result."""
@@ -535,111 +703,93 @@ Base all keywords on actual content and evidence from the text."""
                 "error": str(e)
             }
 
+    def _get_base_form(self, word: str) -> str:
+        """Get base form of a word with special handling for hyphenated compounds."""
+        if not word:
+            return word
+            
+        # Special handling for hyphenated words
+        if '-' in word:
+            parts = word.split('-')
+            # Get base form for each part if language processor is available
+            if self.language_processor:
+                base_parts = [
+                    self.language_processor.get_base_form(part) or part
+                    for part in parts
+                ]
+                return '-'.join(base_parts)
+            return word
+            
+        # Regular base form processing
+        if self.language_processor:
+            return self.language_processor.get_base_form(word) or word
+        return word
+
     async def analyze(self, text: str) -> KeywordOutput:
-        """Analyze text with proper AIMessage handling."""
-        if text is None:
-            raise ValueError("Input text cannot be None")
-
-        if not text:
-            return KeywordOutput(
-                keywords=[],
-                compound_words=[],
-                domain_keywords={},
-                language=self._get_language(),
-                success=False,
-                error="Empty input text",
-            )
-
+        """Analyze text with enhanced keyword processing."""
         try:
-            logger.debug("KeywordAnalyzer.analyze: Starting analysis")
-            result = await self.chain.ainvoke(text)
-            logger.debug(
-                f"KeywordAnalyzer.analyze: Chain result type: {type(result)}"
-            )
-            logger.debug(f"KeywordAnalyzer.analyze: Chain result: {result}")
-
-            # Handle AIMessage from mock LLMs
-            if hasattr(result, "content"):
-                try:
-                    data = json.loads(result.content)
-                    logger.debug(
-                        f"KeywordAnalyzer.analyze: Parsed JSON data: {data}"
+            # Calculate dynamic keyword limit
+            max_keywords = self.calculate_dynamic_keyword_limit(text)
+            
+            # Get initial results from LLM
+            llm_result = await self.chain.ainvoke(text)
+            if not llm_result:
+                return self._create_error_result()
+            
+            # Process keywords with enhanced metadata
+            processed_keywords = []
+            seen_keywords = {}
+            
+            for kw in llm_result.keywords:
+                # Get base form with special handling for compounds
+                processed_keyword = self._get_base_form(kw.keyword)
+                key = processed_keyword.lower()
+                
+                if key not in seen_keywords:
+                    # Enhanced metadata
+                    kw.keyword = processed_keyword  # Use the processed form
+                    kw.metadata = {
+                        "is_technical": self._is_technical_term(processed_keyword),
+                        "is_proper_noun": processed_keyword[0].isupper(),
+                        "is_valid_phrase": len(processed_keyword.split()) > 1 and self._is_valid_phrase(processed_keyword),
+                        "word_count": len(processed_keyword.split()),
+                        "predefined": key in self.config.get("predefined_keywords", set())
+                    }
+                    
+                    # Recalculate score with enhanced factors
+                    kw.score = self._calculate_score(
+                        word=processed_keyword,
+                        base_score=kw.score,
+                        domain=getattr(kw, "domain", None),
+                        compound_parts=getattr(kw, "compound_parts", None),
+                        theme_context=getattr(self, "theme_context", None),
+                        frequency=getattr(kw, "frequency", None)
                     )
-                    result = KeywordOutput(**data)
-                except Exception as e:
-                    logger.error(f"Error parsing AIMessage content: {e}")
-                    return KeywordOutput(
-                        keywords=[],
-                        compound_words=[],
-                        domain_keywords={},
-                        language=self._get_language(),
-                        success=False,
-                        error=f"Error parsing response: {str(e)}",
-                    )
-
-            # Filter keywords by confidence and apply lemmatization
-            if getattr(result, "keywords", None):
-                processed_keywords = []
-                for kw in result.keywords:
-                    if kw.score >= self.min_confidence:
-                        # Apply lemmatization if language processor is available
-                        if self.language_processor:
-                            # Handle hyphenated compound words
-                            if "-" in kw.keyword:
-                                # Split by hyphen, lemmatize parts separately, then rejoin
-                                parts = kw.keyword.split("-")
-                                lemmatized_parts = [
-                                    self.language_processor.get_base_form(part)
-                                    for part in parts
-                                ]
-                                lemmatized_keyword = "-".join(lemmatized_parts)
-                            else:
-                                # Regular lemmatization for non-hyphenated words
-                                lemmatized_keyword = self.language_processor.get_base_form(kw.keyword)
-                            
-                            kw.keyword = lemmatized_keyword
-                            
-                            # Handle compound parts similarly
-                            if hasattr(kw, 'compound_parts') and kw.compound_parts:
-                                processed_parts = []
-                                for part in kw.compound_parts:
-                                    if "-" in part:
-                                        # Handle hyphenated compound parts
-                                        subparts = part.split("-")
-                                        lemmatized_subparts = [
-                                            self.language_processor.get_base_form(subpart)
-                                            for subpart in subparts
-                                        ]
-                                        processed_parts.append("-".join(lemmatized_subparts))
-                                    else:
-                                        processed_parts.append(
-                                            self.language_processor.get_base_form(part)
-                                        )
-                                kw.compound_parts = processed_parts
-                        
-                        processed_keywords.append(kw)
-
-                # Limit number of keywords
-                result.keywords = processed_keywords[:self.max_keywords]
-
-                # Update domain keywords
-                if hasattr(result, "domain_keywords"):
-                    result.domain_keywords = self._group_by_domain(
-                        result.keywords
-                    )
-
-            return result
-
-        except Exception as e:
-            logger.error(f"KeywordAnalyzer.analyze: Exception occurred: {e}")
-            return KeywordOutput(
-                keywords=[],
-                compound_words=[],
-                domain_keywords={},
+                    
+                    seen_keywords[key] = kw
+            
+            # Sort by score and apply dynamic limit
+            keywords = sorted(
+                seen_keywords.values(),
+                key=lambda x: (x.score, getattr(x, "frequency", 0)),
+                reverse=True
+            )[:max_keywords]
+            
+            # Create result
+            result = KeywordAnalysisResult(
+                keywords=keywords,
+                compound_words=[kw.keyword for kw in keywords if getattr(kw, "is_compound", False) or '-' in kw.keyword],
+                domain_keywords=self._group_by_domain(keywords),
                 language=self._get_language(),
-                success=False,
-                error=str(e),
+                success=True,
+                error=None
             )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"KeywordAnalyzer.analyze: Exception occurred: {e}", exc_info=True)
+            return self._create_error_result()
 
     def _group_by_domain(self, keywords: List[KeywordInfo]) -> Dict[str, List[str]]:
         """Group keywords by their domain."""

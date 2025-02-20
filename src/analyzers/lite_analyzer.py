@@ -937,6 +937,28 @@ Output requirements:
         patterns = technical_patterns[self.language]
         return any(re.search(pattern, word.lower()) for pattern in patterns)
 
+    def _get_base_form(self, word: str) -> str:
+        """Get base form of a word with special handling for hyphenated compounds."""
+        if not word:
+            return word
+            
+        # Special handling for hyphenated words
+        if '-' in word:
+            parts = word.split('-')
+            # Get base form for each part if language processor is available
+            if self.language_processor:
+                base_parts = [
+                    self.language_processor.get_base_form(part) or part
+                    for part in parts
+                ]
+                return '-'.join(base_parts)
+            return word
+            
+        # Regular base form processing
+        if self.language_processor:
+            return self.language_processor.get_base_form(word) or word
+        return word
+
     async def analyze(
         self,
         text: str,
@@ -1010,7 +1032,8 @@ Output requirements:
                 if not kw.keyword or kw.keyword.lower() in processed_keywords:
                     continue
                     
-                processed = self.language_processor.get_base_form(kw.keyword) if self.language_processor else kw.keyword
+                # Get base form with special handling for compounds
+                processed = self._get_base_form(kw.keyword)
                 if not processed:
                     continue
                     
@@ -1030,8 +1053,8 @@ Output requirements:
                     keyword=processed,
                     score=min(adjusted_score, 1.0),
                     frequency=keyword_counts.get(kw.keyword.lower(), 1),
-                    is_compound=kw.is_compound or len(processed.split()) > 1,
-                    compound_parts=self._split_compound_word(processed) if kw.is_compound else None,
+                    is_compound=kw.is_compound or len(processed.split()) > 1 or '-' in processed,
+                    compound_parts=self._split_compound_word(processed) if kw.is_compound or '-' in processed else None,
                     metadata={
                         "is_technical": self._is_technical_term(processed),
                         "is_proper_noun": processed[0].isupper(),
@@ -1049,7 +1072,8 @@ Output requirements:
                 if not cw.keyword or cw.keyword.lower() in processed_keywords:
                     continue
                     
-                processed = self.language_processor.get_base_form(cw.keyword) if self.language_processor else cw.keyword
+                # Get base form with special handling for compounds
+                processed = self._get_base_form(cw.keyword)
                 if not processed:
                     continue
                 
@@ -1065,7 +1089,7 @@ Output requirements:
                 adjusted_score = base_score * (1.0 + theme_relevance * 0.3)  # Up to 30% boost
                 
                 # Additional compound word bonus
-                if self._is_compound_word(processed):
+                if self._is_compound_word(processed) or '-' in processed:
                     adjusted_score = min(adjusted_score * 1.1, 1.0)  # 10% boost for verified compounds
                 
                 # Create keyword info
@@ -1109,7 +1133,7 @@ Output requirements:
             
             keyword_result = KeywordAnalysisResult(
                 keywords=all_keywords,
-                compound_words=[kw.keyword for kw in all_keywords if kw.is_compound],
+                compound_words=[kw.keyword for kw in all_keywords if kw.is_compound or '-' in kw.keyword],
                 domain_keywords={},  # Not used in lite version
                 language=self.language,
                 success=True
