@@ -21,6 +21,7 @@ from src.schemas import (
     ThemeInfo,
     CategoryMatch,
     Evidence,
+    ThemeContext,
 )
 from src.loaders.parameter_handler import ParameterHandler
 from src.core.config import AnalyzerConfig
@@ -156,7 +157,7 @@ class LiteSemanticAnalyzer:
             custom_stop_words: Optional set of additional stop words
             cache_size: Maximum number of cached TF-IDF results
         """
-        self.llm = llm
+        self.llm = llm.with_structured_output(LiteAnalysisOutput)  # Use structured output directly with the LLM
         self.file_utils = file_utils
         self.available_categories = available_categories or set()
         self.language = language.lower()
@@ -574,7 +575,7 @@ class LiteSemanticAnalyzer:
 
     def _matches_domain_context(self, word: str) -> bool:
         """Check if word matches the domain context."""
-        if not self.domain_context:
+        if not self.domain_context or not word:
             return False
             
         word_lower = word.lower()
@@ -583,24 +584,39 @@ class LiteSemanticAnalyzer:
         domain_keywords = []
         if isinstance(self.domain_context, dict):
             # Try to get keywords from various possible dictionary keys
-            domain_keywords = self.domain_context.get('keywords', [])
-            if not domain_keywords:
-                # Fallback to collecting all string/list values as keywords
-                for value in self.domain_context.values():
-                    if isinstance(value, str):
-                        domain_keywords.append(value)
-                    elif isinstance(value, list):
-                        domain_keywords.extend(value)
+            if 'keywords' in self.domain_context:
+                keywords = self.domain_context['keywords']
+                if isinstance(keywords, list):
+                    domain_keywords.extend(keywords)
+                elif isinstance(keywords, str):
+                    domain_keywords.append(keywords)
+            
+            # Fallback to collecting all string/list values as keywords
+            for value in self.domain_context.values():
+                if isinstance(value, str):
+                    domain_keywords.append(value)
+                elif isinstance(value, list):
+                    domain_keywords.extend(str(item) for item in value if isinstance(item, (str, int, float)))
+        elif isinstance(self.domain_context, str):
+            domain_keywords = [self.domain_context]
+        elif isinstance(self.domain_context, list):
+            domain_keywords = [str(item) for item in self.domain_context if isinstance(item, (str, int, float))]
+        
+        # Ensure all keywords are strings and non-empty
+        domain_keywords = [str(k).lower() for k in domain_keywords if k]
+        
+        if not domain_keywords:
+            return False
         
         # Check direct match
-        if word_lower in [k.lower() for k in domain_keywords]:
+        if word_lower in domain_keywords:
             return True
             
         # Check word parts against domain context
         words = word_lower.split()
         return any(
-            any(part.lower() in [k.lower() for k in domain_keywords] for part in words)
-            or any(k.lower() in word_lower for k in domain_keywords)
+            any(part.lower() in domain_keywords for part in words)
+            or any(k in word_lower for k in domain_keywords)
         )
 
     def extract_keywords_tfidf(self, text: str, max_keywords: int) -> List[KeywordOutput]:
@@ -766,7 +782,7 @@ class LiteSemanticAnalyzer:
         min_length = self.config.get('min_keyword_length', 3)
         
         # Create base prompt
-        prompt = f"""Analyze the following text and extract the requested information.
+        prompt = f"""Analyze the following text using a theme-first approach. First identify the main themes and their relationships, then use these themes to guide the extraction of keywords and categories.
 
 Configuration parameters:
 - Language: {self.language}
@@ -777,105 +793,46 @@ Configuration parameters:
 - Maximum keywords: {dynamic_limit}
 - TF-IDF weight: {self.tfidf_weight}
 
+Additional configuration:
+- Predefined keywords: {list(self.predefined_keywords) if self.predefined_keywords else 'None'}
+- Excluded keywords: {list(self.excluded_keywords) if self.excluded_keywords else 'None'}
+- Available categories: {list(self.available_categories) if self.available_categories else 'None'}
+- Domain context: {self.domain_context if self.domain_context else 'None'}
+
 Text to analyze:
 {text}
 
-Please provide a structured analysis with the following components:"""
+Follow these guidelines:
+1. Theme Analysis:
+   - Identify main themes and sub-themes
+   - Create a hierarchical theme structure
+   - Consider theme relationships and context
+   - Aim for specific, descriptive themes
 
-        # Add analysis type specific instructions
-        all_types = {"keywords", "themes", "categories"}
-        types_to_run = set(analysis_types) if analysis_types else all_types
+2. Theme-Enhanced Keyword Analysis:
+   - Use identified themes to guide keyword extraction
+   - Consider TF-IDF suggestions: {', '.join(tfidf_info) if tfidf_keywords else 'None'}
+   - Include compound words and technical terms
+   - Score based on theme relevance
+   - Maximum keywords: {dynamic_limit}
+   - Prioritize predefined keywords if relevant
+   - Exclude any keywords from the excluded list
+   - Consider domain context in scoring
 
-        if "keywords" in types_to_run:
-            prompt += "\n1. Keywords:"
-            if tfidf_keywords:
-                prompt += f"\nConsider these statistically significant keywords with their scores:\n{', '.join(tfidf_info)}\n"
-            
-            prompt += "\nFor each keyword and compound word, provide:"
-            prompt += "\n- keyword: The actual keyword or phrase"
-            prompt += "\n- score: Confidence score between 0.0 and 1.0"
-            prompt += "\n- is_compound: Boolean indicating if it's a compound word/phrase"
-            
-            prompt += "\n\nFollow these guidelines:"
-            for instr in [
-                f"Extract up to {dynamic_limit} most significant keywords and phrases",
-                f"Focus on {focus}-related terms and concepts",
-                "Include both single words and multi-word expressions",
-                "Score guidelines:",
-                "  - 0.9-1.0: Exact matches, highly specific terms, proper nouns",
-                "  - 0.8-0.9: Domain-specific terms, technical terms",
-                "  - 0.7-0.8: Important contextual terms",
-                "  - 0.6-0.7: Related or supporting terms",
-                f"Only include terms with confidence above {min_confidence}",
-                f"Minimum length for single words: {min_length} characters",
-                "Avoid generic terms:",
-                "  - Common verbs (e.g., use, make, do)",
-                "  - Basic adjectives (e.g., good, new, big)",
-                "  - Non-specific nouns (e.g., thing, way, time)",
-                "Return base forms unless plurality/tense is significant",
-                "Mark as compound words:",
-                "  - Multi-word phrases",
-                "  - Hyphenated terms",
-                "  - Technical compounds",
-                f"Ensure all terms are in {self.language} language",
-                "Consider frequency and contextual relevance"
-            ]:
-                prompt += f"\n   - {instr}"
+3. Theme-Guided Category Analysis:
+   - Match only with available categories if specified
+   - Score based on thematic alignment
+   - Consider theme relationships
+   - Provide evidence for each category match
+   - Focus on categories relevant to the domain context
 
-        if "themes" in types_to_run:
-            prompt += "\n2. Themes:"
-            for instr in [
-                f"Identify the main themes present in the text, focusing on {focus} aspects",
-                "Organize themes hierarchically with main themes and sub-themes",
-                "Provide confidence scores between 0.0 and 1.0 for each theme",
-                f"Only include themes with confidence above {min_confidence}",
-                "Consider relationships between themes",
-                "Include both explicit and implicit themes",
-                "Consider the overall context and domain",
-                f"Ensure all themes are in the {self.language} language"
-            ]:
-                prompt += f"\n   - {instr}"
+Output requirements:
+- Keywords must have scores between 0.0 and 1.0
+- Include compound word detection
+- Track keyword frequencies
+- Ensure theme hierarchy is complete
+- Categories must have confidence scores"""
 
-        if "categories" in types_to_run and self.available_categories:
-            prompt += "\n3. Categories:"
-            for instr in [
-                "From the following categories, select those that best match the text:",
-                f"{', '.join(self.available_categories)}",
-                "For each category provide:",
-                "  - name: The category name",
-                "  - confidence: Score between 0.0 and 1.0",
-                f"Only include categories with confidence above {min_confidence}",
-                "Base confidence on how well the text matches each category's scope",
-                "Consider both explicit and implicit category matches",
-                "Provide evidence for each category match"
-            ]:
-                prompt += f"\n   - {instr}"
-
-        # Add domain context to prompt if available
-        if self.domain_context:
-            prompt += f"\nDomain Context:"
-            if isinstance(self.domain_context, dict):
-                for key, value in self.domain_context.items():
-                    if isinstance(value, (str, list)):
-                        if isinstance(value, list):
-                            prompt += f"\n- {key}: {', '.join(value)}"
-                        else:
-                            prompt += f"\n- {key}: {value}"
-            else:
-                # Fallback for non-dict domain context
-                prompt += f"\n- Context: {str(self.domain_context)}"
-
-        # Add predefined keywords if available
-        if self.predefined_keywords:
-            prompt += f"\nPredefined Keywords: {', '.join(sorted(self.predefined_keywords))}"
-
-        # Add excluded keywords if available
-        if self.excluded_keywords:
-            prompt += f"\nExcluded Keywords: {', '.join(sorted(self.excluded_keywords))}"
-
-        # Add format instructions
-        prompt += f"\n\nProvide the response in the following JSON format:\n{self.output_parser.get_format_instructions()}"
-        
         return prompt
 
     def _process_keywords(self, keywords: List[KeywordInfo], compound_words: List[str]) -> List[KeywordInfo]:
@@ -985,15 +942,7 @@ Please provide a structured analysis with the following components:"""
         text: str,
         analysis_types: Optional[List[str]] = None,
     ) -> CompleteAnalysisResult:
-        """Perform semantic analysis on the text.
-        
-        Args:
-            text: Text to analyze
-            analysis_types: List of analysis types to perform. If None, performs all analyses.
-            
-        Returns:
-            CompleteAnalysisResult containing all analysis results
-        """
+        """Perform semantic analysis on the text."""
         start_time = datetime.now()
         
         try:
@@ -1006,164 +955,243 @@ Please provide a structured analysis with the following components:"""
             
             # Create and run the combined prompt
             prompt = self._create_analysis_prompt(text, analysis_types)
-            response = await self.llm.ainvoke(prompt)
+            parsed_output = await self.llm.ainvoke(prompt)
             
-            # Extract content from the message response
-            response_text = response.content if hasattr(response, 'content') else str(response)
+            # First process themes to use as context for other analyses
+            themes = []
+            for theme_name in parsed_output.themes:
+                # Calculate theme confidence based on hierarchy position and specificity
+                is_main_theme = any(theme_name == main for main in parsed_output.theme_hierarchy.keys())
+                base_confidence = 0.8 if is_main_theme else 0.7
+                specificity_bonus = 0.2 if len(theme_name.split()) > 1 else 0.1
+                confidence = min(base_confidence + specificity_bonus, 1.0)
+                
+                themes.append(ThemeInfo(
+                    name=theme_name,
+                    description=theme_name,  # Using theme text as description
+                    confidence=confidence,
+                    score=confidence,
+                ))
             
-            try:
-                # Parse structured output
-                parsed_output = self.output_parser.parse(response_text)
-                
-                # Process keywords with safe frequency handling
-                all_keywords = []
-                keyword_counts = {}
-                
-                # First pass: collect frequencies
-                for kw in parsed_output.keywords + parsed_output.compound_words:
-                    if kw.keyword:
-                        keyword_counts[kw.keyword.lower()] = keyword_counts.get(kw.keyword.lower(), 0) + (kw.frequency or 1)
-                
-                # Second pass: create KeywordInfo objects
-                for kw in parsed_output.keywords:
-                    if not kw.keyword:
-                        continue
-                        
-                    processed = self.language_processor.get_base_form(kw.keyword) if self.language_processor else kw.keyword
-                    if processed:
-                        freq = keyword_counts.get(kw.keyword.lower(), 1)
-                        all_keywords.append(KeywordInfo(
-                            keyword=processed,
-                            score=kw.score,
-                            frequency=freq,
-                            is_compound=kw.is_compound,
-                            metadata={
-                                "is_technical": self._is_technical_term(processed),
-                                "is_proper_noun": processed[0].isupper(),
-                                "is_valid_phrase": len(processed.split()) > 1 and self._is_valid_phrase(processed)
-                            }
-                        ))
-                
-                # Process compound words
-                for cw in parsed_output.compound_words:
-                    if not cw.keyword:
-                        continue
-                        
-                    processed = self.language_processor.get_base_form(cw.keyword) if self.language_processor else cw.keyword
-                    if processed:
-                        freq = keyword_counts.get(cw.keyword.lower(), 1)
-                        all_keywords.append(KeywordInfo(
-                            keyword=processed,
-                            score=cw.score,
-                            frequency=freq,
-                            is_compound=True,
-                            compound_parts=self._split_compound_word(processed),
-                            metadata={
-                                "is_technical": self._is_technical_term(processed),
-                                "is_valid_phrase": self._is_valid_phrase(processed)
-                            }
-                        ))
-                
-                # Sort by score and remove duplicates while keeping highest scoring version
-                seen_keywords = {}
-                for kw in sorted(all_keywords, key=lambda x: (x.score, x.frequency), reverse=True):
-                    key = kw.keyword.lower()
-                    if key not in seen_keywords:
-                        seen_keywords[key] = kw
-                
-                all_keywords = list(seen_keywords.values())
-                
-                keyword_result = KeywordAnalysisResult(
-                    keywords=all_keywords,
-                    compound_words=[kw.keyword for kw in all_keywords if kw.is_compound],
-                    domain_keywords={},  # Not used in lite version
-                    language=self.language,
-                    success=True
-                )
-                
-                # Convert themes to ThemeInfo objects with varying confidence
-                themes = []
-                for theme in parsed_output.themes:
-                    # Calculate theme confidence based on hierarchy position and specificity
-                    is_main_theme = any(theme == main for main in parsed_output.theme_hierarchy.keys())
-                    base_confidence = 0.8 if is_main_theme else 0.7
-                    specificity_bonus = 0.2 if len(theme.split()) > 1 else 0.1
-                    confidence = min(base_confidence + specificity_bonus, 1.0)
+            theme_result = ThemeAnalysisResult(
+                themes=themes,
+                theme_hierarchy=parsed_output.theme_hierarchy,
+                language=self.language,
+                success=True
+            )
+            
+            # Create theme context for enhancing other analyses
+            theme_context = ThemeContext(
+                main_themes=[theme.name for theme in themes if not any(
+                    theme.name in children 
+                    for children in parsed_output.theme_hierarchy.values()
+                )],
+                theme_hierarchy=parsed_output.theme_hierarchy,
+                theme_descriptions={theme.name: theme.description for theme in themes},
+                theme_confidence={theme.name: theme.confidence for theme in themes},
+                theme_keywords={}  # Will be populated from keyword analysis
+            )
+            
+            # Process keywords with theme context
+            all_keywords = []
+            keyword_counts = {}
+            
+            # First pass: collect frequencies and validate keywords
+            for kw in parsed_output.keywords + parsed_output.compound_words:
+                if not kw.keyword or not self._is_valid_keyword(kw.keyword):
+                    continue
+                keyword_counts[kw.keyword.lower()] = keyword_counts.get(kw.keyword.lower(), 0) + (kw.frequency or 1)
+            
+            # Second pass: create KeywordInfo objects with theme-enhanced scoring
+            processed_keywords = set()  # Track processed keywords to avoid duplicates
+            
+            # Process regular keywords
+            for kw in parsed_output.keywords:
+                if not kw.keyword or kw.keyword.lower() in processed_keywords:
+                    continue
                     
-                    themes.append(ThemeInfo(
-                        name=theme,
-                        description=theme,  # Using theme text as description
-                        confidence=confidence,
-                        score=confidence,
-                    ))
-                
-                theme_result = ThemeAnalysisResult(
-                    themes=themes,
-                    theme_hierarchy=parsed_output.theme_hierarchy,
-                    language=self.language,
-                    success=True
-                )
-                
-                # Process categories with confidence scoring
-                category_matches = []
-                for cat in parsed_output.categories:
-                    # Calculate category confidence based on theme overlap and keyword presence
-                    theme_overlap = sum(1 for theme in themes if cat.name.lower() in theme.name.lower())
-                    keyword_overlap = sum(1 for kw in all_keywords if cat.name.lower() in kw.keyword.lower())
+                processed = self.language_processor.get_base_form(kw.keyword) if self.language_processor else kw.keyword
+                if not processed:
+                    continue
                     
-                    base_confidence = 0.7
-                    theme_bonus = min(0.1 * theme_overlap, 0.2)
-                    keyword_bonus = min(0.05 * keyword_overlap, 0.1)
-                    confidence = min(base_confidence + theme_bonus + keyword_bonus, 1.0)
-                    
-                    # Create Evidence objects for matching keywords and calculate relevance based on score
-                    evidence_list = []
-                    for kw in all_keywords:
-                        if cat.name.lower() in kw.keyword.lower():
-                            evidence_list.append(Evidence(
-                                text=kw.keyword,
-                                relevance=kw.score  # Use the keyword's score as evidence relevance
-                            ))
-                    
-                    category_matches.append(CategoryMatch(
-                        name=cat.name,
-                        confidence=confidence,
-                        description=f"Category match: {cat.name}",
-                        evidence=evidence_list,
-                        themes=[theme.name for theme in themes if cat.name.lower() in theme.name.lower()]
-                    ))
+                # Calculate theme relevance
+                theme_relevance = self._calculate_theme_keyword_relevance(processed, theme_context)
                 
-                category_result = CategoryAnalysisResult(
-                    matches=category_matches,
-                    language=self.language,
-                    success=True
-                )
+                # Base score adjustments
+                base_score = kw.score
+                if processed.lower() in self.predefined_keywords:
+                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords
                 
-                processing_time = (datetime.now() - start_time).total_seconds()
+                # Theme-based score adjustment
+                adjusted_score = base_score * (1.0 + theme_relevance * 0.3)  # Up to 30% boost
                 
-                # Combine into complete result
-                result = CompleteAnalysisResult(
-                    keywords=keyword_result,
-                    themes=theme_result,
-                    categories=category_result,
-                    language=self.language,
-                    success=True,
-                    processing_time=processing_time,
+                # Create keyword info
+                keyword_info = KeywordInfo(
+                    keyword=processed,
+                    score=min(adjusted_score, 1.0),
+                    frequency=keyword_counts.get(kw.keyword.lower(), 1),
+                    is_compound=kw.is_compound or len(processed.split()) > 1,
+                    compound_parts=self._split_compound_word(processed) if kw.is_compound else None,
                     metadata={
-                        "analysis_timestamp": datetime.now().isoformat(),
-                        "detected_language": detected_language,
-                        "analysis_type": "lite",
-                        "language": self.language,
-                        "config": self.config,
-                        "tfidf_weight": self.tfidf_weight,
+                        "is_technical": self._is_technical_term(processed),
+                        "is_proper_noun": processed[0].isupper(),
+                        "is_valid_phrase": len(processed.split()) > 1 and self._is_valid_phrase(processed),
+                        "theme_relevance": theme_relevance,
+                        "predefined": processed.lower() in self.predefined_keywords,
+                        "domain_match": self._matches_domain_context(processed)
                     }
                 )
+                all_keywords.append(keyword_info)
+                processed_keywords.add(processed.lower())
+            
+            # Process compound words
+            for cw in parsed_output.compound_words:
+                if not cw.keyword or cw.keyword.lower() in processed_keywords:
+                    continue
+                    
+                processed = self.language_processor.get_base_form(cw.keyword) if self.language_processor else cw.keyword
+                if not processed:
+                    continue
                 
-                return result
+                # Calculate theme relevance
+                theme_relevance = self._calculate_theme_keyword_relevance(processed, theme_context)
                 
-            except Exception as e:
-                logger.error(f"Error parsing analysis results: {str(e)}")
-                raise
+                # Base score adjustments
+                base_score = cw.score
+                if processed.lower() in self.predefined_keywords:
+                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords
+                
+                # Theme-based score adjustment
+                adjusted_score = base_score * (1.0 + theme_relevance * 0.3)  # Up to 30% boost
+                
+                # Additional compound word bonus
+                if self._is_compound_word(processed):
+                    adjusted_score = min(adjusted_score * 1.1, 1.0)  # 10% boost for verified compounds
+                
+                # Create keyword info
+                keyword_info = KeywordInfo(
+                    keyword=processed,
+                    score=min(adjusted_score, 1.0),
+                    frequency=keyword_counts.get(cw.keyword.lower(), 1),
+                    is_compound=True,
+                    compound_parts=self._split_compound_word(processed),
+                    metadata={
+                        "is_technical": self._is_technical_term(processed),
+                        "is_valid_phrase": self._is_valid_phrase(processed),
+                        "theme_relevance": theme_relevance,
+                        "predefined": processed.lower() in self.predefined_keywords,
+                        "domain_match": self._matches_domain_context(processed)
+                    }
+                )
+                all_keywords.append(keyword_info)
+                processed_keywords.add(processed.lower())
+            
+            # Update theme_keywords in theme context
+            for theme in themes:
+                theme_keywords = [
+                    kw.keyword for kw in all_keywords
+                    if isinstance(kw.metadata, dict) and
+                    kw.metadata.get("theme_relevance", 0) > 0.5 and
+                    (theme.name.lower() in kw.keyword.lower() or
+                     kw.keyword.lower() in theme.name.lower())
+                ]
+                if theme_keywords:
+                    theme_context.theme_keywords[theme.name] = theme_keywords
+            
+            # Sort by score and remove duplicates while keeping highest scoring version
+            seen_keywords = {}
+            for kw in sorted(all_keywords, key=lambda x: (x.score, x.frequency), reverse=True):
+                key = kw.keyword.lower()
+                if key not in seen_keywords:
+                    seen_keywords[key] = kw
+            
+            all_keywords = list(seen_keywords.values())
+            
+            keyword_result = KeywordAnalysisResult(
+                keywords=all_keywords,
+                compound_words=[kw.keyword for kw in all_keywords if kw.is_compound],
+                domain_keywords={},  # Not used in lite version
+                language=self.language,
+                success=True
+            )
+            
+            # Process categories with theme-enhanced scoring
+            category_matches = []
+            for cat in parsed_output.categories:
+                # Calculate semantic similarity with themes
+                theme_similarities = [
+                    self._calculate_theme_category_similarity(
+                        cat.name.lower(),
+                        theme.name.lower(),
+                        theme.description.lower()
+                    )
+                    for theme in themes
+                ]
+                max_theme_similarity = max(theme_similarities) if theme_similarities else 0
+                
+                # Calculate evidence-based confidence
+                evidence_list = []
+                keyword_relevance = 0
+                for kw in all_keywords:
+                    if cat.name.lower() in kw.keyword.lower() or kw.keyword.lower() in cat.name.lower():
+                        relevance = kw.score * (1 + kw.metadata.get("theme_relevance", 0) * 0.25)
+                        evidence_list.append(Evidence(
+                            text=kw.keyword,
+                            relevance=min(relevance, 1.0)
+                        ))
+                        keyword_relevance = max(keyword_relevance, relevance)
+                
+                # Combined scoring
+                base_confidence = 0.7
+                theme_bonus = max_theme_similarity * 0.25  # Up to 25% boost from themes
+                keyword_bonus = keyword_relevance * 0.1  # Up to 10% boost from keywords
+                confidence = min(base_confidence + theme_bonus + keyword_bonus, 1.0)
+                
+                # Get related themes
+                related_themes = [
+                    theme.name for theme in themes
+                    if self._calculate_theme_category_similarity(
+                        cat.name.lower(),
+                        theme.name.lower(),
+                        theme.description.lower()
+                    ) > 0.5
+                ]
+                
+                category_matches.append(CategoryMatch(
+                    name=cat.name,
+                    confidence=confidence,
+                    description=f"Category match: {cat.name}",
+                    evidence=evidence_list,
+                    themes=related_themes
+                ))
+            
+            category_result = CategoryAnalysisResult(
+                matches=category_matches,
+                language=self.language,
+                success=True
+            )
+            
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Combine into complete result
+            result = CompleteAnalysisResult(
+                keywords=keyword_result,
+                themes=theme_result,
+                categories=category_result,
+                language=self.language,
+                success=True,
+                processing_time=processing_time,
+                metadata={
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "detected_language": detected_language,
+                    "analysis_type": "lite",
+                    "language": self.language,
+                    "config": self.config,
+                    "tfidf_weight": self.tfidf_weight,
+                }
+            )
+            
+            return result
             
         except Exception as e:
             logger.error(f"Analysis failed: {str(e)}", exc_info=True)
@@ -1199,4 +1227,71 @@ Please provide a structured analysis with the following components:"""
                     "analysis_timestamp": datetime.now().isoformat(),
                     "error": str(e),
                 }
-            ) 
+            )
+
+    def _calculate_theme_keyword_relevance(self, keyword: str, theme_context: ThemeContext) -> float:
+        """Calculate how relevant a keyword is to the identified themes."""
+        if not theme_context or not theme_context.main_themes:
+            return 0.0
+            
+        keyword_lower = keyword.lower()
+        max_relevance = 0.0
+        
+        # Check direct matches in theme names and descriptions
+        for theme in theme_context.main_themes:
+            theme_lower = theme.lower()
+            desc_lower = theme_context.theme_descriptions.get(theme, "").lower()
+            
+            # Direct match in theme name
+            if keyword_lower in theme_lower or theme_lower in keyword_lower:
+                confidence = theme_context.theme_confidence.get(theme, 0.8)
+                max_relevance = max(max_relevance, confidence)
+                continue
+            
+            # Match in theme description
+            if keyword_lower in desc_lower:
+                confidence = theme_context.theme_confidence.get(theme, 0.8) * 0.8
+                max_relevance = max(max_relevance, confidence)
+                continue
+            
+            # Check word-level similarity
+            keyword_words = set(keyword_lower.split())
+            theme_words = set(theme_lower.split())
+            desc_words = set(desc_lower.split())
+            
+            word_overlap = len(keyword_words & (theme_words | desc_words))
+            if word_overlap:
+                overlap_score = word_overlap / len(keyword_words)
+                confidence = theme_context.theme_confidence.get(theme, 0.8) * overlap_score * 0.7
+                max_relevance = max(max_relevance, confidence)
+        
+        return max_relevance
+
+    def _calculate_theme_category_similarity(
+        self,
+        category: str,
+        theme: str,
+        theme_desc: str
+    ) -> float:
+        """Calculate semantic similarity between category and theme."""
+        # Direct match in theme name
+        if category in theme or theme in category:
+            return 0.8
+        
+        # Match in theme description
+        if category in theme_desc:
+            return 0.6
+        
+        # Word-level similarity
+        category_words = set(category.split())
+        theme_words = set(theme.split())
+        desc_words = set(theme_desc.split())
+        
+        # Calculate overlap ratios
+        theme_overlap = len(category_words & theme_words) / len(category_words)
+        desc_overlap = len(category_words & desc_words) / len(category_words)
+        
+        # Combine overlap scores with weights
+        similarity = theme_overlap * 0.7 + desc_overlap * 0.3
+        
+        return min(similarity, 0.7)  # Cap at 0.7 for partial matches 
