@@ -4,11 +4,11 @@ The Lite Semantic Analyzer is a lightweight version of the main semantic analyze
 
 ## Features
 
-- Single LLM call for all analysis types (keywords, themes, categories)
-- TF-IDF based keyword extraction with LLM refinement
+- Single LLM call for all analysis types using structured output
+- Theme-first analysis workflow with hierarchical theme context
+- TF-IDF based keyword extraction with theme-enhanced scoring
 - Compound word detection for both English and Finnish
-- Technical term recognition and scoring
-- Domain-aware keyword scoring
+- Technical term recognition and domain-aware scoring
 - Caching support for TF-IDF results
 - Language detection and validation
 
@@ -26,6 +26,8 @@ analyzer = LiteSemanticAnalyzer(
     llm=llm,
     language="en",  # or "fi" for Finnish
     tfidf_weight=0.5,  # Weight given to TF-IDF results (0.0-1.0)
+    parameter_file="parameters.xlsx",  # Optional configuration file
+    custom_stop_words={"custom", "stop", "words"}  # Optional
 )
 
 # Run analysis
@@ -36,17 +38,38 @@ result = await analyzer.analyze(
 
 # Process results
 if result.success:
-    print("\nKeywords:")
-    for kw in result.keywords.keywords:
-        print(f"• {kw.keyword} (score: {kw.score:.2f})")
-    
+    # Theme results (processed first)
     print("\nThemes:")
     for theme in result.themes.themes:
         print(f"• {theme.name} ({theme.confidence:.2f})")
+        print(f"  Description: {theme.description}")
+    
+    # Theme hierarchy
+    print("\nTheme Hierarchy:")
+    for main_theme, sub_themes in result.themes.theme_hierarchy.items():
+        print(f"• {main_theme}")
+        for sub in sub_themes:
+            print(f"  - {sub}")
+    
+    # Theme-enhanced keywords
+    print("\nKeywords:")
+    for kw in result.keywords.keywords:
+        print(f"• {kw.keyword} (score: {kw.score:.2f})")
+        if kw.metadata.get("theme_relevance"):
+            print(f"  Theme relevance: {kw.metadata['theme_relevance']:.2f}")
+        if kw.is_compound:
+            print(f"  Compound parts: {', '.join(kw.compound_parts)}")
         
+    # Theme-guided categories
     print("\nCategories:")
     for cat in result.categories.matches:
         print(f"• {cat.name} ({cat.confidence:.2f})")
+        if cat.themes:
+            print(f"  Related themes: {', '.join(cat.themes)}")
+        if cat.evidence:
+            print("  Evidence:")
+            for ev in cat.evidence:
+                print(f"    - {ev.text} (relevance: {ev.relevance:.2f})")
 ```
 
 ## Configuration
@@ -59,66 +82,88 @@ The lite analyzer supports the following configuration options:
 - `cache_size`: Maximum number of cached TF-IDF results (default: 1000)
 - `parameter_file`: Optional Excel parameter file for additional configuration
 - `available_categories`: Optional set of valid categories to choose from
+- `domain_context`: Optional domain-specific context for enhanced scoring
 
 ## Technical Details
 
-### Analysis Workflow
+### Theme-First Analysis Workflow
 
-The lite analyzer performs all analyses in a single LLM call, but still maintains the benefits of theme-based context:
+The lite analyzer implements a theme-first approach where themes provide context for other analyses:
 
-1. Theme identification is performed first within the LLM call
-2. Identified themes are used to enhance keyword and category analysis
-3. Results are processed to ensure consistency across all analysis types
+1. Theme Analysis:
+   - Identifies main themes and sub-themes
+   - Creates hierarchical theme structure
+   - Assigns confidence scores based on theme position and specificity
+   - Considers theme relationships and context
 
-### Keyword Extraction
+2. Theme-Enhanced Keyword Analysis:
+   - Uses identified themes to guide keyword extraction
+   - Adjusts keyword scores based on theme relevance (up to 30% boost)
+   - Considers TF-IDF statistical significance
+   - Incorporates domain context and predefined keywords
+   - Handles compound words and technical terms
 
-The lite analyzer combines multiple approaches for keyword extraction:
+3. Theme-Guided Category Analysis:
+   - Matches categories based on thematic alignment
+   - Calculates semantic similarity between categories and themes
+   - Adjusts category scores based on theme relevance (up to 25% boost)
+   - Uses theme-enhanced keywords as evidence
+   - Considers theme hierarchy in scoring
 
-1. TF-IDF is used to identify potential keywords based on statistical significance
-2. Keywords are filtered and scored based on:
-   - Theme relevance and alignment
+### Keyword Extraction Process
+
+The analyzer combines multiple approaches for keyword extraction:
+
+1. Statistical Analysis:
+   - TF-IDF for initial keyword identification
+   - Frequency analysis and caching
+   - Dynamic keyword limits based on text length
+
+2. Theme-Based Enhancement:
+   - Theme relevance scoring
+   - Hierarchical theme context
+   - Theme-keyword associations
+
+3. Additional Scoring Factors:
    - Technical term patterns
    - Domain-specific terms
-   - Compound word patterns
-   - Proper noun detection
+   - Compound word detection
+   - Proper noun recognition
    - Length and frequency adjustments
-
-### Theme Analysis
-
-Themes are identified by the LLM and organized into a hierarchical structure. Theme confidence is calculated based on:
-
-- Position in theme hierarchy (main themes vs sub-themes)
-- Specificity of the theme (multi-word themes get higher confidence)
-- Overlap with extracted keywords
-- Theme relationships and context
+   - Predefined keyword boosts
 
 ### Category Analysis
 
-Categories are matched and scored using a comprehensive approach:
+Categories are matched using a comprehensive approach:
 
-- Theme-based scoring:
-  - Theme overlap assessment
-  - Semantic similarity calculation
-  - Theme hierarchy consideration
-- Keyword-based scoring:
-  - Keyword presence and relevance
-  - Evidence strength from matching keywords
-- Combined scoring:
-  - Base confidence (0.7)
-  - Theme bonus (up to 0.2)
-  - Keyword bonus (up to 0.1)
-  - Evidence-based adjustments
+1. Theme-Based Scoring:
+   - Theme overlap assessment
+   - Semantic similarity calculation
+   - Theme hierarchy consideration
+
+2. Evidence-Based Scoring:
+   - Keyword presence and relevance
+   - Theme-enhanced evidence strength
+   - Compound word recognition
+
+3. Combined Scoring:
+   - Base confidence (0.7)
+   - Theme bonus (up to 0.25)
+   - Keyword bonus (up to 0.1)
+   - Evidence-based adjustments
 
 ## Performance Considerations
 
-- The lite analyzer is optimized for speed by using a single LLM call
-- TF-IDF results are cached to improve performance on similar texts
-- Processing time is typically faster than the full analyzer, especially for batch processing
-- Trade-off: May provide slightly less detailed analysis compared to the full analyzer
+- Single LLM call with structured output for efficiency
+- TF-IDF caching for improved performance
+- Dynamic keyword limits based on text length
+- Optimized scoring calculations
+- Efficient theme context handling
 
 ## Limitations
 
 - Less granular control over individual analysis types
 - Fixed scoring patterns for technical terms and compounds
 - Limited to English and Finnish languages
-- No support for custom domain-specific analyzers 
+- No support for custom domain-specific analyzers
+- Cache size limited to 1000 entries by default 
