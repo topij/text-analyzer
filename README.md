@@ -4,6 +4,13 @@ A Python-based text analysis toolkit that combines LLMs and NLP techniques to ex
 
 ## Features
 
+- **Advanced Semantic Analysis**
+  - Integrated analysis workflow with theme-based context
+  - Theme-enhanced keyword extraction and category matching
+  - Hierarchical theme analysis with confidence scoring
+  - Theme-based score adjustments for improved accuracy
+  - Semantic similarity calculations between themes and categories
+
 - **Text Analysis**
   - Keyword extraction with domain awareness
   - Theme identification with hierarchical relationships

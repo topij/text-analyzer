@@ -390,3 +390,91 @@ async def analyze_with_lite():
 ```
 
 For complete API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
+
+## Theme-Enhanced Analysis
+
+The semantic analyzer now uses theme analysis results to enhance keyword and category analysis. Here's how to use this feature:
+
+```python
+from src.semantic_analyzer import SemanticAnalyzer
+from src.core.managers.environment_manager import EnvironmentManager
+from src.core.config import EnvironmentConfig
+
+async def analyze_with_themes():
+    # Initialize environment
+    env_manager = EnvironmentManager(EnvironmentConfig())
+    components = env_manager.get_components()
+    
+    # Create analyzer
+    analyzer = SemanticAnalyzer(
+        file_utils=components["file_utils"],
+        config_manager=components["config_manager"]
+    )
+    
+    # The order of analysis types matters:
+    # 1. Themes are analyzed first
+    # 2. Theme results are used to enhance keyword and category analysis
+    result = await analyzer.analyze(
+        text="""Machine learning models are becoming increasingly important in healthcare. 
+                Neural networks can analyze medical images to detect anomalies.
+                This technology is revolutionizing patient diagnosis and treatment planning.""",
+        analysis_types=["themes", "keywords", "categories"]
+    )
+    
+    if result.success:
+        # Themes
+        print("\nThemes:")
+        for theme in result.themes.themes:
+            print(f"• {theme.name} ({theme.confidence:.2f})")
+            print(f"  Description: {theme.description}")
+            if theme.parent_theme:
+                print(f"  Parent Theme: {theme.parent_theme}")
+        
+        # Theme-enhanced keywords
+        print("\nKeywords (enhanced by theme context):")
+        for kw in result.keywords.keywords:
+            print(f"• {kw.keyword} (score: {kw.score:.2f})")
+            
+        # Theme-enhanced categories
+        print("\nCategories (enhanced by theme context):")
+        for cat in result.categories.matches:
+            print(f"• {cat.name} ({cat.confidence:.2f})")
+            if cat.themes:  # Themes that influenced this category
+                print(f"  Related Themes: {', '.join(cat.themes)}")
+            if cat.evidence:
+                print("  Evidence:")
+                for ev in cat.evidence:
+                    print(f"    - {ev.text} (relevance: {ev.relevance:.2f})")
+```
+
+Example output:
+```
+Themes:
+• Healthcare Technology (0.95)
+  Description: Application of technology in healthcare settings
+• Machine Learning Applications (0.90)
+  Description: Use of ML models in practical scenarios
+  Parent Theme: Healthcare Technology
+• Medical Imaging (0.85)
+  Description: Analysis of medical images using AI
+  Parent Theme: Healthcare Technology
+
+Keywords (enhanced by theme context):
+• machine learning models (0.95)
+• neural networks (0.92)
+• medical images (0.88)
+• patient diagnosis (0.85)
+• treatment planning (0.82)
+
+Categories (enhanced by theme context):
+• Healthcare (0.95)
+  Related Themes: Healthcare Technology, Medical Imaging
+  Evidence:
+    - medical images (relevance: 0.88)
+    - patient diagnosis (relevance: 0.85)
+• Technology (0.90)
+  Related Themes: Healthcare Technology, Machine Learning Applications
+  Evidence:
+    - machine learning models (relevance: 0.95)
+    - neural networks (relevance: 0.92)
+```

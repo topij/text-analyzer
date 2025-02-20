@@ -62,12 +62,21 @@ The lite analyzer supports the following configuration options:
 
 ## Technical Details
 
+### Analysis Workflow
+
+The lite analyzer performs all analyses in a single LLM call, but still maintains the benefits of theme-based context:
+
+1. Theme identification is performed first within the LLM call
+2. Identified themes are used to enhance keyword and category analysis
+3. Results are processed to ensure consistency across all analysis types
+
 ### Keyword Extraction
 
-The lite analyzer combines TF-IDF (Term Frequency-Inverse Document Frequency) with LLM-based refinement for keyword extraction:
+The lite analyzer combines multiple approaches for keyword extraction:
 
 1. TF-IDF is used to identify potential keywords based on statistical significance
 2. Keywords are filtered and scored based on:
+   - Theme relevance and alignment
    - Technical term patterns
    - Domain-specific terms
    - Compound word patterns
@@ -78,18 +87,27 @@ The lite analyzer combines TF-IDF (Term Frequency-Inverse Document Frequency) wi
 
 Themes are identified by the LLM and organized into a hierarchical structure. Theme confidence is calculated based on:
 
-- Position in theme hierarchy
-- Specificity of the theme
+- Position in theme hierarchy (main themes vs sub-themes)
+- Specificity of the theme (multi-word themes get higher confidence)
 - Overlap with extracted keywords
+- Theme relationships and context
 
 ### Category Analysis
 
-Categories are matched and scored based on:
+Categories are matched and scored using a comprehensive approach:
 
-- Theme overlap
-- Keyword presence
-- Evidence from matching keywords
-- Confidence scoring with theme and keyword bonuses
+- Theme-based scoring:
+  - Theme overlap assessment
+  - Semantic similarity calculation
+  - Theme hierarchy consideration
+- Keyword-based scoring:
+  - Keyword presence and relevance
+  - Evidence strength from matching keywords
+- Combined scoring:
+  - Base confidence (0.7)
+  - Theme bonus (up to 0.2)
+  - Keyword bonus (up to 0.1)
+  - Evidence-based adjustments
 
 ## Performance Considerations
 

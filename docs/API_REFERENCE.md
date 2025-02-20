@@ -113,6 +113,23 @@ class LiteSemanticAnalyzer:
         """
 ```
 
+### ThemeContext
+
+```python
+class ThemeContext(BaseModel):
+    """Context information from theme analysis used to enhance other analyses."""
+    
+    main_themes: List[str]  # List of main themes identified in the text
+    theme_hierarchy: Dict[str, List[str]]  # Hierarchical relationships between themes
+    theme_descriptions: Dict[str, str]  # Descriptions for each identified theme
+    theme_confidence: Dict[str, float]  # Confidence scores for each theme
+    theme_keywords: Dict[str, List[str]]  # Keywords associated with each theme
+
+    @classmethod
+    def from_theme_result(cls, result: ThemeAnalysisResult) -> "ThemeContext":
+        """Create ThemeContext from ThemeAnalysisResult."""
+```
+
 ### KeywordAnalyzer
 
 ```python
@@ -128,9 +145,22 @@ class KeywordAnalyzer:
     async def analyze(
         self,
         text: str,
+        theme_context: Optional[ThemeContext] = None,
         **kwargs
     ) -> KeywordAnalysisResult:
-        """Extract keywords from text."""
+        """Extract keywords from text with optional theme context.
+        
+        Args:
+            text: Text to analyze
+            theme_context: Optional theme context to enhance keyword extraction
+            **kwargs: Additional arguments
+            
+        The analyzer uses theme context to:
+        - Guide keyword identification based on themes
+        - Adjust keyword scores based on theme relevance (up to 30% boost)
+        - Ensure keywords align with identified themes
+        - Consider theme hierarchy in scoring
+        """
 ```
 
 ### ThemeAnalyzer
@@ -169,9 +199,22 @@ class CategoryAnalyzer:
     async def analyze(
         self,
         text: str,
+        theme_context: Optional[ThemeContext] = None,
         **kwargs
     ) -> CategoryAnalysisResult:
-        """Classify text into categories."""
+        """Classify text into categories with optional theme context.
+        
+        Args:
+            text: Text to analyze
+            theme_context: Optional theme context to enhance category matching
+            **kwargs: Additional arguments
+            
+        The analyzer uses theme context to:
+        - Guide category matching based on themes
+        - Calculate semantic similarity between categories and themes
+        - Adjust category scores based on theme relevance (up to 25% boost)
+        - Use theme evidence to support category matches
+        """
 ```
 
 ### ConfigManager
