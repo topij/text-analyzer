@@ -431,47 +431,81 @@ def main():
         
         with tab1:
             if 'keywords' in st.session_state.analysis_results:
+                # Create a list to store rows for the keywords table
+                keywords_data = []
                 for idx, result in enumerate(st.session_state.analysis_results['keywords']):
-                    st.markdown(f"**Text {idx + 1}**")
-                    if result and result.success:  # Check if analysis was successful
-                        for kw in result.keywords:
-                            st.markdown(f"- {kw.keyword} (score: {kw.score:.2f})")
-                            meta_items = []
-                            if kw.is_compound:
-                                meta_items.append("compound")
-                            if hasattr(kw, 'frequency') and kw.frequency:
-                                meta_items.append(f"frequency: {kw.frequency}")
-                            if meta_items:
-                                st.markdown(f"  *({', '.join(meta_items)})*")
+                    text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                    if result and result.success:
+                        keywords_str = ", ".join([
+                            f"{kw.keyword} ({kw.score:.2f})"
+                            for kw in result.keywords
+                        ])
+                    else:
+                        keywords_str = "Analysis failed"
+                    keywords_data.append({"Text Content": text, "Keywords": keywords_str})
+                
+                # Display keywords table
+                if keywords_data:
+                    st.dataframe(
+                        pd.DataFrame(keywords_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
         
         with tab2:
             if 'themes' in st.session_state.analysis_results:
+                # Create a list to store rows for the themes table
+                themes_data = []
                 for idx, result in enumerate(st.session_state.analysis_results['themes']):
-                    st.markdown(f"**Text {idx + 1}**")
-                    if result and result.success:  # Check if analysis was successful
-                        for theme in result.themes:
-                            st.markdown(f"- {theme.name} (confidence: {theme.confidence:.2f})")
+                    text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                    if result and result.success:
+                        themes_str = ", ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes])
                         if result.theme_hierarchy:
-                            st.markdown("\n*Theme Hierarchy:*")
-                            for main_theme, sub_themes in result.theme_hierarchy.items():
-                                st.markdown(f"- {main_theme}")
-                                for sub_theme in sub_themes:
-                                    st.markdown(f"  - {sub_theme}")
+                            themes_str += "\n\nHierarchy:\n" + "\n".join([
+                                f"- {main_theme}: {', '.join(sub_themes)}"
+                                for main_theme, sub_themes in result.theme_hierarchy.items()
+                            ])
+                    else:
+                        themes_str = "Analysis failed"
+                    themes_data.append({"Text Content": text, "Themes": themes_str})
+                
+                # Display themes table
+                if themes_data:
+                    st.dataframe(
+                        pd.DataFrame(themes_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
         
         with tab3:
             if 'categories' in st.session_state.analysis_results:
+                # Create a list to store rows for the categories table
+                categories_data = []
                 for idx, result in enumerate(st.session_state.analysis_results['categories']):
-                    st.markdown(f"**Text {idx + 1}**")
-                    if result and result.success:  # Check if analysis was successful
+                    text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                    if result and result.success:
+                        categories_str = ""
                         for cat in result.matches:
-                            st.markdown(f"- {cat.name} (confidence: {cat.confidence:.2f})")
+                            categories_str += f"{cat.name} ({cat.confidence:.2f})\n"
                             if cat.evidence:
-                                st.markdown("  *Evidence:*")
-                                for evidence in cat.evidence:
-                                    st.markdown(f"  - {evidence.text} (relevance: {evidence.relevance:.2f})")
+                                categories_str += "Evidence:\n" + "\n".join([
+                                    f"- {evidence.text} (relevance: {evidence.relevance:.2f})"
+                                    for evidence in cat.evidence
+                                ]) + "\n"
                             if hasattr(cat, 'themes') and cat.themes:
-                                st.markdown("  *Related Themes:*")
-                                st.markdown(f"  - {', '.join(cat.themes)}")
+                                categories_str += f"Related Themes: {', '.join(cat.themes)}\n"
+                            categories_str += "\n"
+                    else:
+                        categories_str = "Analysis failed"
+                    categories_data.append({"Text Content": text, "Categories": categories_str})
+                
+                # Display categories table
+                if categories_data:
+                    st.dataframe(
+                        pd.DataFrame(categories_data),
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
 # Update cleanup function to clean up temp directory
 def cleanup_temp_files():
