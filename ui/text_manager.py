@@ -88,12 +88,80 @@ class UITextManager:
                     "language_settings": {
                         "en": "Language Settings",
                         "fi": "Kieliasetukset"
+                    },
+                    "sample_files": {
+                        "en": "Sample Files",
+                        "fi": "Esimerkkitiedostot"
+                    },
+                    "preview_data": {
+                        "en": "Check uploaded data",
+                        "fi": "Tarkista ladatut tiedot"
+                    },
+                    "content_info": {
+                        "en": "Content Information",
+                        "fi": "Sisällön tiedot"
+                    },
+                    "parameter_info": {
+                        "en": "Parameter Information",
+                        "fi": "Parametrien tiedot"
+                    },
+                    "basic_info": {
+                        "en": "Basic Information",
+                        "fi": "Perustiedot"
+                    },
+                    "column_details": {
+                        "en": "Column Details",
+                        "fi": "Sarakkeiden tiedot"
+                    },
+                    "current_settings": {
+                        "en": "Current Settings",
+                        "fi": "Nykyiset asetukset"
+                    },
+                    "data_preview": {
+                        "en": "Data Preview",
+                        "fi": "Datan esikatselu"
+                    },
+                    "content_details": {
+                        "en": "Content Details",
+                        "fi": "Sisällön tiedot"
+                    },
+                    "parameter_details": {
+                        "en": "Parameter Details",
+                        "fi": "Parametrien tiedot"
+                    },
+                    "check_uploaded_data": {
+                        "en": "Check uploaded data",
+                        "fi": "Tarkista ladatut tiedot"
+                    },
+                    "basic_information": {
+                        "en": "Basic Information",
+                        "fi": "Perustiedot"
+                    },
+                    "column_information": {
+                        "en": "Column Details",
+                        "fi": "Sarakkeiden tiedot"
+                    },
+                    "data_sample": {
+                        "en": "Data Sample",
+                        "fi": "Datan esimerkki"
                     }
                 },
                 "messages": {
                     "analyzing": {
                         "en": "Analyzing text...",
                         "fi": "Analysoidaan tekstiä..."
+                    },
+                    "processing_text": {
+                        "en": "Processing text {current} of {total}...",
+                        "fi": "Käsitellään tekstiä {current}/{total}..."
+                    },
+                    "exporting": {
+                        "en": "Preparing export...",
+                        "fi": "Valmistellaan vientiä..."
+                    },
+                    "export_complete": {
+                        "en": "Export completed successfully",
+                        "fi": "Vienti valmistui onnistuneesti"
                     },
                     "error": {
                         "en": "❌ Error: {error}",
@@ -126,6 +194,34 @@ class UITextManager:
                     "analysis_failed_text": {
                         "en": "Analysis failed for text: {text}...",
                         "fi": "Analyysi epäonnistui tekstille: {text}..."
+                    },
+                    "export_success": {
+                        "en": "Results exported successfully to {filename}",
+                        "fi": "Tulokset viety onnistuneesti tiedostoon {filename}"
+                    },
+                    "export_error": {
+                        "en": "Error exporting results: {error}",
+                        "fi": "Virhe tulosten viennissä: {error}"
+                    },
+                    "no_content_file": {
+                        "en": "No content file uploaded yet.",
+                        "fi": "Sisältötiedostoa ei ole vielä ladattu."
+                    },
+                    "no_parameter_file": {
+                        "en": "No parameter file uploaded yet.",
+                        "fi": "Parametritiedostoa ei ole vielä ladattu."
+                    },
+                    "no_results": {
+                        "en": "No analysis results available yet.",
+                        "fi": "Analyysin tuloksia ei ole vielä saatavilla."
+                    },
+                    "export_in_progress": {
+                        "en": "Exporting results...",
+                        "fi": "Viedään tuloksia..."
+                    },
+                    "messages.export_complete]": {
+                        "en": "Exporting ready",
+                        "fi": "Tulokset tallennettu"
                     }
                 },
                 "tabs": {
@@ -140,12 +236,36 @@ class UITextManager:
                     "categories": {
                         "en": "Categories",
                         "fi": "Kategoriat"
+                    },
+                    "content_details": {
+                        "en": "Content Details",
+                        "fi": "Sisällön tiedot"
+                    },
+                    "parameter_details": {
+                        "en": "Parameter Details",
+                        "fi": "Parametrien tiedot"
                     }
                 },
                 "buttons": {
                     "analyze": {
                         "en": "🔍 Analyze",
                         "fi": "🔍 Analysoi"
+                    },
+                    "reset_parameters": {
+                        "en": "↺ Reset Parameters",
+                        "fi": "↺ Palauta oletusarvot"
+                    },
+                    "export_results": {
+                        "en": "📥 Export Results",
+                        "fi": "📥 Vie tulokset"
+                    },
+                    "download_sample_content": {
+                        "en": "📥 Download Sample Content",
+                        "fi": "📥 Lataa esimerkkisisältö"
+                    },
+                    "download_sample_parameters": {
+                        "en": "📥 Download Sample Parameters",
+                        "fi": "📥 Lataa esimerkkiparametrit"
                     }
                 },
                 "labels": {
@@ -160,6 +280,10 @@ class UITextManager:
                     "focus": {
                         "en": "Analysis Focus",
                         "fi": "Analyysin fokus"
+                    },
+                    "content_column": {
+                        "en": "Content Column",
+                        "fi": "Sisältösarake"
                     },
                     "interface_language": {
                         "en": "Interface Language",
@@ -180,6 +304,74 @@ class UITextManager:
                     "choose_parameters": {
                         "en": "Choose parameter file",
                         "fi": "Valitse parametritiedosto"
+                    },
+                    "show_data_preview": {
+                        "en": "Show data preview",
+                        "fi": "Näytä datan esikatselu"
+                    },
+                    "show_all_parameters": {
+                        "en": "Show all parameters",
+                        "fi": "Näytä kaikki parametrit"
+                    },
+                    "number_of_rows": {
+                        "en": "Number of Rows",
+                        "fi": "Rivien määrä"
+                    },
+                    "number_of_columns": {
+                        "en": "Number of Columns",
+                        "fi": "Sarakkeiden määrä"
+                    },
+                    "selected_text_column": {
+                        "en": "Selected Text Column",
+                        "fi": "Valittu tekstisarake"
+                    },
+                    "download_results": {
+                        "en": "📥 Download Results",
+                        "fi": "📥 Lataa tulokset"
+                    },
+                    "data_preview": {
+                        "en": "Data Preview",
+                        "fi": "Datan esikatselu"
+                    },
+                    "basic_info": {
+                        "en": "Basic Information",
+                        "fi": "Perustiedot"
+                    },
+                    "column_details": {
+                        "en": "Column Details",
+                        "fi": "Sarakkeiden tiedot"
+                    },
+                    "parameter_info": {
+                        "en": "Parameter Information",
+                        "fi": "Parametrien tiedot"
+                    },
+                    "current_settings": {
+                        "en": "Current Settings",
+                        "fi": "Nykyiset asetukset"
+                    },
+                    "column_name": {
+                        "en": "Column Name",
+                        "fi": "Sarakkeen nimi"
+                    },
+                    "data_type": {
+                        "en": "Data Type",
+                        "fi": "Tietotyyppi"
+                    },
+                    "non_null_count": {
+                        "en": "Non-Null Count",
+                        "fi": "Ei-tyhjät arvot"
+                    },
+                    "null_count": {
+                        "en": "Null Count",
+                        "fi": "Tyhjät arvot"
+                    },
+                    "all_parameters": {
+                        "en": "All Parameters",
+                        "fi": "Kaikki parametrit"
+                    },
+                    "error_loading_parameters": {
+                        "en": "Error loading full parameters: {error}",
+                        "fi": "Virhe parametrien latauksessa: {error}"
                     }
                 },
                 "help_texts": {
@@ -210,6 +402,10 @@ class UITextManager:
                     "focus_on_help": {
                         "en": "Specify what aspects of the text to focus on during analysis",
                         "fi": "Määritä mihin tekstin osa-alueisiin analyysi keskittyy"
+                    },
+                    "content_column_help": {
+                        "en": "Select the column containing the text content to analyze",
+                        "fi": "Valitse sarake, joka sisältää analysoitavan tekstisisällön"
                     }
                 },
                 "table_headers": {
@@ -228,25 +424,99 @@ class UITextManager:
                     "categories": {
                         "en": "Categories",
                         "fi": "Kategoriat"
-                    }
-                },
-                "result_labels": {
-                    "hierarchy": {
-                        "en": "Hierarchy",
-                        "fi": "Hierarkia"
+                    },
+                    "column_name": {
+                        "en": "Column Name",
+                        "fi": "Sarakkeen nimi"
+                    },
+                    "data_type": {
+                        "en": "Data Type",
+                        "fi": "Tietotyyppi"
+                    },
+                    "non_null_count": {
+                        "en": "Non-Null Count",
+                        "fi": "Ei-tyhjät arvot"
+                    },
+                    "null_count": {
+                        "en": "Null Count",
+                        "fi": "Tyhjät arvot"
+                    },
+                    "text_preview": {
+                        "en": "Text Preview",
+                        "fi": "Tekstin esikatselu"
+                    },
+                    "parameter_name": {
+                        "en": "Parameter Name",
+                        "fi": "Parametrin nimi"
+                    },
+                    "value": {
+                        "en": "Value",
+                        "fi": "Arvo"
                     },
                     "evidence": {
                         "en": "Evidence",
-                        "fi": "Todisteet"
+                        "fi": "Näyttö"
                     },
-                    "related_themes": {
-                        "en": "Related Themes",
-                        "fi": "Liittyvät teemat"
-                    },
-                    "analysis_failed": {
-                        "en": "Analysis failed",
-                        "fi": "Analyysi epäonnistui"
+                    "confidence": {
+                        "en": "Confidence",
+                        "fi": "Luottamus"
                     }
+                },
+                "result_labels": {
+                    "confidence_score": {
+                        "en": "Confidence Score",
+                        "fi": "Luottamusarvo"
+                    },
+                    "related_keywords": {
+                        "en": "Related Keywords",
+                        "fi": "Liittyvät avainsanat"
+                    },
+                    "theme_hierarchy": {
+                        "en": "Theme Hierarchy",
+                        "fi": "Teemahierarkia"
+                    },
+                    "category_evidence": {
+                        "en": "Category Evidence",
+                        "fi": "Kategorian näyttö"
+                    }
+                }
+            },
+            "placeholders": {
+                "drag_drop_text": {
+                    "en": "Drag and drop file here",
+                    "fi": "Raahaa ja pudota tiedosto tähän"
+                },
+                "file_limit_text": {
+                    "en": "Limit 200MB per file • XLSX, CSV",
+                    "fi": "Maksimikoko 200MB per tiedosto • XLSX, CSV"
+                },
+                "file_limit_text_params": {
+                    "en": "Limit 200MB per file • XLSX",
+                    "fi": "Maksimikoko 200MB per tiedosto • XLSX"
+                },
+                "not_set": {
+                    "en": "Not set",
+                    "fi": "Ei asetettu"
+                },
+                "no_evidence": {
+                    "en": "No evidence available",
+                    "fi": "Ei saatavilla olevaa näyttöä"
+                },
+                "no_results": {
+                    "en": "No results available",
+                    "fi": "Ei tuloksia saatavilla"
+                },
+                "no_themes": {
+                    "en": "No themes identified",
+                    "fi": "Ei tunnistettuja teemoja"
+                },
+                "no_categories": {
+                    "en": "No categories matched",
+                    "fi": "Ei sopivia kategorioita"
+                },
+                "no_keywords": {
+                    "en": "No keywords extracted",
+                    "fi": "Ei poimittuja avainsanoja"
                 }
             }
         }
@@ -344,7 +614,7 @@ class UITextManager:
                 
                 for key in sorted(all_keys):
                     # Get translations, preferring current over default
-                    translations = default_items.get(key, {}).copy()
+                    translations = default_items.get(key, {})
                     if key in current_items:
                         translations.update(current_items[key])
                     

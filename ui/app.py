@@ -9,7 +9,8 @@ import asyncio
 from langdetect import detect
 import atexit
 from text_manager import get_ui_text_manager
-from FileUtils import FileUtils
+from FileUtils import FileUtils, OutputFileType
+from datetime import datetime
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
@@ -345,15 +346,42 @@ def main():
     # Sidebar
     with st.sidebar:
         st.header(get_text("titles", "help", language=st.session_state.ui_language))
-        display_help(
-            get_text("help_texts", "what_is_title", language=st.session_state.ui_language),
-            get_text("help_texts", "what_is", language=st.session_state.ui_language)
-        )
         
-        display_help(
-            get_text("help_texts", "file_requirements_title", language=st.session_state.ui_language),
-            get_text("help_texts", "file_requirements", language=st.session_state.ui_language)
-        )
+        # Help sections
+        with st.expander("ℹ️ " + get_text("help_texts", "what_is_title", language=st.session_state.ui_language)):
+            st.markdown(get_text("help_texts", "what_is", language=st.session_state.ui_language))
+        
+        with st.expander("ℹ️ " + get_text("help_texts", "file_requirements_title", language=st.session_state.ui_language)):
+            st.markdown(get_text("help_texts", "file_requirements", language=st.session_state.ui_language))
+        
+        # Sample files section
+        st.subheader(get_text("titles", "sample_files", language=st.session_state.ui_language))
+        
+        # Business content sample
+        content_file = st.session_state.file_utils.get_data_path("raw") / f"business_test_content_{st.session_state.ui_language}.xlsx"
+        param_file = st.session_state.file_utils.get_data_path("parameters") / f"business_parameters_{st.session_state.ui_language}.xlsx"
+        
+        if content_file.exists():
+            with open(content_file, 'rb') as f:
+                st.download_button(
+                    label=get_text("buttons", "download_sample_content", language=st.session_state.ui_language),
+                    data=f.read(),
+                    file_name=content_file.name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+        
+        st.write("")  # Add spacing
+        
+        if param_file.exists():
+            with open(param_file, 'rb') as f:
+                st.download_button(
+                    label=get_text("buttons", "download_sample_parameters", language=st.session_state.ui_language),
+                    data=f.read(),
+                    file_name=param_file.name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
         
         # Language selector
         st.header(get_text("titles", "language_settings", language=st.session_state.ui_language))
@@ -376,76 +404,258 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(get_text("labels", "upload_texts", language=st.session_state.ui_language))
-        texts_file = st.file_uploader(
-            get_text("labels", "choose_texts", language=st.session_state.ui_language),
-            type=['xlsx', 'csv'],
-            key='texts_uploader'
-        )
-        if texts_file:
-            success, error = handle_file_upload(texts_file, "texts")
-            if success:
-                st.success(get_text("messages", "texts_loaded", language=st.session_state.ui_language))
-            else:
-                st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
+        with st.expander(get_text("labels", "upload_texts", language=st.session_state.ui_language), expanded=True):
+            texts_file = st.file_uploader(
+                get_text("labels", "choose_texts", language=st.session_state.ui_language),
+                type=['xlsx', 'csv'],
+                key='texts_uploader'
+            )
+            if texts_file:
+                success, error = handle_file_upload(texts_file, "texts")
+                if success:
+                    st.success(get_text("messages", "texts_loaded", language=st.session_state.ui_language))
+                else:
+                    st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
     
     with col2:
-        st.markdown(get_text("labels", "upload_parameters", language=st.session_state.ui_language))
-        params_file = st.file_uploader(
-            get_text("labels", "choose_parameters", language=st.session_state.ui_language),
-            type=['xlsx'],
-            key='params_uploader'
-        )
-        if params_file:
-            success, error = handle_file_upload(params_file, "parameters")
-            if success:
-                st.success(get_text("messages", "parameters_loaded", language=st.session_state.ui_language))
-            else:
-                st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
-    
+        with st.expander(get_text("labels", "upload_parameters", language=st.session_state.ui_language), expanded=True):
+            params_file = st.file_uploader(
+                get_text("labels", "choose_parameters", language=st.session_state.ui_language),
+                type=['xlsx'],
+                key='params_uploader'
+            )
+            if params_file:
+                success, error = handle_file_upload(params_file, "parameters")
+                if success:
+                    st.success(get_text("messages", "parameters_loaded", language=st.session_state.ui_language))
+                else:
+                    st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
+
+    # Add data preview section
+    if st.session_state.texts_df is not None or st.session_state.temp_parameter_file is not None:
+        with st.expander(get_text("titles", "check_uploaded_data", language=st.session_state.ui_language), expanded=False):
+            preview_tab1, preview_tab2 = st.tabs([
+                get_text("tabs", "content_details", language=st.session_state.ui_language),
+                get_text("tabs", "parameter_details", language=st.session_state.ui_language)
+            ])
+            
+            with preview_tab1:
+                if st.session_state.texts_df is not None:
+                    st.subheader(get_text("titles", "content_info", language=st.session_state.ui_language))
+                    
+                    # Basic Information
+                    st.markdown(f"**{get_text('titles', 'basic_information', language=st.session_state.ui_language)}:**")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric(get_text("labels", "number_of_rows", language=st.session_state.ui_language), 
+                                len(st.session_state.texts_df))
+                    with col2:
+                        st.metric(get_text("labels", "number_of_columns", language=st.session_state.ui_language), 
+                                len(st.session_state.texts_df.columns))
+                    with col3:
+                        selected_col = st.session_state.params.get('column_name_to_analyze', 
+                                     get_text("placeholders", "not_set", language=st.session_state.ui_language))
+                        st.metric(get_text("labels", "selected_text_column", language=st.session_state.ui_language), 
+                                selected_col)
+                    
+                    # Column Details
+                    st.markdown(f"\n**{get_text('titles', 'column_information', language=st.session_state.ui_language)}:**")
+                    column_info = []
+                    for idx, col in enumerate(st.session_state.texts_df.columns):
+                        non_null_count = st.session_state.texts_df[col].count()
+                        null_count = len(st.session_state.texts_df) - non_null_count
+                        column_info.append({
+                            get_text("labels", "column_name", language=st.session_state.ui_language): col,
+                            get_text("labels", "data_type", language=st.session_state.ui_language): str(st.session_state.texts_df[col].dtype),
+                            get_text("labels", "non_null_count", language=st.session_state.ui_language): non_null_count,
+                            get_text("labels", "null_count", language=st.session_state.ui_language): null_count
+                        })
+                    
+                    column_df = pd.DataFrame(column_info)
+                    st.dataframe(
+                        column_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Data Preview
+                    if st.checkbox(get_text("labels", "show_data_preview", language=st.session_state.ui_language), value=False):
+                        st.markdown(f"\n**{get_text('titles', 'data_sample', language=st.session_state.ui_language)}:**")
+                        st.dataframe(
+                            st.session_state.texts_df.head(),
+                            use_container_width=True
+                        )
+                else:
+                    st.info(get_text("messages", "no_content_file", language=st.session_state.ui_language))
+            
+            with preview_tab2:
+                if st.session_state.temp_parameter_file is not None:
+                    st.subheader(get_text("titles", "parameter_info", language=st.session_state.ui_language))
+                    
+                    # Display current parameter settings
+                    st.markdown(f"**{get_text('titles', 'current_settings', language=st.session_state.ui_language)}:**")
+                    param_info = {
+                        get_text("labels", "content_column", language=st.session_state.ui_language): 
+                            st.session_state.params.get('column_name_to_analyze', 
+                            get_text("placeholders", "not_set", language=st.session_state.ui_language)),
+                        get_text("labels", "max_keywords", language=st.session_state.ui_language): 
+                            st.session_state.params.get('max_keywords', 8),
+                        get_text("labels", "max_themes", language=st.session_state.ui_language): 
+                            st.session_state.params.get('max_themes', 3),
+                        get_text("labels", "focus", language=st.session_state.ui_language): 
+                            st.session_state.params.get('focus', "general topics"),
+                        get_text("labels", "interface_language", language=st.session_state.ui_language): 
+                            st.session_state.params.get('language', 'en')
+                    }
+                    
+                    # Create two columns for parameter display
+                    param_cols = st.columns(2)
+                    for i, (key, value) in enumerate(param_info.items()):
+                        with param_cols[i % 2]:
+                            st.metric(key, value)
+                    
+                    # Show all parameters option
+                    if st.checkbox(get_text("labels", "show_all_parameters", language=st.session_state.ui_language), value=False):
+                        st.markdown(f"\n**{get_text('labels', 'all_parameters', language=st.session_state.ui_language)}:**")
+                        try:
+                            parameter_handler = ParameterHandler(st.session_state.temp_parameter_file)
+                            params = parameter_handler.get_parameters()
+                            st.json(params.dict())
+                        except Exception as e:
+                            st.error(get_text("labels", "error_loading_parameters", language=st.session_state.ui_language, error=str(e)))
+                else:
+                    st.info(get_text("messages", "no_parameter_file", language=st.session_state.ui_language))
+
     # Parameter settings
-    st.subheader(get_text("titles", "parameters", language=st.session_state.ui_language), divider='grey')
-    
     if st.session_state.texts_df is not None:
-        col1, col2, col3 = st.columns(3)
+        with st.expander(get_text("titles", "parameters", language=st.session_state.ui_language), expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.selectbox(
+                    get_text("labels", "content_column", language=st.session_state.ui_language),
+                    options=st.session_state.texts_df.columns,
+                    index=list(st.session_state.texts_df.columns).index(st.session_state.params.get('column_name_to_analyze')) if st.session_state.params.get('column_name_to_analyze') in st.session_state.texts_df.columns else 0,
+                    key='column_name_to_analyze',
+                    help=get_text("help_texts", "content_column_help", language=st.session_state.ui_language)
+                )
+            
+            with col2:
+                st.slider(
+                    get_text("labels", "max_keywords", language=st.session_state.ui_language),
+                    min_value=1,
+                    max_value=20,
+                    value=st.session_state.params.get('max_keywords', 8),
+                    help=get_text("help_texts", "max_keywords_help", language=st.session_state.ui_language),
+                    key='max_keywords'
+                )
+            
+            with col3:
+                st.slider(
+                    get_text("labels", "max_themes", language=st.session_state.ui_language),
+                    min_value=1,
+                    max_value=10,
+                    value=st.session_state.params.get('max_themes', 3),
+                    help=get_text("help_texts", "max_themes_help", language=st.session_state.ui_language),
+                    key='max_themes'
+                )
+            
+            with col4:
+                st.text_input(
+                    get_text("labels", "focus", language=st.session_state.ui_language),
+                    value=st.session_state.params.get('focus', "general topics"),
+                    key='focus',
+                    help=get_text("help_texts", "focus_on_help", language=st.session_state.ui_language)
+                )
+            
+            # Add reset parameters button
+            if st.button(get_text("buttons", "reset_parameters", language=st.session_state.ui_language)):
+                st.session_state.params = {
+                    'max_keywords': 8,
+                    'max_themes': 3,
+                    'focus': "general topics",
+                    'language': st.session_state.ui_language
+                }
+                st.rerun()
         
-        with col1:
-            st.number_input(
-                get_text("labels", "max_keywords", language=st.session_state.ui_language),
-                min_value=1,
-                max_value=20,
-                value=st.session_state.params.get('max_keywords', 8),
-                key='max_keywords',
-                help=get_text("help_texts", "max_keywords_help", language=st.session_state.ui_language)
-            )
-        
-        with col2:
-            st.number_input(
-                get_text("labels", "max_themes", language=st.session_state.ui_language),
-                min_value=1,
-                max_value=10,
-                value=st.session_state.params.get('max_themes', 3),
-                key='max_themes',
-                help=get_text("help_texts", "max_themes_help", language=st.session_state.ui_language)
-            )
-        
-        with col3:
-            st.text_input(
-                get_text("labels", "focus", language=st.session_state.ui_language),
-                value=st.session_state.params.get('focus', "general topics"),
-                key='focus',
-                help=get_text("help_texts", "focus_on_help", language=st.session_state.ui_language)
-            )
-        
-        # Analysis button
+        # Analysis button with progress tracking - moved outside expander
         if st.button(get_text("buttons", "analyze", language=st.session_state.ui_language), type="primary", use_container_width=True):
-            asyncio.run(analyze_texts(st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].tolist()))
-    
+            texts = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].tolist()
+            total_texts = len(texts)
+            
+            # Initialize progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                results = {
+                    "keywords": [],
+                    "themes": [],
+                    "categories": []
+                }
+                
+                success_count = 0
+                
+                for idx, text in enumerate(texts):
+                    # Update progress
+                    current_progress = (idx) / total_texts
+                    progress_bar.progress(current_progress)
+                    status_text.text(get_text("messages", "processing_text", 
+                                            language=st.session_state.ui_language,
+                                            current=idx + 1,
+                                            total=total_texts))
+                    
+                    try:
+                        result = asyncio.run(st.session_state.analyzer.analyze(
+                            text=text,
+                            analysis_types=["keywords", "themes", "categories"]
+                        ))
+                        
+                        if result and result.success:
+                            if result.keywords and result.keywords.success:
+                                results["keywords"].append(result.keywords)
+                            if result.themes and result.themes.success:
+                                results["themes"].append(result.themes)
+                            if result.categories and result.categories.success:
+                                results["categories"].append(result.categories)
+                            success_count += 1
+                        else:
+                            # Store empty results for failed analyses
+                            results["keywords"].append(None)
+                            results["themes"].append(None)
+                            results["categories"].append(None)
+                            st.warning(f"Analysis failed for text: {text[:100]}...")
+                    except Exception as e:
+                        st.warning(f"Analysis failed for text: {text[:100]}... Error: {str(e)}")
+                        results["keywords"].append(None)
+                        results["themes"].append(None)
+                        results["categories"].append(None)
+                
+                # Set final progress
+                progress_bar.progress(1.0)
+                status_text.empty()
+                
+                st.session_state.analysis_results = results
+                
+                if success_count == 0:
+                    st.error(get_text("messages", "analysis_failed_all", language=st.session_state.ui_language, total_texts=total_texts))
+                elif success_count < total_texts:
+                    st.warning(get_text("messages", "analysis_partial", language=st.session_state.ui_language, success_count=success_count, total_texts=total_texts))
+                else:
+                    st.success(get_text("messages", "analysis_complete", language=st.session_state.ui_language))
+                
+            except Exception as e:
+                st.error(f"Error during analysis: {str(e)}")
+            finally:
+                # Clean up progress indicators
+                progress_bar.empty()
+                status_text.empty()
+
     # Results section
     if st.session_state.analysis_results:
         st.subheader(get_text("titles", "results", language=st.session_state.ui_language), divider='grey')
         
-        # Display results in tabs
+        # Results tabs
         tab1, tab2, tab3 = st.tabs([
             get_text("tabs", "keywords", language=st.session_state.ui_language),
             get_text("tabs", "themes", language=st.session_state.ui_language),
@@ -581,6 +791,63 @@ def main():
                             )
                         }
                     )
+
+        # Add spacing between tabs and export button
+        st.write("")
+        st.write("")
+
+        # Create export data
+        export_data = pd.DataFrame({
+            "content": st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].tolist(),
+            "keywords": [
+                " • ".join([f"{kw.keyword} ({kw.score:.2f})" for kw in sorted(r.keywords, key=lambda x: x.score, reverse=True)[:st.session_state.max_keywords]])
+                if r and r.success else "" for r in st.session_state.analysis_results['keywords']
+            ],
+            "themes": [
+                " • ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in r.themes]) +
+                (f" | " + " | ".join([f"{main_theme} → {', '.join(sub_themes)}" 
+                                    for main_theme, sub_themes in r.theme_hierarchy.items()]) 
+                 if r.theme_hierarchy else "")
+                if r and r.success else "" for r in st.session_state.analysis_results['themes']
+            ],
+            "categories": [
+                " • ".join([f"{cat.name} ({cat.confidence:.2f})" +
+                          (f" [{', '.join([f'{e.text} ({e.relevance:.2f})' for e in cat.evidence])}]" if cat.evidence else "") +
+                          (f" ({', '.join(cat.themes)})" if hasattr(cat, 'themes') and cat.themes else "")
+                          for cat in r.matches])
+                if r and r.success else "" for r in st.session_state.analysis_results['categories']
+            ]
+        })
+
+        # Save results using FileUtils
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"analysis_results_{timestamp}"
+        
+        # Save the file using FileUtils
+        saved_files, _ = st.session_state.file_utils.save_data_to_storage(
+            data={"results": export_data},
+            file_name=filename,
+            output_type="processed",
+            output_filetype=OutputFileType.XLSX,
+            include_timestamp=True
+        )
+
+        # Get the saved file path
+        saved_file_path = Path(list(saved_files.values())[0])
+
+        # Create download button for the saved file
+        with open(saved_file_path, 'rb') as f:
+            export_button = st.download_button(
+                label=get_text("buttons", "export_results", language=st.session_state.ui_language),
+                data=f.read(),
+                file_name=saved_file_path.name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="secondary",
+                use_container_width=True
+            )
+        
+        if export_button:
+            st.success(get_text("messages", "export_complete", language=st.session_state.ui_language))
 
 # Update cleanup function to clean up temp directory
 def cleanup_temp_files():
