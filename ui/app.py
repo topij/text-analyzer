@@ -9,6 +9,7 @@ import asyncio
 from langdetect import detect
 import atexit
 from text_manager import get_ui_text_manager
+from FileUtils import FileUtils
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
@@ -22,10 +23,6 @@ from src.core.config import AnalyzerConfig
 from src.loaders.parameter_handler import ParameterHandler
 from ui.text_manager import UITextManager, get_ui_text_manager
 from src.config import ConfigManager
-
-# Initialize text manager
-text_manager = get_ui_text_manager()
-get_text = text_manager.get_text
 
 # Initialize session state first
 if 'ui_language' not in st.session_state:
@@ -44,6 +41,14 @@ if 'detected_language' not in st.session_state:
     st.session_state.detected_language = None
 if 'temp_parameter_file' not in st.session_state:
     st.session_state.temp_parameter_file = None
+if 'file_utils' not in st.session_state:
+    st.session_state.file_utils = FileUtils()
+if 'text_manager' not in st.session_state:
+    st.session_state.text_manager = get_ui_text_manager(file_utils=st.session_state.file_utils)
+
+# Get text function that uses cached text manager
+def get_text(category: str, key: str, language: Optional[str] = None, **kwargs) -> str:
+    return st.session_state.text_manager.get_text(category, key, language, **kwargs)
 
 # Page configuration
 st.set_page_config(
@@ -73,7 +78,6 @@ def initialize_analyzer():
     """Initialize the analyzer with proper configuration."""
     # Get components from environment manager
     components = EnvironmentManager.get_instance().get_components()
-    file_utils = components["file_utils"]
     config_manager = components["config_manager"]
     
     # Get configurations
@@ -109,7 +113,7 @@ def initialize_analyzer():
     # Create analyzer
     analyzer = LiteSemanticAnalyzer(
         llm=llm,  # Pass LLM directly without modification
-        file_utils=file_utils,
+        file_utils=st.session_state.file_utils,
         parameter_file=st.session_state.temp_parameter_file if hasattr(st.session_state, 'temp_parameter_file') else None,
         language=st.session_state.get('ui_language', 'en'),
         available_categories=available_categories
@@ -162,7 +166,7 @@ if 'analyzer' not in st.session_state:
     st.session_state.analyzer = LiteSemanticAnalyzer(
         llm=llm,
         parameter_file=st.session_state.temp_parameter_file if hasattr(st.session_state, 'temp_parameter_file') else None,
-        file_utils=components["file_utils"],
+        file_utils=st.session_state.file_utils,  # Use cached FileUtils instance
         language=st.session_state.get('ui_language', 'en'),
         available_categories=available_categories
     )
@@ -186,7 +190,7 @@ def handle_file_upload(uploaded_file, file_type: str) -> Tuple[bool, Optional[st
     if uploaded_file is not None:
         try:
             # Get data directory and create temp subdirectory
-            data_dir = st.session_state.analyzer.file_utils.get_data_path("raw")
+            data_dir = st.session_state.file_utils.get_data_path("raw")
             temp_dir = data_dir / "temp"
             temp_dir.mkdir(exist_ok=True)
             
@@ -638,8 +642,8 @@ def main():
 # Update cleanup function to clean up temp directory
 def cleanup_temp_files():
     """Clean up temporary files when the app stops."""
-    if st.session_state.analyzer and st.session_state.analyzer.file_utils:
-        temp_dir = st.session_state.analyzer.file_utils.get_data_path("raw") / "temp"
+    if 'file_utils' in st.session_state:
+        temp_dir = st.session_state.file_utils.get_data_path("raw") / "temp"
         if temp_dir.exists():
             # Clean up all files in temp directory
             for file in temp_dir.iterdir():
