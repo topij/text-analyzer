@@ -270,6 +270,25 @@ async def analyze_texts(texts: List[str]) -> Dict[str, Any]:
         if "analyzer" not in st.session_state:
             st.session_state.analyzer = initialize_analyzer()
             
+        # Update both parameters and config from UI
+        if hasattr(st.session_state.analyzer, 'parameters'):
+            st.session_state.analyzer.parameters.general.max_keywords = st.session_state.max_keywords
+            st.session_state.analyzer.parameters.general.max_themes = st.session_state.max_themes
+            st.session_state.analyzer.parameters.general.focus_on = st.session_state.focus
+            
+        # Update config as well
+        if hasattr(st.session_state.analyzer, 'config'):
+            st.session_state.analyzer.config.update({
+                'max_keywords': st.session_state.max_keywords,
+                'max_themes': st.session_state.max_themes,
+                'focus_on': st.session_state.focus,
+                'include_compounds': True,  # Keep existing compound word handling
+                'min_confidence': 0.6  # Keep existing confidence threshold
+            })
+            
+        # Reinitialize the analyzer to ensure changes take effect
+        st.session_state.analyzer = initialize_analyzer()
+            
         results = {
             "keywords": [],
             "themes": [],
@@ -436,9 +455,12 @@ def main():
                 for idx, result in enumerate(st.session_state.analysis_results['keywords']):
                     text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
                     if result and result.success:
+                        # Sort keywords by score and take only the top N based on UI setting
+                        sorted_keywords = sorted(result.keywords, key=lambda x: x.score, reverse=True)
+                        top_keywords = sorted_keywords[:st.session_state.max_keywords]
                         keywords_str = ", ".join([
                             f"{kw.keyword} ({kw.score:.2f})"
-                            for kw in result.keywords
+                            for kw in top_keywords
                         ])
                     else:
                         keywords_str = "Analysis failed"
