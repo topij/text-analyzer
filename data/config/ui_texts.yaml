@@ -1,0 +1,159 @@
+default_language: en
+categories:
+  titles: Main UI titles and headers
+  messages: Status and information messages
+  buttons: Button labels
+  help_texts: Help and documentation texts
+  labels: Input field labels
+  placeholders: Input field placeholder texts
+  tabs: Tab labels and titles
+  table_headers: Table column headers
+  result_labels: Analysis result labels and descriptions
+texts:
+  titles:
+    main:
+      en: Text Analyzer
+      fi: Tekstianalysaattori
+    help:
+      en: Help & Documentation
+      fi: Ohje & Dokumentaatio
+    parameters:
+      en: Parameter Settings
+      fi: Parametrien asetukset
+    file_upload:
+      en: File Upload
+      fi: Tiedoston lataus
+    results:
+      en: Analysis Results
+      fi: Analyysin tulokset
+    language_settings:
+      en: Language Settings
+      fi: Kieliasetukset
+  messages:
+    analyzing:
+      en: Analyzing text...
+      fi: Analysoidaan tekstiä...
+    error:
+      en: '❌ Error: {error}'
+      fi: '❌ Virhe: {error}'
+    texts_loaded:
+      en: ✅ Texts loaded successfully
+      fi: ✅ Tekstit ladattu onnistuneesti
+    parameters_loaded:
+      en: ✅ Parameters loaded successfully
+      fi: ✅ Parametrit ladattu onnistuneesti
+    error_load:
+      en: '❌ Error loading file: {error}'
+      fi: '❌ Virhe tiedoston latauksessa: {error}'
+    analysis_complete:
+      en: ✅ Analysis completed successfully
+      fi: ✅ Analyysi valmis
+    analysis_partial:
+      en: ⚠️ Analysis completed with {success_count} successful out of {total_texts}
+        texts
+      fi: ⚠️ Analyysi valmistui {success_count} onnistuneella {total_texts} tekstistä
+    analysis_failed_all:
+      en: ❌ Analysis failed for all {total_texts} texts
+      fi: ❌ Analyysi epäonnistui kaikille {total_texts} tekstille
+    analysis_failed_text:
+      en: 'Analysis failed for text: {text}...'
+      fi: 'Analyysi epäonnistui tekstille: {text}...'
+  tabs:
+    keywords:
+      en: Keywords
+      fi: Avainsanat
+    themes:
+      en: Themes
+      fi: Teemat
+    categories:
+      en: Categories
+      fi: Kategoriat
+  buttons:
+    analyze:
+      en: 🔍 Analyze
+      fi: 🔍 Analysoi
+  labels:
+    max_keywords:
+      en: Max Keywords
+      fi: Avainsanojen maksimimäärä
+    max_themes:
+      en: Max Themes
+      fi: Teemojen maksimimäärä
+    focus:
+      en: Analysis Focus
+      fi: Analyysin fokus
+    interface_language:
+      en: Interface Language
+      fi: Käyttöliittymän kieli
+    upload_texts:
+      en: Upload text file for analysis
+      fi: Lataa tekstitiedosto analysoitavaksi
+    choose_texts:
+      en: Choose text file
+      fi: Valitse tekstitiedosto
+    upload_parameters:
+      en: Upload parameter file (optional)
+      fi: Lataa parametritiedosto (valinnainen)
+    choose_parameters:
+      en: Choose parameter file
+      fi: Valitse parametritiedosto
+  help_texts:
+    what_is_title:
+      en: What is Text Analyzer?
+      fi: Mikä on Tekstianalysaattori?
+    what_is:
+      en: Text Analyzer is a powerful tool for semantic text analysis. It extracts
+        keywords, identifies themes, and categorizes content using advanced natural
+        language processing.
+      fi: Tekstianalysaattori on tehokas työkalu semanttiseen tekstianalyysiin. Se
+        poimii avainsanoja, tunnistaa teemoja ja luokittelee sisältöä käyttäen edistynyttä
+        luonnollisen kielen käsittelyä.
+    file_requirements_title:
+      en: File Requirements
+      fi: Tiedostovaatimukset
+    file_requirements:
+      en: '- Text files should be in XLSX format
+
+        - Maximum file size is 20MB
+
+        - Text should be in Finnish or English'
+      fi: '- Tekstitiedostojen tulee olla XLSX-muodossa
+
+        - Tiedoston maksimikoko on 20MB
+
+        - Tekstin tulee olla suomeksi tai englanniksi'
+    max_keywords_help:
+      en: Maximum number of keywords to extract from each text
+      fi: Maksimimäärä avainsanoja, jotka poimitaan kustakin tekstistä
+    max_themes_help:
+      en: Maximum number of themes to identify from each text
+      fi: Maksimimäärä teemoja, jotka tunnistetaan kustakin tekstistä
+    focus_on_help:
+      en: Specify what aspects of the text to focus on during analysis
+      fi: Määritä mihin tekstin osa-alueisiin analyysi keskittyy
+  table_headers:
+    text_content:
+      en: Text Content
+      fi: Tekstisisältö
+    keywords:
+      en: Keywords
+      fi: Avainsanat
+    themes:
+      en: Themes
+      fi: Teemat
+    categories:
+      en: Categories
+      fi: Kategoriat
+  result_labels:
+    hierarchy:
+      en: Hierarchy
+      fi: Hierarkia
+    evidence:
+      en: Evidence
+      fi: Todisteet
+    related_themes:
+      en: Related Themes
+      fi: Liittyvät teemat
+    analysis_failed:
+      en: Analysis failed
+      fi: Analyysi epäonnistui

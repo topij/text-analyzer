@@ -8,6 +8,7 @@ import tempfile
 import asyncio
 from langdetect import detect
 import atexit
+from text_manager import get_ui_text_manager
 
 # Add the project root to Python path
 project_root = Path(__file__).parent.parent
@@ -22,21 +23,31 @@ from src.loaders.parameter_handler import ParameterHandler
 from ui.text_manager import UITextManager, get_ui_text_manager
 from src.config import ConfigManager
 
-# Initialize managers
-ui_manager = get_ui_text_manager()
+# Initialize text manager
+text_manager = get_ui_text_manager()
+get_text = text_manager.get_text
 
-def get_text(category: str, key: str, **kwargs) -> str:
-    """Get UI text in current language"""
-    return ui_manager.get_text(
-        category, 
-        key, 
-        language=st.session_state.get('ui_language', 'en'),
-        **kwargs
-    )
+# Initialize session state first
+if 'ui_language' not in st.session_state:
+    st.session_state.ui_language = 'fi'  # Default to Finnish
+if 'previous_ui_language' not in st.session_state:
+    st.session_state.previous_ui_language = 'fi'
+if 'params' not in st.session_state:
+    st.session_state.params = {}
+if 'analysis_results' not in st.session_state:
+    st.session_state.analysis_results = None
+if 'show_parameters' not in st.session_state:
+    st.session_state.show_parameters = False
+if 'texts_df' not in st.session_state:
+    st.session_state.texts_df = None
+if 'detected_language' not in st.session_state:
+    st.session_state.detected_language = None
+if 'temp_parameter_file' not in st.session_state:
+    st.session_state.temp_parameter_file = None
 
 # Page configuration
 st.set_page_config(
-    page_title="Text Analyzer",
+    page_title=get_text("titles", "main", language=st.session_state.ui_language),
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -155,23 +166,6 @@ if 'analyzer' not in st.session_state:
         language=st.session_state.get('ui_language', 'en'),
         available_categories=available_categories
     )
-
-if 'params' not in st.session_state:
-    st.session_state.params = {}
-if 'analysis_results' not in st.session_state:
-    st.session_state.analysis_results = None
-if 'show_parameters' not in st.session_state:
-    st.session_state.show_parameters = False
-if 'texts_df' not in st.session_state:
-    st.session_state.texts_df = None
-if 'ui_language' not in st.session_state:
-    st.session_state.ui_language = 'fi'  # Default to Finnish
-if 'previous_ui_language' not in st.session_state:
-    st.session_state.previous_ui_language = 'fi'
-if 'detected_language' not in st.session_state:
-    st.session_state.detected_language = None
-if 'temp_parameter_file' not in st.session_state:
-    st.session_state.temp_parameter_file = None
 
 def detect_content_language(df: pd.DataFrame, text_column: str) -> str:
     """Detect the primary language of the content"""
@@ -298,7 +292,7 @@ async def analyze_texts(texts: List[str]) -> Dict[str, Any]:
         success_count = 0
         total_texts = len(texts)
         
-        with st.spinner(get_text("messages", "analyzing")):
+        with st.spinner(get_text("messages", "analyzing", language=st.session_state.ui_language)):
             for text in texts:
                 try:
                     result = await st.session_state.analyzer.analyze(
@@ -328,13 +322,109 @@ async def analyze_texts(texts: List[str]) -> Dict[str, Any]:
             
             st.session_state.analysis_results = results
             
-            # Show appropriate completion message
+            # Display results in tabs
+            tab1, tab2, tab3 = st.tabs([
+                get_text("tabs", "keywords", language=st.session_state.ui_language),
+                get_text("tabs", "themes", language=st.session_state.ui_language),
+                get_text("tabs", "categories", language=st.session_state.ui_language)
+            ])
+            
+            with tab1:
+                if 'keywords' in st.session_state.analysis_results:
+                    # Create a list to store rows for the keywords table
+                    keywords_data = []
+                    for idx, result in enumerate(st.session_state.analysis_results['keywords']):
+                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                        if result and result.success:
+                            # Sort keywords by score and take only the top N based on UI setting
+                            sorted_keywords = sorted(result.keywords, key=lambda x: x.score, reverse=True)
+                            top_keywords = sorted_keywords[:st.session_state.max_keywords]
+                            keywords_str = ", ".join([
+                                f"{kw.keyword} ({kw.score:.2f})"
+                                for kw in top_keywords
+                            ])
+                        else:
+                            keywords_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                        keywords_data.append({
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                            get_text("table_headers", "keywords", language=st.session_state.ui_language): keywords_str
+                        })
+                    
+                    # Display keywords table
+                    if keywords_data:
+                        st.dataframe(
+                            pd.DataFrame(keywords_data),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+            
+            with tab2:
+                if 'themes' in st.session_state.analysis_results:
+                    # Create a list to store rows for the themes table
+                    themes_data = []
+                    for idx, result in enumerate(st.session_state.analysis_results['themes']):
+                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                        if result and result.success:
+                            themes_str = ", ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes])
+                            if result.theme_hierarchy:
+                                themes_str += f"\n\n{get_text('result_labels', 'hierarchy', language=st.session_state.ui_language)}:\n" + "\n".join([
+                                    f"- {main_theme}: {', '.join(sub_themes)}"
+                                    for main_theme, sub_themes in result.theme_hierarchy.items()
+                                ])
+                        else:
+                            themes_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                        themes_data.append({
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                            get_text("table_headers", "themes", language=st.session_state.ui_language): themes_str
+                        })
+                    
+                    # Display themes table
+                    if themes_data:
+                        st.dataframe(
+                            pd.DataFrame(themes_data),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+            
+            with tab3:
+                if 'categories' in st.session_state.analysis_results:
+                    # Create a list to store rows for the categories table
+                    categories_data = []
+                    for idx, result in enumerate(st.session_state.analysis_results['categories']):
+                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
+                        if result and result.success:
+                            categories_str = ""
+                            for cat in result.matches:
+                                categories_str += f"{cat.name} ({cat.confidence:.2f})\n"
+                                if cat.evidence:
+                                    categories_str += f"{get_text('result_labels', 'evidence', language=st.session_state.ui_language)}:\n" + "\n".join([
+                                        f"- {evidence.text} (relevance: {evidence.relevance:.2f})"
+                                        for evidence in cat.evidence
+                                    ]) + "\n"
+                                if hasattr(cat, 'themes') and cat.themes:
+                                    categories_str += f"{get_text('result_labels', 'related_themes', language=st.session_state.ui_language)}: {', '.join(cat.themes)}\n"
+                                categories_str += "\n"
+                        else:
+                            categories_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                        categories_data.append({
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                            get_text("table_headers", "categories", language=st.session_state.ui_language): categories_str
+                        })
+                    
+                    # Display categories table
+                    if categories_data:
+                        st.dataframe(
+                            pd.DataFrame(categories_data),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
             if success_count == 0:
-                st.error(f"Analysis failed for all {total_texts} texts")
+                st.error(get_text("messages", "analysis_failed_all", language=st.session_state.ui_language, total_texts=total_texts))
             elif success_count < total_texts:
-                st.warning(f"Analysis completed with {success_count} successful out of {total_texts} texts")
+                st.warning(get_text("messages", "analysis_partial", language=st.session_state.ui_language, success_count=success_count, total_texts=total_texts))
             else:
-                st.success(get_text("messages", "analysis_complete"))
+                st.success(get_text("messages", "analysis_complete", language=st.session_state.ui_language))
         
         return results
         
@@ -343,25 +433,25 @@ async def analyze_texts(texts: List[str]) -> Dict[str, Any]:
         raise
 
 def main():
-    st.title(get_text("titles", "main"))
+    st.title(get_text("titles", "main", language=st.session_state.ui_language))
     
     # Sidebar
     with st.sidebar:
-        st.header(get_text("titles", "help"))
+        st.header(get_text("titles", "help", language=st.session_state.ui_language))
         display_help(
-            get_text("help_texts", "what_is_title"),
-            get_text("help_texts", "what_is")
+            get_text("help_texts", "what_is_title", language=st.session_state.ui_language),
+            get_text("help_texts", "what_is", language=st.session_state.ui_language)
         )
         
         display_help(
-            get_text("help_texts", "file_requirements_title"),
-            get_text("help_texts", "file_requirements")
+            get_text("help_texts", "file_requirements_title", language=st.session_state.ui_language),
+            get_text("help_texts", "file_requirements", language=st.session_state.ui_language)
         )
         
         # Language selector
-        st.header(get_text("titles", "language_settings"))
+        st.header(get_text("titles", "language_settings", language=st.session_state.ui_language))
         ui_language = st.selectbox(
-            get_text("labels", "interface_language"),
+            get_text("labels", "interface_language", language=st.session_state.ui_language),
             options=['fi', 'en'],
             index=0 if st.session_state.ui_language == 'fi' else 1,
             format_func=lambda x: 'Suomi' if x == 'fi' else 'English',
@@ -373,80 +463,87 @@ def main():
             st.rerun()
     
     # Main content area
-    st.subheader(get_text("titles", "file_upload"), divider='grey')
+    st.subheader(get_text("titles", "file_upload", language=st.session_state.ui_language), divider='grey')
     
     # File upload section
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(get_text("labels", "upload_texts"))
+        st.markdown(get_text("labels", "upload_texts", language=st.session_state.ui_language))
         texts_file = st.file_uploader(
-            get_text("labels", "choose_texts"),
+            get_text("labels", "choose_texts", language=st.session_state.ui_language),
             type=['xlsx', 'csv'],
             key='texts_uploader'
         )
         if texts_file:
             success, error = handle_file_upload(texts_file, "texts")
             if success:
-                st.success(get_text("messages", "texts_loaded"))
+                st.success(get_text("messages", "texts_loaded", language=st.session_state.ui_language))
             else:
-                st.error(get_text("messages", "error_load", error=error))
+                st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
     
     with col2:
-        st.markdown(get_text("labels", "upload_parameters"))
+        st.markdown(get_text("labels", "upload_parameters", language=st.session_state.ui_language))
         params_file = st.file_uploader(
-            get_text("labels", "choose_parameters"),
+            get_text("labels", "choose_parameters", language=st.session_state.ui_language),
             type=['xlsx'],
             key='params_uploader'
         )
         if params_file:
             success, error = handle_file_upload(params_file, "parameters")
             if success:
-                st.success(get_text("messages", "parameters_loaded"))
+                st.success(get_text("messages", "parameters_loaded", language=st.session_state.ui_language))
             else:
-                st.error(get_text("messages", "error_load", error=error))
+                st.error(get_text("messages", "error_load", language=st.session_state.ui_language, error=error))
     
     # Parameter settings
-    st.subheader(get_text("titles", "parameters"), divider='grey')
+    st.subheader(get_text("titles", "parameters", language=st.session_state.ui_language), divider='grey')
     
     if st.session_state.texts_df is not None:
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.number_input(
-                get_text("labels", "max_keywords"),
+                get_text("labels", "max_keywords", language=st.session_state.ui_language),
                 min_value=1,
                 max_value=20,
                 value=st.session_state.params.get('max_keywords', 8),
-                key='max_keywords'
+                key='max_keywords',
+                help=get_text("help_texts", "max_keywords_help", language=st.session_state.ui_language)
             )
         
         with col2:
             st.number_input(
-                get_text("labels", "max_themes"),
+                get_text("labels", "max_themes", language=st.session_state.ui_language),
                 min_value=1,
                 max_value=10,
                 value=st.session_state.params.get('max_themes', 3),
-                key='max_themes'
+                key='max_themes',
+                help=get_text("help_texts", "max_themes_help", language=st.session_state.ui_language)
             )
         
         with col3:
             st.text_input(
-                get_text("labels", "focus"),
+                get_text("labels", "focus", language=st.session_state.ui_language),
                 value=st.session_state.params.get('focus', "general topics"),
-                key='focus'
+                key='focus',
+                help=get_text("help_texts", "focus_on_help", language=st.session_state.ui_language)
             )
         
         # Analysis button
-        if st.button(get_text("buttons", "analyze"), type="primary", use_container_width=True):
+        if st.button(get_text("buttons", "analyze", language=st.session_state.ui_language), type="primary", use_container_width=True):
             asyncio.run(analyze_texts(st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].tolist()))
     
     # Results section
     if st.session_state.analysis_results:
-        st.subheader(get_text("titles", "results"), divider='grey')
+        st.subheader(get_text("titles", "results", language=st.session_state.ui_language), divider='grey')
         
         # Display results in tabs
-        tab1, tab2, tab3 = st.tabs(["Keywords", "Themes", "Categories"])
+        tab1, tab2, tab3 = st.tabs([
+            get_text("tabs", "keywords", language=st.session_state.ui_language),
+            get_text("tabs", "themes", language=st.session_state.ui_language),
+            get_text("tabs", "categories", language=st.session_state.ui_language)
+        ])
         
         with tab1:
             if 'keywords' in st.session_state.analysis_results:
@@ -463,8 +560,11 @@ def main():
                             for kw in top_keywords
                         ])
                     else:
-                        keywords_str = "Analysis failed"
-                    keywords_data.append({"Text Content": text, "Keywords": keywords_str})
+                        keywords_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                    keywords_data.append({
+                        get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                        get_text("table_headers", "keywords", language=st.session_state.ui_language): keywords_str
+                    })
                 
                 # Display keywords table
                 if keywords_data:
@@ -483,13 +583,16 @@ def main():
                     if result and result.success:
                         themes_str = ", ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes])
                         if result.theme_hierarchy:
-                            themes_str += "\n\nHierarchy:\n" + "\n".join([
+                            themes_str += f"\n\n{get_text('result_labels', 'hierarchy', language=st.session_state.ui_language)}:\n" + "\n".join([
                                 f"- {main_theme}: {', '.join(sub_themes)}"
                                 for main_theme, sub_themes in result.theme_hierarchy.items()
                             ])
                     else:
-                        themes_str = "Analysis failed"
-                    themes_data.append({"Text Content": text, "Themes": themes_str})
+                        themes_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                    themes_data.append({
+                        get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                        get_text("table_headers", "themes", language=st.session_state.ui_language): themes_str
+                    })
                 
                 # Display themes table
                 if themes_data:
@@ -510,16 +613,19 @@ def main():
                         for cat in result.matches:
                             categories_str += f"{cat.name} ({cat.confidence:.2f})\n"
                             if cat.evidence:
-                                categories_str += "Evidence:\n" + "\n".join([
+                                categories_str += f"{get_text('result_labels', 'evidence', language=st.session_state.ui_language)}:\n" + "\n".join([
                                     f"- {evidence.text} (relevance: {evidence.relevance:.2f})"
                                     for evidence in cat.evidence
                                 ]) + "\n"
                             if hasattr(cat, 'themes') and cat.themes:
-                                categories_str += f"Related Themes: {', '.join(cat.themes)}\n"
+                                categories_str += f"{get_text('result_labels', 'related_themes', language=st.session_state.ui_language)}: {', '.join(cat.themes)}\n"
                             categories_str += "\n"
                     else:
-                        categories_str = "Analysis failed"
-                    categories_data.append({"Text Content": text, "Categories": categories_str})
+                        categories_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
+                    categories_data.append({
+                        get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
+                        get_text("table_headers", "categories", language=st.session_state.ui_language): categories_str
+                    })
                 
                 # Display categories table
                 if categories_data:

@@ -249,6 +249,13 @@ main() {
         exit 1
     fi
     
+    # Initialize UI components
+    log_msg "Setting up UI components..."
+    if ! "$CONDA_PREFIX/bin/python" "ui/setup_ui.py"; then
+        log_msg "Error: UI setup failed"
+        exit 1
+    fi
+    
     log_msg "Setup completed successfully!"
     return 0
 }
