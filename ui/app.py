@@ -326,103 +326,6 @@ async def analyze_texts(texts: List[str]) -> Dict[str, Any]:
             
             st.session_state.analysis_results = results
             
-            # Display results in tabs
-            tab1, tab2, tab3 = st.tabs([
-                get_text("tabs", "keywords", language=st.session_state.ui_language),
-                get_text("tabs", "themes", language=st.session_state.ui_language),
-                get_text("tabs", "categories", language=st.session_state.ui_language)
-            ])
-            
-            with tab1:
-                if 'keywords' in st.session_state.analysis_results:
-                    # Create a list to store rows for the keywords table
-                    keywords_data = []
-                    for idx, result in enumerate(st.session_state.analysis_results['keywords']):
-                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
-                        if result and result.success:
-                            # Sort keywords by score and take only the top N based on UI setting
-                            sorted_keywords = sorted(result.keywords, key=lambda x: x.score, reverse=True)
-                            top_keywords = sorted_keywords[:st.session_state.max_keywords]
-                            keywords_str = ", ".join([
-                                f"{kw.keyword} ({kw.score:.2f})"
-                                for kw in top_keywords
-                            ])
-                        else:
-                            keywords_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
-                        keywords_data.append({
-                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
-                            get_text("table_headers", "keywords", language=st.session_state.ui_language): keywords_str
-                        })
-                    
-                    # Display keywords table
-                    if keywords_data:
-                        st.dataframe(
-                            pd.DataFrame(keywords_data),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-            
-            with tab2:
-                if 'themes' in st.session_state.analysis_results:
-                    # Create a list to store rows for the themes table
-                    themes_data = []
-                    for idx, result in enumerate(st.session_state.analysis_results['themes']):
-                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
-                        if result and result.success:
-                            themes_str = ", ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes])
-                            if result.theme_hierarchy:
-                                themes_str += f"\n\n{get_text('result_labels', 'hierarchy', language=st.session_state.ui_language)}:\n" + "\n".join([
-                                    f"- {main_theme}: {', '.join(sub_themes)}"
-                                    for main_theme, sub_themes in result.theme_hierarchy.items()
-                                ])
-                        else:
-                            themes_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
-                        themes_data.append({
-                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
-                            get_text("table_headers", "themes", language=st.session_state.ui_language): themes_str
-                        })
-                    
-                    # Display themes table
-                    if themes_data:
-                        st.dataframe(
-                            pd.DataFrame(themes_data),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-            
-            with tab3:
-                if 'categories' in st.session_state.analysis_results:
-                    # Create a list to store rows for the categories table
-                    categories_data = []
-                    for idx, result in enumerate(st.session_state.analysis_results['categories']):
-                        text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
-                        if result and result.success:
-                            categories_str = ""
-                            for cat in result.matches:
-                                categories_str += f"{cat.name} ({cat.confidence:.2f})\n"
-                                if cat.evidence:
-                                    categories_str += f"{get_text('result_labels', 'evidence', language=st.session_state.ui_language)}:\n" + "\n".join([
-                                        f"- {evidence.text} (relevance: {evidence.relevance:.2f})"
-                                        for evidence in cat.evidence
-                                    ]) + "\n"
-                                if hasattr(cat, 'themes') and cat.themes:
-                                    categories_str += f"{get_text('result_labels', 'related_themes', language=st.session_state.ui_language)}: {', '.join(cat.themes)}\n"
-                                categories_str += "\n"
-                        else:
-                            categories_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
-                        categories_data.append({
-                            get_text("table_headers", "text_content", language=st.session_state.ui_language): text,
-                            get_text("table_headers", "categories", language=st.session_state.ui_language): categories_str
-                        })
-                    
-                    # Display categories table
-                    if categories_data:
-                        st.dataframe(
-                            pd.DataFrame(categories_data),
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
             if success_count == 0:
                 st.error(get_text("messages", "analysis_failed_all", language=st.session_state.ui_language, total_texts=total_texts))
             elif success_count < total_texts:
@@ -559,7 +462,7 @@ def main():
                         # Sort keywords by score and take only the top N based on UI setting
                         sorted_keywords = sorted(result.keywords, key=lambda x: x.score, reverse=True)
                         top_keywords = sorted_keywords[:st.session_state.max_keywords]
-                        keywords_str = ", ".join([
+                        keywords_str = " • ".join([
                             f"{kw.keyword} ({kw.score:.2f})"
                             for kw in top_keywords
                         ])
@@ -570,12 +473,23 @@ def main():
                         get_text("table_headers", "keywords", language=st.session_state.ui_language): keywords_str
                     })
                 
-                # Display keywords table
+                # Display keywords table with text wrapping
                 if keywords_data:
+                    df = pd.DataFrame(keywords_data)
                     st.dataframe(
-                        pd.DataFrame(keywords_data),
+                        df,
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        column_config={
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Original text content"
+                            ),
+                            get_text("table_headers", "keywords", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Identified keywords with confidence scores"
+                            )
+                        }
                     )
         
         with tab2:
@@ -585,12 +499,20 @@ def main():
                 for idx, result in enumerate(st.session_state.analysis_results['themes']):
                     text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
                     if result and result.success:
-                        themes_str = ", ".join([f"{theme.name} ({theme.confidence:.2f})" for theme in result.themes])
+                        # Format themes with confidence scores
+                        themes_str = " • ".join([
+                            f"{theme.name} ({theme.confidence:.2f})"
+                            for theme in result.themes
+                        ])
+                        
+                        # Add theme hierarchy if available
                         if result.theme_hierarchy:
-                            themes_str += f"\n\n{get_text('result_labels', 'hierarchy', language=st.session_state.ui_language)}:\n" + "\n".join([
-                                f"- {main_theme}: {', '.join(sub_themes)}"
-                                for main_theme, sub_themes in result.theme_hierarchy.items()
-                            ])
+                            themes_str += f"\n{get_text('result_labels', 'hierarchy', language=st.session_state.ui_language)}: "
+                            hierarchy_parts = []
+                            for main_theme, sub_themes in result.theme_hierarchy.items():
+                                sub_themes_str = ", ".join(sub_themes)
+                                hierarchy_parts.append(f"{main_theme} → {sub_themes_str}")
+                            themes_str += " | ".join(hierarchy_parts)
                     else:
                         themes_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
                     themes_data.append({
@@ -600,10 +522,21 @@ def main():
                 
                 # Display themes table
                 if themes_data:
+                    df = pd.DataFrame(themes_data)
                     st.dataframe(
-                        pd.DataFrame(themes_data),
+                        df,
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        column_config={
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Original text content"
+                            ),
+                            get_text("table_headers", "themes", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Identified themes with confidence scores and hierarchy"
+                            )
+                        }
                     )
         
         with tab3:
@@ -613,17 +546,16 @@ def main():
                 for idx, result in enumerate(st.session_state.analysis_results['categories']):
                     text = st.session_state.texts_df[st.session_state.params['column_name_to_analyze']].iloc[idx]
                     if result and result.success:
-                        categories_str = ""
+                        categories_parts = []
                         for cat in result.matches:
-                            categories_str += f"{cat.name} ({cat.confidence:.2f})\n"
+                            cat_str = f"{cat.name} ({cat.confidence:.2f})"
                             if cat.evidence:
-                                categories_str += f"{get_text('result_labels', 'evidence', language=st.session_state.ui_language)}:\n" + "\n".join([
-                                    f"- {evidence.text} (relevance: {evidence.relevance:.2f})"
-                                    for evidence in cat.evidence
-                                ]) + "\n"
+                                evidence_str = ", ".join([f"{e.text} ({e.relevance:.2f})" for e in cat.evidence])
+                                cat_str += f" [{evidence_str}]"
                             if hasattr(cat, 'themes') and cat.themes:
-                                categories_str += f"{get_text('result_labels', 'related_themes', language=st.session_state.ui_language)}: {', '.join(cat.themes)}\n"
-                            categories_str += "\n"
+                                cat_str += f" ({', '.join(cat.themes)})"
+                            categories_parts.append(cat_str)
+                        categories_str = " • ".join(categories_parts)
                     else:
                         categories_str = get_text("result_labels", "analysis_failed", language=st.session_state.ui_language)
                     categories_data.append({
@@ -633,10 +565,21 @@ def main():
                 
                 # Display categories table
                 if categories_data:
+                    df = pd.DataFrame(categories_data)
                     st.dataframe(
-                        pd.DataFrame(categories_data),
+                        df,
                         use_container_width=True,
-                        hide_index=True
+                        hide_index=True,
+                        column_config={
+                            get_text("table_headers", "text_content", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Original text content"
+                            ),
+                            get_text("table_headers", "categories", language=st.session_state.ui_language): st.column_config.TextColumn(
+                                width="medium",
+                                help="Identified categories with confidence scores and evidence"
+                            )
+                        }
                     )
 
 # Update cleanup function to clean up temp directory
