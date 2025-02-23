@@ -12,6 +12,65 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to check environment variables
+check_environment() {
+    log_msg "Checking environment configuration..."
+    
+    # Check if .env file exists
+    if [ ! -f ".env" ]; then
+        log_msg "Error: .env file not found"
+        log_msg "Please create a .env file with required API keys. Example:"
+        echo "
+# Required: Choose one of these options
+# Option 1: OpenAI
+OPENAI_API_KEY='your-key-here'
+
+# Option 2: Azure OpenAI
+AZURE_OPENAI_API_KEY='your-key-here'
+AZURE_OPENAI_ENDPOINT='your-endpoint'
+
+# Optional: For Finnish language support
+VOIKKO_LIBRARY_PATH='/opt/homebrew/lib/libvoikko.dylib'  # macOS default path
+VOIKKO_DICT_PATH='/opt/homebrew/lib/voikko'  # macOS dictionary path"
+        return 1
+    }
+    
+    # Source the .env file
+    set -a
+    source .env
+    set +a
+    
+    # Check for required API keys
+    if [ -z "$OPENAI_API_KEY" ] && { [ -z "$AZURE_OPENAI_API_KEY" ] || [ -z "$AZURE_OPENAI_ENDPOINT" ]; }; then
+        log_msg "Error: Missing required API configuration"
+        log_msg "Please ensure either OPENAI_API_KEY or both AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT are set in .env"
+        return 1
+    fi
+    
+    # Validate OpenAI API key format if provided
+    if [ -n "$OPENAI_API_KEY" ] && [[ ! "$OPENAI_API_KEY" =~ ^sk-[a-zA-Z0-9]{32,}$ ]]; then
+        log_msg "Warning: OPENAI_API_KEY format looks incorrect (should start with 'sk-' followed by at least 32 characters)"
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            return 1
+        fi
+    fi
+    
+    # Validate Azure OpenAI endpoint format if provided
+    if [ -n "$AZURE_OPENAI_ENDPOINT" ] && [[ ! "$AZURE_OPENAI_ENDPOINT" =~ ^https:// ]]; then
+        log_msg "Warning: AZURE_OPENAI_ENDPOINT should start with 'https://'"
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            return 1
+        fi
+    fi
+    
+    log_msg "Environment configuration looks good"
+    return 0
+}
+
 # Function to setup Voikko for Mac
 setup_voikko_mac() {
     log_msg "Setting up Voikko for Mac..."
@@ -180,6 +239,12 @@ EOF
 # Main setup function
 main() {
     log_msg "Starting setup..."
+    
+    # Check environment configuration first
+    if ! check_environment; then
+        log_msg "Environment check failed. Please fix the issues and try again."
+        exit 1
+    }
     
     # Check Python version
     if ! command_exists python3; then
