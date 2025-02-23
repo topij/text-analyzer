@@ -407,7 +407,8 @@ def main():
         with st.expander(get_text("labels", "upload_texts", language=st.session_state.ui_language), expanded=True):
             texts_file = st.file_uploader(
                 get_text("labels", "choose_texts", language=st.session_state.ui_language),
-                type=['xlsx', 'csv'],
+                type=['xlsx'],
+                #type=['xlsx', 'csv'], CSV files are not supported yet
                 key='texts_uploader'
             )
             if texts_file:

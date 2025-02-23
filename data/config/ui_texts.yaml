@@ -16,7 +16,7 @@ texts:
       fi: Tekstianalysaattori
     help:
       en: Help & Documentation
-      fi: Ohje & Dokumentaatio
+      fi: Ohjeet ja esimerkit
     parameters:
       en: Parameter Settings
       fi: Parametrien asetukset
@@ -256,14 +256,14 @@ texts:
       en: File Requirements
       fi: Tiedostovaatimukset
     file_requirements:
-      en: '- Text files should be in XLSX or CSV format
+      en: '- Text files should be in XLSX format
 
-        - Maximum file size is 200MB
+        - Maximum file size is 20MB
 
         - Text should be in Finnish or English'
-      fi: '- Tekstitiedostojen tulee olla XLSX- tai CSV-muodossa
+      fi: '- Tekstitiedostojen tulee olla XLSX-muodossa
 
-        - Tiedoston maksimikoko on 200MB
+        - Tiedoston maksimikoko on 20MB
 
         - Tekstin tulee olla suomeksi tai englanniksi'
     max_keywords_help:
@@ -336,11 +336,11 @@ placeholders:
     en: Drag and drop file here
     fi: Raahaa ja pudota tiedosto tähän
   file_limit_text:
-    en: Limit 200MB per file • XLSX, CSV
-    fi: Maksimikoko 200MB per tiedosto • XLSX, CSV
+    en: Limit 20MB per file • XLSX
+    fi: Maksimikoko 20MB per tiedosto • XLSX
   file_limit_text_params:
-    en: Limit 200MB per file • XLSX
-    fi: Maksimikoko 200MB per tiedosto • XLSX
+    en: Limit 20MB per file • XLSX
+    fi: Maksimikoko 20MB per tiedosto • XLSX
   not_set:
     en: Not set
     fi: Ei asetettu

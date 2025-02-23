@@ -175,6 +175,7 @@ cython_debug/
 _archive/
 old_code/
 library_docs/
+other_docs/
 temp/
 *.xlsx
 *.csv

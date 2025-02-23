@@ -388,8 +388,8 @@ class UITextManager:
                         "fi": "Tiedostovaatimukset"
                     },
                     "file_requirements": {
-                        "en": "- Text files should be in XLSX or CSV format\n- Maximum file size is 200MB\n- Text should be in Finnish or English",
-                        "fi": "- Tekstitiedostojen tulee olla XLSX- tai CSV-muodossa\n- Tiedoston maksimikoko on 200MB\n- Tekstin tulee olla suomeksi tai englanniksi"
+                        "en": "- Text files should be in XLSX format\n- Maximum file size is 20MB\n- Text should be in Finnish or English",
+                        "fi": "- Tekstitiedostojen tulee olla XLSX-muodossa\n- Tiedoston maksimikoko on 20MB\n- Tekstin tulee olla suomeksi tai englanniksi"
                     },
                     "max_keywords_help": {
                         "en": "Maximum number of keywords to extract from each text",
@@ -487,12 +487,12 @@ class UITextManager:
                     "fi": "Raahaa ja pudota tiedosto tähän"
                 },
                 "file_limit_text": {
-                    "en": "Limit 200MB per file • XLSX, CSV",
-                    "fi": "Maksimikoko 200MB per tiedosto • XLSX, CSV"
+                    "en": "Limit 20MB per file • XLSX",
+                    "fi": "Maksimikoko 20MB per tiedosto • XLSX"
                 },
                 "file_limit_text_params": {
-                    "en": "Limit 200MB per file • XLSX",
-                    "fi": "Maksimikoko 200MB per tiedosto • XLSX"
+                    "en": "Limit 20MB per file • XLSX",
+                    "fi": "Maksimikoko 20MB per tiedosto • XLSX"
                 },
                 "not_set": {
                     "en": "Not set",
