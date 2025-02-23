@@ -812,10 +812,14 @@ def main():
                 if r and r.success else "" for r in st.session_state.analysis_results['themes']
             ],
             "categories": [
-                " • ".join([f"{cat.name} ({cat.confidence:.2f})" +
-                          (f" [{', '.join([f'{e.text} ({e.relevance:.2f})' for e in cat.evidence])}]" if cat.evidence else "") +
-                          (f" ({', '.join(cat.themes)})" if hasattr(cat, 'themes') and cat.themes else "")
-                          for cat in r.matches])
+                " • ".join([f"{cat.name} ({cat.confidence:.2f})" for cat in r.matches])
+                if r and r.success else "" for r in st.session_state.analysis_results['categories']
+            ],
+            "category_evidence": [
+                " • ".join([
+                    f"{cat.name}: " + ", ".join([f"{e.text} ({e.relevance:.2f})" for e in cat.evidence])
+                    for cat in r.matches if cat.evidence
+                ])
                 if r and r.success else "" for r in st.session_state.analysis_results['categories']
             ]
         })
