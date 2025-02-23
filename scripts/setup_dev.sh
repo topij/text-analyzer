@@ -343,6 +343,14 @@ main() {
     fi
     
     log_msg "Setup completed successfully!"
+    echo
+    echo "╭──────────────────────────────────────────────────╮"
+    echo "│ Remember to activate the environment before use: │"
+    echo "│ $ conda activate semantic-analyzer               │"
+    echo "│                                                  │"
+    echo "│ Check README.md for getting started guide!       │"
+    echo "╰──────────────────────────────────────────────────╯"
+    echo
     return 0
 }
 
