@@ -33,7 +33,7 @@ AZURE_OPENAI_ENDPOINT='your-endpoint'
 VOIKKO_LIBRARY_PATH='/opt/homebrew/lib/libvoikko.dylib'  # macOS default path
 VOIKKO_DICT_PATH='/opt/homebrew/lib/voikko'  # macOS dictionary path"
         return 1
-    }
+    fi
     
     # Source the .env file
     set -a
@@ -41,19 +41,40 @@ VOIKKO_DICT_PATH='/opt/homebrew/lib/voikko'  # macOS dictionary path"
     set +a
     
     # Check for required API keys
-    if [ -z "$OPENAI_API_KEY" ] && { [ -z "$AZURE_OPENAI_API_KEY" ] || [ -z "$AZURE_OPENAI_ENDPOINT" ]; }; then
+    if [ -z "$OPENAI_API_KEY" ] && ( [ -z "$AZURE_OPENAI_API_KEY" ] || [ -z "$AZURE_OPENAI_ENDPOINT" ] ); then
         log_msg "Error: Missing required API configuration"
         log_msg "Please ensure either OPENAI_API_KEY or both AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT are set in .env"
         return 1
     fi
     
     # Validate OpenAI API key format if provided
-    if [ -n "$OPENAI_API_KEY" ] && [[ ! "$OPENAI_API_KEY" =~ ^sk-[a-zA-Z0-9]{32,}$ ]]; then
-        log_msg "Warning: OPENAI_API_KEY format looks incorrect (should start with 'sk-' followed by at least 32 characters)"
-        read -p "Continue anyway? (y/N) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            return 1
+    if [ -n "$OPENAI_API_KEY" ]; then
+        # Remove any quotes from the key for validation
+        CLEAN_KEY=$(echo "$OPENAI_API_KEY" | tr -d "'\"")
+        
+        # Debug: Print key format without revealing the full key
+        PREFIX=${CLEAN_KEY:0:8}  # Get "sk-proj-" part
+        KEY_LENGTH=${#CLEAN_KEY}
+        #log_msg "Debug: Key starts with: $PREFIX, total length: $KEY_LENGTH chars"
+        
+        # Check if key starts with sk-proj-
+        if [[ "$CLEAN_KEY" =~ ^sk-proj- ]]; then
+            # Key format is correct, check length
+            if [ ${#CLEAN_KEY} -lt 40 ]; then
+                log_msg "Warning: OPENAI_API_KEY seems too short (should be at least 40 characters in total)"
+                read -p "Continue anyway? (y/N) " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    return 1
+                fi
+            fi
+        else
+            log_msg "Warning: OPENAI_API_KEY format looks incorrect (should start with 'sk-proj-' for project-specific keys)"
+            read -p "Continue anyway? (y/N) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return 1
+            fi
         fi
     fi
     
@@ -244,7 +265,7 @@ main() {
     if ! check_environment; then
         log_msg "Environment check failed. Please fix the issues and try again."
         exit 1
-    }
+    fi
     
     # Check Python version
     if ! command_exists python3; then
