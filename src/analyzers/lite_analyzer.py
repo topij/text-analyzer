@@ -41,6 +41,8 @@ class CategoryOutput(BaseModel):
     """Category with metadata."""
     name: str = Field(description="Category name")
     confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+    is_suggested: bool = Field(default=False, description="Whether this is a suggested category")
+    justification: Optional[str] = Field(default=None, description="Justification for suggested categories")
 
 class LiteAnalysisOutput(BaseModel):
     """Combined output schema for lite semantic analysis."""
@@ -63,7 +65,11 @@ class LiteAnalysisOutput(BaseModel):
     )
     categories: List[CategoryOutput] = Field(
         default_factory=list,
-        description="List of matched categories with confidence scores"
+        description="List of matched predefined categories with confidence scores"
+    )
+    suggested_categories: List[CategoryOutput] = Field(
+        default_factory=list,
+        description="List of additional suggested categories based on content analysis"
     )
 
 class LiteSemanticAnalyzer:
@@ -627,6 +633,9 @@ class LiteSemanticAnalyzer:
             if cache_key in self._tfidf_cache:
                 return self._tfidf_cache[cache_key]
             
+            # Create a set of actual words in the text
+            text_words = set(word.lower() for word in text.split())
+            
             # Create a small corpus with the text and its sentences
             import nltk
             corpus = [text]
@@ -644,19 +653,18 @@ class LiteSemanticAnalyzer:
             self.tfidf_vectorizer.min_df = min_df
             self.tfidf_vectorizer.max_df = 0.85
             
-            # Add predefined keywords to vocabulary
-            if hasattr(self.tfidf_vectorizer, 'vocabulary_'):
-                vocab = self.tfidf_vectorizer.vocabulary_
-                for keyword in self.predefined_keywords:
-                    if isinstance(keyword, str) and keyword not in vocab:
-                        vocab[keyword] = len(vocab)
+            # Only include predefined keywords that actually appear in the text
+            valid_predefined = {
+                kw for kw in self.predefined_keywords 
+                if isinstance(kw, str) and (
+                    kw.lower() in text.lower() or 
+                    any(word.lower() in text_words for word in kw.split())
+                )
+            }
             
-            # Create a list of predefined keywords for the vocabulary
-            predefined_vocab = [kw for kw in self.predefined_keywords if isinstance(kw, str)]
-            
-            # Update vectorizer settings with predefined vocabulary
-            if predefined_vocab:
-                self.tfidf_vectorizer.vocabulary = {word: idx for idx, word in enumerate(predefined_vocab)}
+            # Update vectorizer settings with filtered vocabulary
+            if valid_predefined:
+                self.tfidf_vectorizer.vocabulary = {word: idx for idx, word in enumerate(valid_predefined)}
             
             # Fit and transform the text
             tfidf_matrix = self.tfidf_vectorizer.fit_transform(corpus)
@@ -670,26 +678,14 @@ class LiteSemanticAnalyzer:
             # Track seen base forms to avoid duplicates
             seen_base_forms = set()
             
-            # First process known phrases
+            # Process all terms
             for word, score in zip(feature_names, tfidf_scores):
-                if score > 0 and word.lower() in self.predefined_keywords:
-                    normalized_score = 0.6 + (0.35 * score / max_score)  # Scale to 0.6-0.95 range
-                    final_score = self._calculate_keyword_score(word, normalized_score)
+                if score > 0:
+                    # Skip if word or its parts don't appear in the text
+                    word_parts = set(w.lower() for w in word.split())
+                    if not (word.lower() in text.lower() or word_parts & text_words):
+                        continue
                     
-                    freq = sum(1 for s in corpus if word.lower() in s.lower())
-                    
-                    keyword_output = KeywordOutput(
-                        keyword=word,
-                        score=round(final_score, 2),
-                        is_compound=True,
-                        frequency=freq
-                    )
-                    keyword_scores.append((keyword_output, final_score))
-                    seen_base_forms.add(word.lower())
-            
-            # Then process other terms
-            for word, score in zip(feature_names, tfidf_scores):
-                if score > 0 and word.lower() not in seen_base_forms:
                     # Skip invalid keywords
                     if not self._is_valid_keyword(word):
                         continue
@@ -705,12 +701,16 @@ class LiteSemanticAnalyzer:
                     if base_form.lower() in seen_base_forms:
                         continue
                     
-                    # Calculate normalized score with various adjustments
-                    normalized_score = 0.4 + (0.4 * score / max_score)  # Scale to 0.4-0.8 range
+                    # Calculate normalized score
+                    if word.lower() in valid_predefined:
+                        normalized_score = 0.6 + (0.35 * score / max_score)  # Scale to 0.6-0.95 range for predefined
+                    else:
+                        normalized_score = 0.4 + (0.4 * score / max_score)  # Scale to 0.4-0.8 range for others
+                    
                     final_score = self._calculate_keyword_score(word, normalized_score)
                     
                     # Skip if score too low
-                    if final_score < 0.4:  # Increased minimum threshold
+                    if final_score < 0.4:
                         continue
                     
                     # Calculate frequency
@@ -740,10 +740,6 @@ class LiteSemanticAnalyzer:
                 
                 for used in used_terms:
                     if kw_lower in used or used in kw_lower:
-                        # Allow known phrases to override their parts
-                        if kw_lower in self.predefined_keywords and kw_lower not in used:
-                            overlaps = False
-                            break
                         overlaps = True
                         break
                 
@@ -820,18 +816,27 @@ Follow these guidelines:
    - Consider domain context in scoring
 
 3. Theme-Guided Category Analysis:
-   - Match only with available categories if specified
-   - Score based on thematic alignment
-   - Consider theme relationships
-   - Provide evidence for each category match
-   - Focus on categories relevant to the domain context
+   - First, match with available predefined categories: {list(self.available_categories) if self.available_categories else 'None'}
+   - Then, suggest 2-3 additional relevant categories that capture:
+     * The main intent or purpose of the text
+     * Key topics or subject matter
+     * Type of request or communication
+   - For each suggested category:
+     * Use clear, descriptive names
+     * Provide specific justification based on text content
+     * Consider domain context and focus area
+   - Score all categories based on relevance and evidence
+   - Ensure categories reflect both explicit and implicit content
 
 Output requirements:
 - Keywords must have scores between 0.0 and 1.0
 - Include compound word detection
 - Track keyword frequencies
 - Ensure theme hierarchy is complete
-- Categories must have confidence scores"""
+- For each category (predefined or suggested):
+  * Provide confidence score between 0.0 and 1.0
+  * For suggested categories, include clear justification
+- Aim for high-precision category matches and suggestions"""
 
         return prompt
 
@@ -840,6 +845,13 @@ Output requirements:
         processed_keywords = []
         processed_terms = set()
         
+        # Create a set of words from the original text for validation
+        text_words = set()
+        for kw in keywords:
+            text_words.update(w.lower() for w in kw.keyword.split())
+        for cw in compound_words:
+            text_words.update(w.lower() for w in cw.split())
+        
         # Process multi-word expressions and compounds first
         for term in [*compound_words, *[k for k in keywords if len(k.split()) > 1]]:
             if not term:
@@ -847,6 +859,11 @@ Output requirements:
                 
             base_form = self.language_processor.get_base_form(term) if self.language_processor else term
             if not base_form or base_form.lower() in processed_terms:
+                continue
+                
+            # Skip if none of the term's words appear in the text
+            term_words = set(w.lower() for w in term.split())
+            if not term_words & text_words:
                 continue
                 
             # Calculate confidence for multi-word terms
@@ -859,7 +876,10 @@ Output requirements:
             proper_noun_bonus = 0.1 if any(w[0].isupper() for w in term.split()) else 0
             phrase_bonus = 0.1 if self._is_valid_phrase(term) else 0
             
-            confidence = min(base_score + length_bonus + technical_bonus + proper_noun_bonus + phrase_bonus, 1.0)
+            # Only apply predefined keyword boost if the term appears in the text
+            predefined_bonus = 0.2 if term.lower() in self.predefined_keywords and term.lower() in text_words else 0
+            
+            confidence = min(base_score + length_bonus + technical_bonus + proper_noun_bonus + phrase_bonus + predefined_bonus, 1.0)
             
             # Calculate frequency safely
             freq = sum(1 for k in keywords if k.keyword.lower() == term.lower())
@@ -874,7 +894,8 @@ Output requirements:
                 metadata={
                     "word_count": word_count,
                     "is_technical": self._is_technical_term(term),
-                    "is_valid_phrase": self._is_valid_phrase(term)
+                    "is_valid_phrase": self._is_valid_phrase(term),
+                    "in_text": True
                 }
             ))
             processed_terms.add(base_form.lower())
@@ -968,6 +989,10 @@ Output requirements:
         start_time = datetime.now()
         
         try:
+            # Create set of words that actually appear in the text
+            text_words = set(word.lower() for word in text.split())
+            text_lower = text.lower()
+            
             # Detect language if not specified
             detected_language = detect(text)
             if detected_language != self.language:
@@ -1022,7 +1047,16 @@ Output requirements:
             for kw in parsed_output.keywords + parsed_output.compound_words:
                 if not kw.keyword or not self._is_valid_keyword(kw.keyword):
                     continue
-                keyword_counts[kw.keyword.lower()] = keyword_counts.get(kw.keyword.lower(), 0) + (kw.frequency or 1)
+                    
+                # Skip keywords that don't appear in the text
+                kw_lower = kw.keyword.lower()
+                kw_parts = set(w.lower() for w in kw_lower.split())
+                
+                # Check if the keyword or its parts appear in the text
+                if not (kw_lower in text_lower or kw_parts & text_words):
+                    continue
+                    
+                keyword_counts[kw_lower] = keyword_counts.get(kw_lower, 0) + (kw.frequency or 1)
             
             # Second pass: create KeywordInfo objects with theme-enhanced scoring
             processed_keywords = set()  # Track processed keywords to avoid duplicates
@@ -1030,6 +1064,11 @@ Output requirements:
             # Process regular keywords
             for kw in parsed_output.keywords:
                 if not kw.keyword or kw.keyword.lower() in processed_keywords:
+                    continue
+                    
+                # Skip keywords that don't appear in the text
+                kw_lower = kw.keyword.lower()
+                if kw_lower not in keyword_counts:
                     continue
                     
                 # Get base form with special handling for compounds
@@ -1042,8 +1081,8 @@ Output requirements:
                 
                 # Base score adjustments
                 base_score = kw.score
-                if processed.lower() in self.predefined_keywords:
-                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords
+                if processed.lower() in self.predefined_keywords and processed.lower() in text_lower:
+                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords only if in text
                 
                 # Theme-based score adjustment
                 adjusted_score = base_score * (1.0 + theme_relevance * 0.3)  # Up to 30% boost
@@ -1061,15 +1100,21 @@ Output requirements:
                         "is_valid_phrase": len(processed.split()) > 1 and self._is_valid_phrase(processed),
                         "theme_relevance": theme_relevance,
                         "predefined": processed.lower() in self.predefined_keywords,
-                        "domain_match": self._matches_domain_context(processed)
+                        "domain_match": self._matches_domain_context(processed),
+                        "in_text": True
                     }
                 )
                 all_keywords.append(keyword_info)
                 processed_keywords.add(processed.lower())
             
-            # Process compound words
+            # Process compound words with similar strict filtering
             for cw in parsed_output.compound_words:
                 if not cw.keyword or cw.keyword.lower() in processed_keywords:
+                    continue
+                    
+                # Skip compounds that don't appear in the text
+                cw_lower = cw.keyword.lower()
+                if cw_lower not in keyword_counts:
                     continue
                     
                 # Get base form with special handling for compounds
@@ -1082,8 +1127,8 @@ Output requirements:
                 
                 # Base score adjustments
                 base_score = cw.score
-                if processed.lower() in self.predefined_keywords:
-                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords
+                if processed.lower() in self.predefined_keywords and processed.lower() in text_lower:
+                    base_score = min(base_score * 1.3, 0.98)  # Boost predefined keywords only if in text
                 
                 # Theme-based score adjustment
                 adjusted_score = base_score * (1.0 + theme_relevance * 0.3)  # Up to 30% boost
@@ -1104,7 +1149,8 @@ Output requirements:
                         "is_valid_phrase": self._is_valid_phrase(processed),
                         "theme_relevance": theme_relevance,
                         "predefined": processed.lower() in self.predefined_keywords,
-                        "domain_match": self._matches_domain_context(processed)
+                        "domain_match": self._matches_domain_context(processed),
+                        "in_text": True
                     }
                 )
                 all_keywords.append(keyword_info)
@@ -1141,53 +1187,127 @@ Output requirements:
             
             # Process categories with theme-enhanced scoring
             category_matches = []
-            for cat in parsed_output.categories:
-                # Calculate semantic similarity with themes
-                theme_similarities = [
-                    self._calculate_theme_category_similarity(
-                        cat.name.lower(),
-                        theme.name.lower(),
-                        theme.description.lower()
-                    )
-                    for theme in themes
-                ]
-                max_theme_similarity = max(theme_similarities) if theme_similarities else 0
-                
+            
+            # Process both predefined and suggested categories
+            all_categories = []
+            if self.available_categories:
+                # Add predefined categories
+                all_categories.extend([
+                    cat for cat in parsed_output.categories 
+                    if cat.name in self.available_categories
+                ])
+            
+            # Add suggested categories
+            all_categories.extend([
+                cat for cat in parsed_output.suggested_categories
+                if cat.name not in (self.available_categories or set())
+            ])
+            
+            # If no categories yet, use all suggested ones
+            if not all_categories and parsed_output.categories:
+                all_categories = parsed_output.categories
+            
+            for cat in all_categories:
                 # Calculate evidence-based confidence
                 evidence_list = []
                 keyword_relevance = 0
+                
+                # Add justification as evidence for suggested categories
+                if cat.justification:
+                    evidence_list.append(Evidence(
+                        text=f"Justification: {cat.justification}",
+                        relevance=0.8
+                    ))
+                
+                # Check for direct text evidence
+                cat_words = set(cat.name.lower().split())
+                text_evidence = cat_words & text_words
+                if text_evidence:
+                    evidence_list.append(Evidence(
+                        text=" ".join(text_evidence),
+                        relevance=0.9  # High confidence for direct matches
+                    ))
+                    keyword_relevance = 0.9
+                
+                # Check keyword-based evidence
                 for kw in all_keywords:
-                    if cat.name.lower() in kw.keyword.lower() or kw.keyword.lower() in cat.name.lower():
-                        relevance = kw.score * (1 + kw.metadata.get("theme_relevance", 0) * 0.25)
+                    # Only consider keywords that were actually found in the text
+                    if not kw.metadata.get("in_text", False):
+                        continue
+                        
+                    kw_lower = kw.keyword.lower()
+                    # Direct match
+                    if cat.name.lower() in kw_lower or kw_lower in cat.name.lower():
+                        relevance = kw.score * 1.2  # Boost direct matches
                         evidence_list.append(Evidence(
                             text=kw.keyword,
                             relevance=min(relevance, 1.0)
                         ))
                         keyword_relevance = max(keyword_relevance, relevance)
+                    # Partial match
+                    else:
+                        kw_words = set(kw_lower.split())
+                        if kw_words & cat_words:
+                            relevance = kw.score * 0.8  # Reduce score for partial matches
+                            evidence_list.append(Evidence(
+                                text=kw.keyword,
+                                relevance=min(relevance, 0.8)
+                            ))
+                            keyword_relevance = max(keyword_relevance, relevance)
                 
-                # Combined scoring
-                base_confidence = 0.7
-                theme_bonus = max_theme_similarity * 0.25  # Up to 25% boost from themes
-                keyword_bonus = keyword_relevance * 0.1  # Up to 10% boost from keywords
-                confidence = min(base_confidence + theme_bonus + keyword_bonus, 1.0)
+                # Calculate theme-based evidence
+                theme_evidence = []
+                max_theme_similarity = 0
+                related_themes = []
                 
-                # Get related themes
-                related_themes = [
-                    theme.name for theme in themes
-                    if self._calculate_theme_category_similarity(
+                for theme in themes:
+                    theme_lower = theme.name.lower()
+                    similarity = self._calculate_theme_category_similarity(
                         cat.name.lower(),
-                        theme.name.lower(),
+                        theme_lower,
                         theme.description.lower()
-                    ) > 0.5
-                ]
+                    )
+                    
+                    if similarity > 0.5:  # Only consider strong theme matches
+                        max_theme_similarity = max(max_theme_similarity, similarity)
+                        related_themes.append(theme.name)
+                        
+                        # Add theme-based evidence
+                        theme_evidence.append(Evidence(
+                            text=f"Theme: {theme.name}",
+                            relevance=similarity
+                        ))
                 
-                category_matches.append(CategoryMatch(
-                    name=cat.name,
-                    confidence=confidence,
-                    description=f"Category match: {cat.name}",
-                    evidence=evidence_list,
-                    themes=related_themes
-                ))
+                # Combine all evidence
+                evidence_list.extend(theme_evidence)
+                
+                # Calculate final confidence score
+                if evidence_list:
+                    # Base confidence from direct text and keyword evidence
+                    base_confidence = max(keyword_relevance, 0.6)  # Minimum 0.6 if we have any evidence
+                    
+                    # Theme bonus (up to 20% boost)
+                    theme_bonus = max_theme_similarity * 0.2
+                    
+                    # Evidence count bonus (up to 10% boost)
+                    evidence_bonus = min(len(evidence_list) * 0.05, 0.1)
+                    
+                    # Adjust confidence for suggested categories
+                    confidence = min(base_confidence + theme_bonus + evidence_bonus, 1.0)
+                    if cat.name not in (self.available_categories or set()):
+                        confidence = min(confidence * 0.9, 0.9)  # Cap suggested categories at 0.9
+                    
+                    category_matches.append(CategoryMatch(
+                        name=cat.name,
+                        confidence=round(confidence, 2),
+                        description=f"Category match: {cat.name}",
+                        evidence=evidence_list,
+                        themes=related_themes,
+                        metadata={
+                            "suggested": cat.name not in (self.available_categories or set()),
+                            "justification": cat.justification if hasattr(cat, 'justification') else None
+                        }
+                    ))
             
             category_result = CategoryAnalysisResult(
                 matches=category_matches,
@@ -1266,28 +1386,24 @@ Output requirements:
             theme_lower = theme.lower()
             desc_lower = theme_context.theme_descriptions.get(theme, "").lower()
             
-            # Direct match in theme name
-            if keyword_lower in theme_lower or theme_lower in keyword_lower:
-                confidence = theme_context.theme_confidence.get(theme, 0.8)
-                max_relevance = max(max_relevance, confidence)
+            # Only consider theme matches if the keyword appears in the text
+            if keyword_lower not in theme_lower and theme_lower not in keyword_lower:
                 continue
+                
+            # Direct match in theme name with high confidence
+            confidence = theme_context.theme_confidence.get(theme, 0.8)
+            max_relevance = max(max_relevance, confidence)
             
-            # Match in theme description
-            if keyword_lower in desc_lower:
-                confidence = theme_context.theme_confidence.get(theme, 0.8) * 0.8
-                max_relevance = max(max_relevance, confidence)
-                continue
-            
-            # Check word-level similarity
-            keyword_words = set(keyword_lower.split())
-            theme_words = set(theme_lower.split())
-            desc_words = set(desc_lower.split())
-            
-            word_overlap = len(keyword_words & (theme_words | desc_words))
-            if word_overlap:
-                overlap_score = word_overlap / len(keyword_words)
-                confidence = theme_context.theme_confidence.get(theme, 0.8) * overlap_score * 0.7
-                max_relevance = max(max_relevance, confidence)
+            # Check word-level similarity only if needed
+            if max_relevance < 0.4:  # Only do detailed analysis if we haven't found a strong match
+                keyword_words = set(keyword_lower.split())
+                theme_words = set(theme_lower.split())
+                
+                word_overlap = len(keyword_words & theme_words)
+                if word_overlap:
+                    overlap_score = word_overlap / len(keyword_words)
+                    confidence = theme_context.theme_confidence.get(theme, 0.8) * overlap_score * 0.7
+                    max_relevance = max(max_relevance, confidence)
         
         return max_relevance
 
