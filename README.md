@@ -96,7 +96,10 @@ pip install -e .
 
 The package is tested on:
 - macOS (Darwin) with Apple Silicon and Intel processors
+- WSL/Windows (Ubuntu)
 - Linux (Ubuntu)
+Also should work, but recent versions not tested:
+- Azure (Linux) 
 
 For macOS users, Voikko is installed automatically via Homebrew during setup. The library is located at `/opt/homebrew/lib/libvoikko.dylib`.
 
@@ -193,6 +196,7 @@ For Finnish language support, see the [Voikko Installation Guide](docs/voikko_in
 - Python 3.9+
 - OpenAI API key or Azure OpenAI credentials
 - Required packages listed in `environment.yaml`
+- Miniconda for package and environment management
 
 ### Finnish Language Support (Voikko)
 - **macOS**: Installed automatically via setup script using Homebrew
