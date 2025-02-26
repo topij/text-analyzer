@@ -4,7 +4,7 @@
 Text Analyzer is a powerful tool for semantic text analysis that extracts keywords, identifies themes, and categorizes content using advanced natural language processing. The UI provides an intuitive interface for analyzing text content in both Finnish and English.
 
 ## Visual Guide
-![Text Analyzer UI](../assets/images/ui_guide.png)
+![Text Analyzer UI](../assets/images/ui_guide_optimized.png)
 
 The Text Analyzer interface consists of several key sections:
 
