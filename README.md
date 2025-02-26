@@ -98,6 +98,7 @@ The package is tested on:
 - macOS (Darwin) with Apple Silicon and Intel processors
 - WSL/Windows (Ubuntu)
 - Linux (Ubuntu)
+
 Also should work, but recent versions not tested:
 - Azure (Linux) 
 
