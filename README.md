@@ -30,37 +30,6 @@ A Python-based text analysis toolkit that combines LLMs and NLP techniques to ex
   - Comprehensive logging
   - Excel-based input/output for business users
 
-## User Interface
-
-The Text Analyzer comes with a modern, user-friendly web interface built with Streamlit:
-
-![Text Analyzer UI](assets/images/text_analyzer_ui_optimized.png)
-
-### Key Features
-- **Easy File Upload**: Support for Excel files with drag-and-drop functionality
-- **Flexible Parameters**: Customize analysis settings including keywords, themes, and focus areas
-- **Interactive Results**: View results in organized tabs for keywords, themes, and categories
-- **Export Capability**: Export analysis results to Excel with a single click
-- **Bilingual Support**: Full interface available in both English and Finnish
-
-### Documentation
-- [User Guide](docs/ui_guide.md) - Detailed instructions for using the interface
-- [UI Text System](docs/ui_text_system.md) - Technical documentation for developers
-
-### Quick Start
-1. Launch the UI:
-```bash
-python ui/run_app.py
-```
-
-2. Upload your text file (XLSX format)
-3. Adjust analysis parameters if needed
-4. Click "Analyze" to process your texts
-5. View results in the tabbed interface
-6. Export results using the export button
-
-For detailed usage instructions, see the [User Guide](docs/ui_guide.md).
-
 ## Quick Start
 
 ### 1. Installation
@@ -91,6 +60,37 @@ conda activate semantic-analyzer
 # Install package
 pip install -e .
 ```
+
+## Optional User Interface
+
+The Text Analyzer comes with a modern, user-friendly web interface built with Streamlit:
+
+![Text Analyzer UI](assets/images/text_analyzer_ui_optimized.png)
+
+### Key Features
+- **Easy File Upload**: Support for Excel files with drag-and-drop functionality
+- **Flexible Parameters**: Customize analysis settings including keywords, themes, and focus areas
+- **Interactive Results**: View results in organized tabs for keywords, themes, and categories
+- **Export Capability**: Export analysis results to Excel with a single click
+- **Bilingual Support**: Full interface available in both English and Finnish
+
+### Documentation
+- [User Guide](docs/ui_guide.md) - Detailed instructions for using the interface
+- [UI Text System](docs/ui_text_system.md) - Technical documentation for developers
+
+### UI Quick Start
+1. Launch the UI:
+```bash
+python ui/run_app.py
+```
+
+2. Upload your text file (XLSX format)
+3. Adjust analysis parameters if needed
+4. Click "Analyze" to process your texts
+5. View results in the tabbed interface
+6. Export results using the export button
+
+For detailed usage instructions, see the [User Guide](docs/ui_guide.md).
 
 ### Platform Support
 
